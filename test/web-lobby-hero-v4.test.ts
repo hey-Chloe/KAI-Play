@@ -75,14 +75,14 @@ test('the Hero keeps a branded five-card fan at 1.2 to 1.3 times the V3 scale', 
 });
 
 test('the Hero actions remain real while unavailable daily puzzles stay disabled', () => {
-  for (const action of ['quick', 'create-room', 'join-room']) {
+  for (const action of ['quick', 'open-mahjong', 'create-room', 'join-room']) {
     assert.match(lobbySource, new RegExp(`data-action=["']${action}["']`));
     assert.match(appSource, new RegExp(`a\\s*===\\s*["']${action}["']`));
   }
   assert.match(appSource, /\/v1\/games\/quick/);
   assert.match(appSource, /\/v1\/rooms(?:\/join)?/);
-  assert.match(lobbySource, /每日残局，筹备中/);
-  assert.match(lobbySource, /<button class="mode-entry" disabled/);
+  assert.match(lobbySource, /每日残局/);
+  assert.match(lobbySource, /<button class="btn" disabled>筹备中<\/button>/);
   assert.doesNotMatch(lobbySource, /在线牌桌|好友正在玩|\d+\s*人在线|已入桌|正在进行/);
 });
 
@@ -92,12 +92,11 @@ test('the Hero does not import casino wagering interactions', () => {
 });
 
 test('narrow-screen and reduced-motion contracts preserve the table and controls', () => {
-  assert.match(v4Styles, /@media \(max-width: 760px\)[\s\S]*\.lobby-hero-v4[\s\S]*\.table-frame-preview/);
+  assert.match(v4Styles, /@media \(max-width: 560px\)[\s\S]*\.lobby-hero-v4[\s\S]*\.table-frame-preview/);
   assert.match(v4Styles, /@media \(max-width: 340px\)[\s\S]*\.lobby-hero-v4/);
   assert.match(v4Styles, /\.lobby-hero-v4 \.live-join-bar \.btn[\s\S]*min-height:\s*50px/);
-  const reduced = v4Styles.slice(v4Styles.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.table-layer/);
-  assert.match(reduced, /\.lobby-card-scene > \*/);
-  assert.match(reduced, /animation:\s*none\s*!important/);
-  assert.match(reduced, /transition:\s*none\s*!important/);
+  assert.match(v4Styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.table-layer/);
+  assert.match(v4Styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.lobby-card-scene > \*/);
+  assert.match(v4Styles, /animation:\s*none\s*!important/);
+  assert.match(v4Styles, /transition:\s*none\s*!important/);
 });

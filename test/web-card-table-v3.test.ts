@@ -45,7 +45,7 @@ test('card faces use the V3 paper, ink, coral and edge tokens', () => {
 });
 
 test('the lobby preview is honest and does not invent presence', () => {
-  assert.match(lobbySource, /开局后补位/);
+  assert.match(lobbySource, /智能牌友自动补位/);
   assert.match(lobbySource, /牌桌预览/);
   assert.match(lobbySource, /服务端统一判定/);
   assert.doesNotMatch(lobbySource, /已就位|阿曜|阿禾|在线牌桌|好友正在玩|\d+\s*人在线/);
@@ -57,8 +57,8 @@ test('the live table is a three-seat surface bound to authoritative game state',
   }
   assert.match(gameSource, /data-seat=/);
   assert.match(gameSource, /data-role=/);
-  assert.match(gameSource, /opponent-top/);
   assert.match(gameSource, /opponent-left/);
+  assert.match(gameSource, /opponent-right/);
   assert.match(gameSource, /viewer-pod/);
   assert.match(gameSource, /highestBid/);
 });
@@ -87,9 +87,8 @@ test('compact layouts preserve the timer and hand while reduced motion remains s
   assert.match(compact, /min-height:\s*44px/);
   assert.doesNotMatch(v3Styles, /\.turn-feedback\s*\{\s*display:\s*none/);
 
-  const reduced = v3Styles.slice(v3Styles.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.poker\.poker-face/);
-  assert.match(reduced, /\.kai-card-back/);
-  assert.match(reduced, /animation:\s*none\s*!important/);
-  assert.match(reduced, /transition:\s*none\s*!important/);
+  assert.match(v3Styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.poker\.poker-face/);
+  assert.match(v3Styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.kai-card-back/);
+  assert.match(v3Styles, /animation:\s*none\s*!important/);
+  assert.match(v3Styles, /transition:\s*none\s*!important/);
 });

@@ -1,4 +1,4 @@
-import { compareThreeCard, evaluateThreeCard, isWinningMahjong, newMahjongRound, newThreeCardRound, sortMahjong, spinSlots } from './casual-games.js';
+import { compareThreeCard, evaluateThreeCard, newMahjongGame, newThreeCardRound, playMahjongDiscard, sortMahjong, spinSlots } from './casual-games.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -7,7 +7,9 @@ const LEGACY_TOKEN_KEY = 'doujoy.web.token';
 const TOKEN_KEY = 'kai.play.token';
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
-const state = { token: localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, exitConfirm: false, casual: null };
+const state = { token: localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, exitConfirm: false, casual: null, heroGame: 'ddz' };
+let heroPointer = null;
+let heroTransitionTimer = null;
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const money = value => new Intl.NumberFormat('zh-CN').format(value || 0);
@@ -67,17 +69,40 @@ function tierName(profile) {
 
 function lobby() {
   const p = state.profile || {games:0,wins:0,winRate:0,name:'游客'};
+  const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
+  const ddzActive = heroGame === 'ddz';
+  const previewWall = '<i></i>'.repeat(11);
+  const previewTiles = [['1','万','wan'],['2','万','wan'],['3','万','wan'],['3','筒','tong'],['4','筒','tong'],['5','筒','tong'],['6','条','tiao'],['7','条','tiao'],['8','条','tiao'],['东','','honor']]
+    .map(([value,suitName,tone])=>`<i class="${tone}"><b>${value}</b><small>${suitName}</small></i>`).join('');
   return `<div class="shell lobby-shell lobby-v4">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
-      <section class="live-table live-table-preview lobby-hero-v4" aria-labelledby="live-table-title">
-        ${tableFrame('preview')}
-        <div class="live-table-seat live-seat-left"><span>A</span><b>智能牌友 A</b><small>开局后补位</small></div>
-        <div class="live-table-seat live-seat-right"><span>B</span><b>智能牌友 B</b><small>开局后补位</small></div>
-        <div class="live-table-center"><small>三人斗地主 · 牌桌预览</small><h1 id="live-table-title">还差你</h1><div class="lobby-card-scene" aria-hidden="true">${cardBack(true,'live-card-back')}${previewPoker(10,'spade')}${previewPoker(11,'spade')}${previewPoker(12,'heart')}${previewPoker(13,'club')}</div></div>
-        <div class="live-table-seat live-seat-you"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>你的座位</small></div>
-        <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="直接入桌，创建斗地主牌局">直接入桌 <b>→</b></button><span class="sr-only">点击后创建真实牌局，智能牌友自动补位，服务端统一判定。</span></div>
+      <section class="lobby-game-carousel" data-hero-carousel aria-label="主要玩法" aria-roledescription="carousel">
+        <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--ddz ${ddzActive?'is-active':''}" data-hero-stage="ddz" aria-labelledby="live-table-title" aria-hidden="${ddzActive?'false':'true'}" ${ddzActive?'':'inert'}>
+          ${tableFrame('preview')}
+          <div class="live-table-seat live-seat-left"><span>A</span><b>智能牌友 A</b><small>左侧牌友</small></div>
+          <div class="live-table-seat live-seat-right"><span>B</span><b>智能牌友 B</b><small>右侧牌友</small></div>
+          <div class="live-table-center"><small>三人斗地主 · 牌桌预览</small><h1 id="live-table-title">还差你</h1><div class="lobby-card-scene" aria-hidden="true">${cardBack(true,'live-card-back')}${previewPoker(10,'spade')}${previewPoker(11,'spade')}${previewPoker(12,'heart')}${previewPoker(13,'club')}</div></div>
+          <div class="live-table-seat live-seat-you"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>你的座位</small></div>
+          <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="直接入桌，创建斗地主牌局">直接入桌 <b>→</b></button><span class="sr-only">点击后创建真实牌局，智能牌友自动补位，服务端统一判定。</span></div>
+        </section>
+        <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--mahjong ${ddzActive?'':'is-active'}" data-hero-stage="mahjong" aria-labelledby="mahjong-hero-title" aria-hidden="${ddzActive?'true':'false'}" ${ddzActive?'inert':''}>
+          <div class="mahjong-preview-table" aria-hidden="true">
+            <i class="mahjong-table-shadow"></i><i class="mahjong-table-base"></i><i class="mahjong-table-felt"></i>
+            <div class="mahjong-preview-wall preview-wall-top">${previewWall}</div><div class="mahjong-preview-wall preview-wall-left">${previewWall}</div><div class="mahjong-preview-wall preview-wall-right">${previewWall}</div>
+            <div class="mahjong-preview-rivers"><span>一万</span><span>九筒</span><span>东</span><span>三条</span><span>白</span><span>五万</span><span>南</span><span>七筒</span></div>
+            <div class="mahjong-preview-center"><small>东一局</small><b>83</b><span>余牌</span></div>
+            <div class="mahjong-preview-hand">${previewTiles}</div>
+          </div>
+          <div class="mahjong-preview-seat seat-north"><span>B</span><b>智能牌友 B</b><small>西家</small></div>
+          <div class="mahjong-preview-seat seat-west"><span>C</span><b>智能牌友 C</b><small>北家</small></div>
+          <div class="mahjong-preview-seat seat-east"><span>A</span><b>智能牌友 A</b><small>南家</small></div>
+          <div class="mahjong-preview-seat seat-south"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>东家 · 你</small></div>
+          <div class="mahjong-hero-copy"><small>KAI 麻将 · 四人基础速战</small><h1 id="mahjong-hero-title">听风入局</h1><p>你与三位智能牌友，摸打至自摸、荣和或流局。</p></div>
+          <div class="mahjong-hero-action"><button class="btn primary" data-action="open-mahjong">开始麻将 <b>→</b></button><small>免费人机局 · 不影响斗地主竞技分</small></div>
+        </section>
+        <nav class="hero-switcher" aria-label="切换主玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">← 左滑循环</span></nav>
       </section>
-      <nav class="lobby-mode-rail" aria-label="大厅玩法入口"><button class="mode-entry is-primary" data-action="quick"><b>斗地主</b><small>快速入桌</small></button><button class="mode-entry" data-action="create-room"><b>好友房</b><small>创建房间</small></button><button class="mode-entry" disabled aria-label="每日残局，筹备中"><b>每日残局</b><small>筹备中</small></button></nav>
+      <nav class="lobby-mode-rail" aria-label="大厅玩法入口"><button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><b>斗地主</b><small>三人牌桌</small></button><button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><b>麻将</b><small>四人速战</small></button><button class="mode-entry" data-action="create-room"><b>好友房</b><small>创建斗地主房间</small></button></nav>
       <section class="lobby-shortcuts" aria-label="大厅快捷入口">
         <article class="room-panel"><div><span>房间码</span><h2>加入好友桌</h2></div><div class="room-actions"><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入 6 位房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
         <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
@@ -86,7 +111,7 @@ function lobby() {
         <div class="world-strip">
           <article class="game-world world-ddz"><div><span>服务端三人桌</span><h3>斗地主</h3><p>争分、出牌、结算，完成一局会写入战绩。</p><button class="btn primary" data-action="quick">快速开局</button></div><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div></article>
           <article class="game-world world-three"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><div><span>三张定胜负</span><h3>炸金花训练</h3><p>免费单机比牌，不计竞技分。</p><button class="btn" data-action="open-three">翻开这一手</button></div></article>
-          <article class="game-world world-mahjong"><div><span>摸一张 · 打一张</span><h3>麻将练习</h3><p>136 张基础牌墙与胡牌结构检测。</p><button class="btn" data-action="open-mahjong">进入练习场</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
+          <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
           <article class="game-world world-reels"><div><span>大厅彩蛋</span><h3>算力转轮</h3><p>免费娱乐 · 无现金下注 · 无提现。</p></div><button class="btn" data-action="open-slots" aria-label="打开算力转轮"><span aria-hidden="true">7 · KAI · ⚡</span> 试转一次</button></article>
         </div>
       </section>
@@ -220,7 +245,7 @@ function game() {
   const handInteractive=canAct&&g.phase==='playing';
   const turnText = isDealing?'正在依次发牌':g.phase==='finished'?'本局已结束':viewerTurn?(g.phase==='bidding'?'轮到你选择争分':'轮到你出牌'):`${currentPlayer?.name||'牌友'}正在思考`;
   const exitDialog=state.exitConfirm?`<div class="exit-shade"><section class="exit-dialog" role="dialog" aria-modal="true" aria-labelledby="exit-title"><span>结束本局</span><h2 id="exit-title">确定不打了吗？</h2><p>退出会按本局负场结算；好友局也会同时结束。你可以留下继续完成这一局。</p><div><button class="btn" data-action="cancel-exit">继续本局</button><button class="btn danger" data-action="confirm-exit">认输并退出</button></div></section></div>`:'';
-  return `<div class="shell table route-game"><header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主</small></div></div></div><div class="round-state"><span>${turnText}</span><b>基础分 ${g.baseStake} · 明示倍数 ${currentMultiplier}</b></div><div class="score-pill compact-score"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></header><section class="landscape-table ddz-table ${isDealing?'is-dealing':''}">${tableFrame('game')}<button class="table-exit table-exit-float" data-action="open-exit" aria-label="退出当前牌局">← 退出</button><div class="table-score"><b>基础分 ${g.baseStake}</b><span>明示倍数 ${currentMultiplier}</span></div>${playerPod(rivals[0]||viewer,'opponent-top')}${playerPod(rivals[1]||viewer,'opponent-left')}${playerPod(viewer,'viewer-pod')}${g.bottomCards?.length?`<div class="bottom-reveal"><small>增补牌</small>${g.bottomCards.map(c=>poker(c,false)).join('')}</div>`:''}<div class="play-zone"><div class="play-cards">${lead}</div>${actionTrail(g)}</div><div class="center-controls" ${isDealing?'aria-hidden="true"':''}>${turnFeedback(g,viewerTurn)}<div class="game-actions">${actions}</div></div><footer class="hand-dock" ${isDealing?'aria-hidden="true"':''}><div class="hand" style="--hand-count:${g.hand.length}">${g.hand.map(c=>poker(c,handInteractive)).join('')}</div><p>${handInteractive?'点击手牌选择 · 再点击出牌':'等待轮次 · 规则由服务端统一判定'}</p></footer>${isDealing?dealSequence():''}</section>${exitDialog}</div>`;
+  return `<div class="shell table route-game"><header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主</small></div></div></div><div class="round-state"><span>${turnText}</span><b>基础分 ${g.baseStake} · 明示倍数 ${currentMultiplier}</b></div><div class="score-pill compact-score"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></header><section class="landscape-table ddz-table ${isDealing?'is-dealing':''}">${tableFrame('game')}<button class="table-exit table-exit-float" data-action="open-exit" aria-label="退出当前牌局">← 退出</button><div class="table-score"><b>基础分 ${g.baseStake}</b><span>明示倍数 ${currentMultiplier}</span></div>${playerPod(rivals[0]||viewer,'opponent-left')}${playerPod(rivals[1]||viewer,'opponent-right')}${playerPod(viewer,'viewer-pod')}${g.bottomCards?.length?`<div class="bottom-reveal"><small>增补牌</small>${g.bottomCards.map(c=>poker(c,false)).join('')}</div>`:''}<div class="play-zone"><div class="play-cards">${lead}</div>${actionTrail(g)}</div><div class="center-controls" ${isDealing?'aria-hidden="true"':''}>${turnFeedback(g,viewerTurn)}<div class="game-actions">${actions}</div></div><footer class="hand-dock" ${isDealing?'aria-hidden="true"':''}><div class="hand" style="--hand-count:${g.hand.length}">${g.hand.map(c=>poker(c,handInteractive)).join('')}</div><p>${handInteractive?'点击手牌选择 · 再点击出牌':'等待轮次 · 规则由服务端统一判定'}</p></footer>${isDealing?dealSequence():''}</section>${exitDialog}</div>`;
 }
 
 function casualHeader(title, mode, status) {
@@ -248,21 +273,79 @@ function threeCardGame() {
   return `<div class="shell casual-shell">${casualHeader('炸金花','THREE CARD','免费训练 · 不计竞技分')}<section class="casual-stage three-stage">${result}<div class="three-how"><span>1 看自己的三张牌</span><i>→</i><span>2 点击翻开并比牌</span><i>→</i><span>3 最大牌型获胜</span></div><div class="three-opponents">${seats}</div><div class="three-center"><span>本局免费</span><b>${state.casual.thinking?'两位牌友正在思考…':revealed?'三家牌面已揭晓':'三张牌，一次定胜负'}</b><small>无筹码 · 无下注</small></div><article class="three-player"><div class="training-avatar">你</div><div><b>你的手牌</b><span>${esc(evaluateThreeCard(round.players[0].hand).label)}</span></div><div class="three-hand">${round.players[0].hand.map((card) => poker(card,false)).join('')}</div></article><div class="casual-actions"><button class="btn primary" data-action="three-reveal" ${state.casual.thinking||revealed?'disabled':''}>${state.casual.thinking?'牌友思考中…':'翻开并比牌'}</button><button class="btn" data-action="three-new">换一手牌</button></div></section><p class="casual-disclaimer">牌型顺序：豹子 ＞ 顺金 ＞ 金花 ＞ 顺子 ＞ 对子 ＞ 高牌。当前为单机训练，不使用现金、Token 或卡时。</p></div>`;
 }
 
+function mahjongTone(tile) {
+  if (tile.suit !== '字') return tile.suit === '万' ? 'wan' : tile.suit === '筒' ? 'tong' : 'tiao';
+  if (tile.label === '中') return 'honor honor-red';
+  if (tile.label === '发') return 'honor honor-green';
+  return 'honor';
+}
+
+function mahjongFace(tile, extraClass = '') {
+  return `<span class="mahjong-face ${mahjongTone(tile)} ${esc(extraClass)}" title="${esc(tile.label)}"><b>${esc(tile.suit==='字'?tile.label:tile.rank)}</b><small>${esc(tile.suit==='字'?'':tile.suit)}</small></span>`;
+}
+
 function mahjongTile(tile) {
+  const game = state.casual?.game;
   const selected = state.casual?.selectedTileId === tile.id;
-  const tone = tile.suit === '万' ? 'wan' : tile.suit === '筒' ? 'tong' : tile.suit === '条' ? 'tiao' : 'honor';
-  return `<button class="mahjong-tile ${tone} ${selected?'selected':''} ${state.casual?.round.drawnId===tile.id?'drawn':''}" data-mahjong-tile="${esc(tile.id)}" aria-label="${esc(tile.label)}"><b>${esc(tile.suit==='字'?tile.label:tile.rank)}</b><small>${esc(tile.suit==='字'?'':tile.suit)}</small></button>`;
+  const interactive = game?.phase === 'playing' && game.currentSeat === 0 && game.hands[0].length === 14;
+  return `<button class="mahjong-tile ${mahjongTone(tile)} ${selected?'selected':''} ${game?.drawnId===tile.id?'drawn':''}" data-mahjong-tile="${esc(tile.id)}" aria-label="${esc(tile.label)}${game?.drawnId===tile.id?'，刚摸到':''}" aria-pressed="${selected?'true':'false'}" ${interactive?'':'disabled'}><b>${esc(tile.suit==='字'?tile.label:tile.rank)}</b><small>${esc(tile.suit==='字'?'':tile.suit)}</small></button>`;
+}
+
+function mahjongBackRack(count, position) {
+  const backs = Array.from({ length: Math.min(13, count) }, () => '<i></i>').join('');
+  return `<div class="mahjong-hidden-hand hidden-hand--${position}" aria-label="暗牌 ${count} 张">${backs}<small>${count}</small></div>`;
+}
+
+function mahjongSeat(game, seat, position) {
+  const player = game.players[seat];
+  const name = seat === 0 ? (state.profile?.name || '你') : player.name;
+  const active = game.phase === 'playing' && game.currentSeat === seat;
+  const winner = game.result?.winnerSeat === seat;
+  return `<article class="mahjong-match-seat match-seat--${position} ${active?'is-turn':''} ${winner?'is-winner':''}" data-wind="${esc(player.wind)}家" aria-label="${esc(name)}，${esc(player.wind)}家，${game.hands[seat].length}张"><span>${esc(name.slice(0,1))}</span><div><b>${esc(name)}</b><small>${esc(player.wind)}家 · ${game.hands[seat].length}张</small></div></article>`;
+}
+
+function mahjongRiver(game, seat, position) {
+  const tiles = game.rivers[seat].slice(-24);
+  return `<div class="mahjong-river match-river--${position}" aria-label="${esc(game.players[seat].name)}的牌河">${tiles.map((tile) => mahjongFace(tile, 'river-face')).join('') || '<small>尚未出牌</small>'}</div>`;
+}
+
+function mahjongResult(game) {
+  if (game.phase !== 'finished') return '';
+  const result = game.result;
+  if (result.kind === 'draw') return `<div class="mahjong-result-panel is-draw"><span>东一局结束</span><h2>流局</h2><p>牌墙已摸完，本局无人和牌。</p></div>`;
+  const winner = game.players[result.winnerSeat];
+  const winnerName = result.winnerSeat === 0 ? (state.profile?.name || '你') : winner.name;
+  const action = result.kind === 'tsumo' ? '自摸' : '荣和';
+  const detail = result.kind === 'ron' ? `荣和 ${esc(game.players[result.fromSeat].name)} 的弃牌` : '摸到和牌张';
+  return `<div class="mahjong-result-panel ${result.winnerSeat===0?'is-win':'is-loss'}"><span>东一局结束</span><h2>${esc(winnerName)} · ${action}</h2><p>${detail}</p><b>${esc(result.pattern?.label || '完成和牌牌型')}</b></div>`;
 }
 
 function mahjongGame() {
-  const round = state.casual?.round;
-  if (!round) return lobby();
-  const canDraw = round.hand.length === 13 && round.wall.length > 0;
-  const canDiscard = round.hand.length === 14;
-  const notice = round.won ? '<div class="training-result win"><span>牌型完成</span><b>胡牌</b><small>四组面子加一对将</small></div>' : '';
-  const wall = Array.from({length:Math.min(18,Math.ceil(round.wall.length/8))},()=>'<i></i>').join('');
-  const turnHint = canDraw ? '轮到你摸牌' : state.casual.selectedTileId ? '点击“打出所选”' : '请选择一张牌';
-  return `<div class="shell casual-shell">${casualHeader('麻将','MAHJONG LAB',`牌墙 ${round.wall.length} 张`)}<section class="casual-stage mahjong-stage">${notice}<div class="mahjong-wall wall-top" aria-hidden="true">${wall}</div><div class="mahjong-wall wall-left" aria-hidden="true">${wall}</div><div class="mahjong-wall wall-right" aria-hidden="true">${wall}</div><div class="mahjong-wall wall-bottom" aria-hidden="true">${wall}</div><div class="mahjong-counter"><small>牌墙剩余</small><b>${round.wall.length}</b><span>${turnHint}</span></div><div class="discard-river"><span>牌河</span><div>${round.discards.slice(-24).map((tile)=>`<i class="river-tile">${esc(tile.label)}</i>`).join('')||`<small>${canDraw?'第一步：点击下方“摸一张”':'第二步：确认高亮牌，再点击“打出所选”'}</small>`}</div></div><div class="mahjong-hand">${sortMahjong(round.hand).map(mahjongTile).join('')}</div><div class="casual-actions"><button class="btn primary" data-action="mahjong-draw" ${canDraw&&!round.won?'':'disabled'}>① 摸一张</button><button class="btn" data-action="mahjong-discard" ${canDiscard&&state.casual.selectedTileId&&!round.won?'':'disabled'}>② 打出所选</button><button class="btn" data-action="mahjong-new">重新开局</button></div></section><p class="casual-disclaimer">完整 136 张基础牌墙，练习摸打与常规胡牌结构；暂不包含吃碰杠、花牌和多人计番。</p></div>`;
+  const game = state.casual?.game;
+  if (!game) return lobby();
+  const canDiscard = game.phase === 'playing' && game.currentSeat === 0 && game.hands[0].length === 14;
+  const activeName = game.currentSeat === 0 ? (state.profile?.name || '你') : game.players[game.currentSeat].name;
+  const turnHint = game.phase === 'finished' ? '本局已结束'
+    : game.currentSeat === 0 ? '轮到你：点两次手牌，或选中后确认打出'
+      : `${activeName} 正在摸打`;
+  const latestDiscard = [...game.events].reverse().find((event) => event.kind === 'discard');
+  const latestTile = latestDiscard ? game.rivers.flat().find((tile) => tile.id === latestDiscard.tileId) : null;
+  const latestCopy = latestDiscard && latestTile ? `${game.players[latestDiscard.seat].name} 打出 ${latestTile.label}` : '你是东家，先打出一张牌';
+  const wallBlocks = Array.from({ length: 17 }, (_, index) => `<i class="${index < Math.ceil(game.wall.length / 5) ? '' : 'is-used'}"></i>`).join('');
+  const sortedHand = sortMahjong(game.hands[0]);
+  const drawnTile = sortedHand.find((tile) => tile.id === game.drawnId);
+  const displayHand = drawnTile ? [...sortedHand.filter((tile) => tile.id !== drawnTile.id), drawnTile] : sortedHand;
+  return `<div class="shell casual-shell mahjong-route">${casualHeader('KAI 麻将','FOUR PLAYER MAHJONG',`东一局 · 余牌 ${game.wall.length}`)}<section class="casual-stage mahjong-match-stage">
+    <div class="mahjong-table-volume" aria-hidden="true"></div><div class="mahjong-match-felt"></div>
+    <div class="mahjong-wall-track" aria-hidden="true">${wallBlocks}</div>
+    ${mahjongSeat(game,2,'north')}${mahjongSeat(game,3,'west')}${mahjongSeat(game,1,'east')}${mahjongSeat(game,0,'south')}
+    ${mahjongBackRack(game.hands[2].length,'north')}${mahjongBackRack(game.hands[3].length,'west')}${mahjongBackRack(game.hands[1].length,'east')}
+    <div class="mahjong-river-board">${mahjongRiver(game,2,'north')}${mahjongRiver(game,3,'west')}<div class="mahjong-center-score"><small>东一局</small><b>${game.wall.length}</b><span>余牌</span><i>${esc(game.players[game.currentSeat].wind)}家行动</i></div>${mahjongRiver(game,1,'east')}${mahjongRiver(game,0,'south')}</div>
+    <div class="mahjong-turn-banner"><span class="turn-pulse"></span><b>${esc(turnHint)}</b><small>${esc(latestCopy)}</small></div>
+    ${mahjongResult(game)}
+    <div class="mahjong-hand match-player-hand" style="--tile-count:${game.hands[0].length}">${displayHand.map(mahjongTile).join('')}</div>
+    <div class="casual-actions mahjong-match-actions"><button class="btn primary" data-action="mahjong-discard" ${canDiscard&&state.casual.selectedTileId?'':'disabled'}>${game.phase==='finished'?'本局已结束':'打出所选'}</button><button class="btn" data-action="mahjong-new">${game.phase==='finished'?'再来一局':'重新开局'}</button></div>
+  </section><p class="casual-disclaimer">四人东一局基础速战：136 张牌、三位智能牌友、四家牌河，支持常规和牌、七对与国士无双的自摸/荣和。当前为基础规则，吃碰杠、立直、宝牌与完整点数结算将在后续版本加入。</p></div>`;
 }
 
 function slotsGame() {
@@ -330,6 +413,63 @@ function rules() { return `<div class="shell page-shell">${header()}<div class="
 
 function render() { app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby(); }
 
+function updateHeroControls(nextGame) {
+  document.querySelectorAll('[data-action="hero-select"]').forEach((control) => {
+    const selected = control.dataset.heroGame === nextGame;
+    control.setAttribute('aria-pressed', String(selected));
+    control.classList.toggle('active', selected && control.closest('.hero-switcher'));
+    control.classList.toggle('is-primary', selected && control.closest('.lobby-mode-rail'));
+  });
+}
+
+function switchHero(nextGame, direction = 'next') {
+  const normalized = nextGame === 'mahjong' ? 'mahjong' : 'ddz';
+  if (state.view !== 'lobby') return;
+  const previous = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
+  if (normalized === previous) return;
+  const carousel = document.querySelector('[data-hero-carousel]');
+  const stages = [...(carousel?.querySelectorAll('.lobby-game-stage') || [])];
+  const current = carousel?.querySelector(`[data-hero-stage="${previous}"]`);
+  const next = carousel?.querySelector(`[data-hero-stage="${normalized}"]`);
+  state.heroGame = normalized;
+  updateHeroControls(normalized);
+  if (!current || !next) { render(); return; }
+  if (heroTransitionTimer) {
+    clearTimeout(heroTransitionTimer);
+    heroTransitionTimer = null;
+  }
+
+  const transitionClasses = ['is-active','is-preparing','is-from-left','is-from-right','is-leaving-left','is-leaving-right'];
+  stages.forEach((stage) => {
+    stage.classList.remove(...transitionClasses);
+    stage.setAttribute('aria-hidden', 'true');
+    stage.setAttribute('inert', '');
+  });
+
+  const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  next.removeAttribute('inert');
+  next.setAttribute('aria-hidden', 'false');
+  if (reducedMotion) {
+    next.classList.add('is-active');
+    return;
+  }
+
+  const reverse = direction === 'previous';
+  current.classList.add('is-active');
+  current.setAttribute('aria-hidden', 'false');
+  next.classList.add('is-preparing', reverse ? 'is-from-left' : 'is-from-right');
+  void next.offsetWidth;
+  current.classList.add(reverse ? 'is-leaving-right' : 'is-leaving-left');
+  next.classList.add('is-active');
+  next.classList.remove('is-preparing', 'is-from-left', 'is-from-right');
+  heroTransitionTimer = setTimeout(() => {
+    current.classList.remove('is-active', 'is-leaving-left', 'is-leaving-right');
+    current.setAttribute('aria-hidden', 'true');
+    current.setAttribute('inert', '');
+    heroTransitionTimer = null;
+  }, 460);
+}
+
 function openThreeCard() {
   stopGameSync();
   state.casual = { kind: 'three', round: newThreeCardRound(), revealed: false, thinking: false };
@@ -337,7 +477,9 @@ function openThreeCard() {
 }
 function openMahjong() {
   stopGameSync();
-  state.casual = { kind: 'mahjong', round: newMahjongRound(), selectedTileId: null };
+  const game = newMahjongGame();
+  state.heroGame = 'mahjong';
+  state.casual = { kind: 'mahjong', game, selectedTileId: game.drawnId };
   state.view = 'mahjong';
 }
 function openSlots() {
@@ -416,30 +558,35 @@ async function act(fn){ if(state.busy)return; state.busy=true; try{await fn(); s
 app.addEventListener('click', e => {
   const el=e.target.closest('button'); if(!el)return;
   if(el.dataset.card){ const id=el.dataset.card; state.selected.has(id)?state.selected.delete(id):state.selected.add(id); render(); return; }
-  if(el.dataset.mahjongTile){ if(state.view==='mahjong'&&state.casual?.round.hand.length===14){state.casual.selectedTileId=el.dataset.mahjongTile;render();} return; }
+  if(el.dataset.mahjongTile){
+    const game=state.casual?.game;
+    if(state.view==='mahjong'&&game?.phase==='playing'&&game.currentSeat===0&&game.hands[0].length===14){
+      if(state.casual.selectedTileId===el.dataset.mahjongTile){
+        try{state.casual.game=playMahjongDiscard(game,el.dataset.mahjongTile);state.casual.selectedTileId=state.casual.game.phase==='playing'?state.casual.game.drawnId:null;}catch(error){toast(error.message);}
+      }else state.casual.selectedTileId=el.dataset.mahjongTile;
+      render();
+    }
+    return;
+  }
   if(el.dataset.view){ state.view=el.dataset.view; if(state.view!=='game') stopGameSync(); if(state.view==='history') act(async()=>{state.history=await api('/v1/history');}); else render(); return; }
   if(el.dataset.bid!==undefined) act(async()=>{const body={score:Number(el.dataset.bid),expectedSequence:state.game.sequence};const r=await api(`/v1/games/${state.game.id}/bid`,{method:'POST',body:JSON.stringify(body),headers:{'x-request-id':requestId()}});state.game=r.game;state.profile=r.profile;});
   const a=el.dataset.action;
+  if(a==='hero-select'){switchHero(el.dataset.heroGame,'next');return;}
   if(a==='quick') act(startQuickGame);
   if(a==='scroll-games') document.querySelector('#game-selection')?.scrollIntoView({behavior:'smooth',block:'start'});
   if(a==='open-three'){openThreeCard();render();}
-  if(a==='open-mahjong'){openMahjong();render();}
+  if(a==='open-mahjong'){openMahjong();render();globalThis.scrollTo?.(0,0);}
   if(a==='open-slots'){openSlots();render();}
   if(a==='casual-home'){state.casual=null;state.view='lobby';render();}
   if(a==='three-new'){state.casual={kind:'three',round:newThreeCardRound(),revealed:false,thinking:false};render();}
   if(a==='three-reveal'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed){
     state.casual.thinking=true;render();setTimeout(()=>{if(state.view!=='three'||!state.casual)return;state.casual.thinking=false;state.casual.revealed=true;render();},1_400);
   }
-  if(a==='mahjong-new'){state.casual={kind:'mahjong',round:newMahjongRound(),selectedTileId:null};render();}
-  if(a==='mahjong-draw'&&state.view==='mahjong'){
-    const round=state.casual.round;
-    if(round.hand.length!==13||!round.wall.length)return;
-    const drawn=round.wall.shift();round.hand=sortMahjong([...round.hand,drawn]);round.drawnId=drawn.id;round.won=isWinningMahjong(round.hand);state.casual.selectedTileId=drawn.id;render();
-  }
+  if(a==='mahjong-new'){const game=newMahjongGame();state.casual={kind:'mahjong',game,selectedTileId:game.drawnId};render();}
   if(a==='mahjong-discard'&&state.view==='mahjong'){
-    const round=state.casual.round;const tile=round.hand.find(candidate=>candidate.id===state.casual.selectedTileId);
-    if(!tile||round.hand.length!==14)return;
-    round.hand=round.hand.filter(candidate=>candidate.id!==tile.id);round.discards.push(tile);round.drawnId=null;state.casual.selectedTileId=null;render();
+    const game=state.casual?.game;const tileId=state.casual?.selectedTileId;
+    if(!game||!tileId||game.phase!=='playing'||game.currentSeat!==0)return;
+    try{state.casual.game=playMahjongDiscard(game,tileId);state.casual.selectedTileId=state.casual.game.phase==='playing'?state.casual.game.drawnId:null;}catch(error){toast(error.message);}render();
   }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     state.casual.spinning=true;state.casual.last=null;render();
@@ -472,6 +619,25 @@ app.addEventListener('click', e => {
     toast(messages[a] || '该能力即将开放');
   }
 });
+
+app.addEventListener('pointerdown', (event) => {
+  const carousel = event.target.closest?.('[data-hero-carousel]');
+  if (!carousel || event.target.closest?.('button, input, a')) return;
+  heroPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  carousel.setPointerCapture?.(event.pointerId);
+});
+
+app.addEventListener('pointerup', (event) => {
+  if (!heroPointer || heroPointer.id !== event.pointerId) return;
+  const deltaX = event.clientX - heroPointer.x;
+  const deltaY = event.clientY - heroPointer.y;
+  heroPointer = null;
+  if (Math.abs(deltaX) < 42 || Math.abs(deltaX) < Math.abs(deltaY) * 1.15) return;
+  const nextGame = state.heroGame === 'ddz' ? 'mahjong' : 'ddz';
+  switchHero(nextGame, deltaX < 0 ? 'next' : 'previous');
+});
+
+app.addEventListener('pointercancel', () => { heroPointer = null; });
 
 bootstrap();
 setInterval(() => {
