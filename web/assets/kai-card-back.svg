@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 260" role="img" aria-labelledby="title desc">
+  <title id="title">KAI PLAY 专属牌背</title>
+  <desc id="desc">深翡翠与石墨蓝底色、重复 K 字几何纹样和珊瑚色 KAI 标记。</desc>
+  <defs>
+    <linearGradient id="base" x1="18" y1="12" x2="162" y2="248" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#123f3d"/>
+      <stop offset="0.52" stop-color="#0a3436"/>
+      <stop offset="1" stop-color="#071f2b"/>
+    </linearGradient>
+    <linearGradient id="medallion" x1="63" y1="92" x2="119" y2="169" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#173f42"/>
+      <stop offset="1" stop-color="#081f2c"/>
+    </linearGradient>
+    <pattern id="kai-pattern" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M7 3v24M7 15l13-12M7 15l13 12M23 3v24" fill="none" stroke="#a8cfc0" stroke-width="1.1" stroke-linecap="round" opacity=".24"/>
+      <circle cx="7" cy="15" r="1.6" fill="#e16f5d" opacity=".4"/>
+    </pattern>
+    <filter id="soft-shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020b10" flood-opacity=".42"/>
+    </filter>
+  </defs>
+  <rect x="2" y="2" width="176" height="256" rx="16" fill="url(#base)" stroke="#f1eadc" stroke-width="4"/>
+  <rect x="10" y="10" width="160" height="240" rx="11" fill="url(#kai-pattern)" stroke="#d7b36a" stroke-opacity=".72"/>
+  <rect x="17" y="17" width="146" height="226" rx="8" fill="none" stroke="#ecf2e8" stroke-opacity=".24"/>
+  <path d="M29 34h18M38 25v18M133 34h18M142 25v18M29 226h18M38 217v18M133 226h18M142 217v18" stroke="#d7b36a" stroke-width="1.5" stroke-linecap="round" opacity=".78"/>
+  <g filter="url(#soft-shadow)">
+    <rect x="57" y="83" width="66" height="94" rx="18" fill="url(#medallion)" stroke="#d7b36a" stroke-width="1.5"/>
+    <circle cx="90" cy="116" r="20" fill="none" stroke="#e7eee4" stroke-opacity=".25"/>
+    <path d="M80 99v35M80 117l22-18M80 117l22 18" fill="none" stroke="#f2eee4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M102 98l6 6" stroke="#e16f5d" stroke-width="5" stroke-linecap="round"/>
+    <text x="90" y="156" fill="#f2eee4" font-family="system-ui, sans-serif" font-size="8" font-weight="700" letter-spacing="2" text-anchor="middle">KAI PLAY</text>
+  </g>
+</svg>

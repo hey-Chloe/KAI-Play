@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <filter id="paper" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency=".82" numOctaves="3" seed="23"/>
+    <feColorMatrix type="saturate" values="0"/>
+    <feComponentTransfer><feFuncA type="table" tableValues="0 .075"/></feComponentTransfer>
+  </filter>
+  <rect width="64" height="64" filter="url(#paper)" opacity=".75"/>
+</svg>

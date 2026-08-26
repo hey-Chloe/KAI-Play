@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const host = process.env.DOUJOY_WEB_HOST || '127.0.0.1';
 const port = Number(process.env.DOUJOY_WEB_PORT || 8081);
 const upstream = new URL(process.env.DOUJOY_WEB_UPSTREAM || 'http://127.0.0.1:4321');
-const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.svg':'image/svg+xml' };
+const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.svg':'image/svg+xml', '.avif':'image/avif' };
 
 function proxy(req, res, pathname, search) {
   const headers = { ...req.headers, host: upstream.host };
