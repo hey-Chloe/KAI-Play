@@ -47,7 +47,6 @@ export class ChangeBroker {
       };
       pending.finish = finish;
       timer = setTimeout(() => finish('timeout'), timeoutMs);
-      timer.unref?.();
 
       waits.add(pending);
       this.waits.set(resource, waits);
