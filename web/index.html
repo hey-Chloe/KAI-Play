@@ -4,12 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#07111f">
-  <meta name="description" content="KAI Play 算力驱动的原创多游戏空间">
+  <meta name="description" content="KAI Play 免费牌桌游乐场：快速开局、服务端判定、可断线恢复。">
   <title>KAI Play · 算力局</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <main id="app"></main>
+  <main id="app" aria-busy="true">
+    <section class="boot-shell" role="status" aria-live="polite" aria-label="KAI Play 正在连接牌局服务">
+      <div class="boot-brand"><i>K</i><span><b>KAI</b> PLAY</span></div>
+      <div class="boot-table" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="boot-copy"><span>正在连接牌局服务</span><b>为你准备牌桌…</b><small>游客免注册 · 自动恢复未结束对局</small></div>
+    </section>
+  </main>
   <div id="toast" class="toast" role="status"></div>
   <script type="module" src="./app.js"></script>
 </body>

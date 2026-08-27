@@ -45,7 +45,7 @@ test('card faces use the V3 paper, ink, coral and edge tokens', () => {
 });
 
 test('the lobby preview is honest and does not invent presence', () => {
-  assert.match(lobbySource, /智能牌友自动补位/);
+  assert.match(lobbySource, /智能牌友补位/);
   assert.match(lobbySource, /牌桌预览/);
   assert.match(lobbySource, /服务端统一判定/);
   assert.doesNotMatch(lobbySource, /已就位|阿曜|阿禾|在线牌桌|好友正在玩|\d+\s*人在线/);

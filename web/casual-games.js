@@ -443,6 +443,165 @@ export function newMahjongGame(random = Math.random) {
   return game;
 }
 
+export const MERGE_1048_TARGET = 1048;
+const MERGE_1048_SIZE = 4;
+const MERGE_1048_DIRECTIONS = new Set(['left', 'right', 'up', 'down']);
+const MERGE_1048_VALUES = new Set([0, 2, 4, 8, 16, 32, 64, 128, 256, 512, MERGE_1048_TARGET]);
+
+function next1048Value(value) {
+  if (value === 512) return MERGE_1048_TARGET;
+  return value < 512 ? value * 2 : null;
+}
+
+function randomUnit(random) {
+  const value = Number(random());
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(0.999999999, value));
+}
+
+function assert1048Board(board) {
+  if (!Array.isArray(board) || board.length !== MERGE_1048_SIZE ** 2) {
+    throw new Error('1048_BOARD_REQUIRED');
+  }
+  if (board.some((value) => !MERGE_1048_VALUES.has(value))) {
+    throw new Error('1048_BOARD_INVALID');
+  }
+}
+
+export function collapse1048Line(line) {
+  if (!Array.isArray(line) || line.length !== MERGE_1048_SIZE) throw new Error('1048_LINE_REQUIRED');
+  if (line.some((value) => !MERGE_1048_VALUES.has(value))) throw new Error('1048_LINE_INVALID');
+  const compact = line.filter((value) => value > 0);
+  const merged = [];
+  let gained = 0;
+  for (let index = 0; index < compact.length; index += 1) {
+    const current = compact[index];
+    const combined = next1048Value(current);
+    if (combined && compact[index + 1] === current) {
+      merged.push(combined);
+      gained += combined;
+      index += 1;
+    } else {
+      merged.push(current);
+    }
+  }
+  while (merged.length < MERGE_1048_SIZE) merged.push(0);
+  return { line: merged, gained };
+}
+
+export function spawn1048Tile(board, random = Math.random) {
+  assert1048Board(board);
+  const next = [...board];
+  const empty = next.flatMap((value, index) => value === 0 ? [index] : []);
+  if (!empty.length) return next;
+  const targetIndex = empty[Math.floor(randomUnit(random) * empty.length)];
+  next[targetIndex] = randomUnit(random) < 0.9 ? 2 : 4;
+  return next;
+}
+
+function read1048Line(board, direction, lineIndex) {
+  const indexes = Array.from({ length: MERGE_1048_SIZE }, (_, offset) => {
+    if (direction === 'left') return lineIndex * MERGE_1048_SIZE + offset;
+    if (direction === 'right') return lineIndex * MERGE_1048_SIZE + (MERGE_1048_SIZE - 1 - offset);
+    if (direction === 'up') return offset * MERGE_1048_SIZE + lineIndex;
+    return (MERGE_1048_SIZE - 1 - offset) * MERGE_1048_SIZE + lineIndex;
+  });
+  return { indexes, values: indexes.map((index) => board[index]) };
+}
+
+export function canMove1048(board) {
+  assert1048Board(board);
+  if (board.includes(0)) return true;
+  for (let row = 0; row < MERGE_1048_SIZE; row += 1) {
+    for (let column = 0; column < MERGE_1048_SIZE; column += 1) {
+      const value = board[row * MERGE_1048_SIZE + column];
+      if (value === MERGE_1048_TARGET) continue;
+      if (column + 1 < MERGE_1048_SIZE && board[row * MERGE_1048_SIZE + column + 1] === value) return true;
+      if (row + 1 < MERGE_1048_SIZE && board[(row + 1) * MERGE_1048_SIZE + column] === value) return true;
+    }
+  }
+  return false;
+}
+
+export function new1048Game(random = Math.random) {
+  let board = Array(MERGE_1048_SIZE ** 2).fill(0);
+  board = spawn1048Tile(board, random);
+  board = spawn1048Tile(board, random);
+  return {
+    kind: '1048',
+    board,
+    score: 0,
+    moves: 0,
+    bestTile: Math.max(...board),
+    status: 'playing',
+    continued: false,
+    lastDirection: null,
+    lastGained: 0,
+  };
+}
+
+export function restore1048Game(value) {
+  if (!value || typeof value !== 'object') return null;
+  try { assert1048Board(value.board); } catch { return null; }
+  const board = [...value.board];
+  const continued = Boolean(value.continued);
+  const score = Number.isSafeInteger(value.score) && value.score >= 0 ? value.score : 0;
+  const moves = Number.isSafeInteger(value.moves) && value.moves >= 0 ? value.moves : 0;
+  const lastGained = Number.isSafeInteger(value.lastGained) && value.lastGained >= 0 ? value.lastGained : 0;
+  const lastDirection = MERGE_1048_DIRECTIONS.has(value.lastDirection) ? value.lastDirection : null;
+  const status = board.includes(MERGE_1048_TARGET) && !continued
+    ? 'won'
+    : canMove1048(board) ? 'playing' : 'over';
+  return {
+    kind: '1048',
+    board,
+    score,
+    moves,
+    bestTile: Math.max(...board),
+    status,
+    continued,
+    lastDirection,
+    lastGained,
+  };
+}
+
+export function move1048(game, direction, random = Math.random) {
+  assert1048Board(game?.board);
+  if (!MERGE_1048_DIRECTIONS.has(direction)) throw new Error('1048_DIRECTION_INVALID');
+  if (game.status !== 'playing') return { ...game, board: [...game.board] };
+
+  const board = Array(MERGE_1048_SIZE ** 2).fill(0);
+  let gained = 0;
+  for (let lineIndex = 0; lineIndex < MERGE_1048_SIZE; lineIndex += 1) {
+    const { indexes, values } = read1048Line(game.board, direction, lineIndex);
+    const collapsed = collapse1048Line(values);
+    gained += collapsed.gained;
+    indexes.forEach((index, offset) => { board[index] = collapsed.line[offset]; });
+  }
+
+  const changed = board.some((value, index) => value !== game.board[index]);
+  if (!changed) return {
+    ...game,
+    board: [...game.board],
+    status: canMove1048(game.board) ? game.status : 'over',
+    lastGained: 0,
+  };
+
+  const spawned = spawn1048Tile(board, random);
+  const bestTile = Math.max(Number(game.bestTile) || 0, ...spawned);
+  const reachedTarget = !game.continued && spawned.includes(MERGE_1048_TARGET);
+  return {
+    ...game,
+    board: spawned,
+    score: (Number(game.score) || 0) + gained,
+    moves: (Number(game.moves) || 0) + 1,
+    bestTile,
+    status: reachedTarget ? 'won' : canMove1048(spawned) ? 'playing' : 'over',
+    lastDirection: direction,
+    lastGained: gained,
+  };
+}
+
 export const SLOT_SYMBOLS = Object.freeze(['7', 'KAI', '⚡', 'AI', '★']);
 
 export function spinSlots(random = Math.random) {

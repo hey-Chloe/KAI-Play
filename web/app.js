@@ -1,4 +1,18 @@
-import { advanceMahjongBotTurn, compareThreeCard, evaluateThreeCard, newMahjongGame, newThreeCardRound, playMahjongDiscard, sortMahjong, spinSlots } from './casual-games.js';
+import {
+  MERGE_1048_TARGET,
+  advanceMahjongBotTurn,
+  canMove1048,
+  compareThreeCard,
+  evaluateThreeCard,
+  move1048,
+  new1048Game,
+  newMahjongGame,
+  newThreeCardRound,
+  playMahjongDiscard,
+  restore1048Game,
+  sortMahjong,
+  spinSlots,
+} from './casual-games.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -6,11 +20,13 @@ const toastNode = document.querySelector('#toast');
 const LEGACY_TOKEN_KEY = 'doujoy.web.token';
 const TOKEN_KEY = 'kai.play.token';
 const HERO_GAME_KEY = 'kai.play.hero-game';
+const MERGE_1048_SAVE_KEY = 'kai.play.1048.game';
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
 const storedHeroGame = localStorage.getItem(HERO_GAME_KEY);
 const state = { token: localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
+let merge1048Pointer = null;
 let heroTransitionTimer = null;
 let mahjongBotTimer = null;
 let toastTimer = null;
@@ -49,6 +65,28 @@ const toast = msg => {
   toastTimer = setTimeout(() => { toastNode.classList.remove('show'); toastTimer = null; }, 2200);
 };
 const requestId = () => globalThis.crypto?.randomUUID?.() || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+function loadSaved1048Game() {
+  try {
+    const raw = localStorage.getItem(MERGE_1048_SAVE_KEY);
+    if (!raw) return null;
+    const game = restore1048Game(JSON.parse(raw));
+    if (!game) localStorage.removeItem(MERGE_1048_SAVE_KEY);
+    return game;
+  } catch {
+    try { localStorage.removeItem(MERGE_1048_SAVE_KEY); } catch { /* Storage can be unavailable in hardened browsers. */ }
+    return null;
+  }
+}
+
+function save1048Game(game) {
+  try { localStorage.setItem(MERGE_1048_SAVE_KEY, JSON.stringify(game)); } catch { /* The game remains playable without persistence. */ }
+}
+
+function syncFailureNotice() {
+  if (!state.error || !state.error.includes('同步已停止')) return '';
+  return `<aside class="route-sync-error" role="alert"><div><b>连接已经停止</b><span>${esc(state.error)}</span></div><button class="btn" data-action="retry-sync">重新连接</button></aside>`;
+}
 
 async function api(path, options = {}) {
   const fetchOptions = { ...options };
@@ -144,6 +182,9 @@ function tierName(profile) {
 
 function lobby() {
   const p = state.profile || {games:0,wins:0,winRate:0,name:'游客'};
+  const firstGame = (Number(p.games) || 0) === 0;
+  const saved1048 = loadSaved1048Game();
+  const merge1048Action = !saved1048 ? '开始合并' : saved1048.status === 'playing' ? '继续上局' : '查看上局';
   const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
   const ddzActive = heroGame === 'ddz';
   const previewWall = '<i></i>'.repeat(17);
@@ -170,7 +211,7 @@ function lobby() {
           <div class="live-table-seat live-seat-right"><span>B</span><b>智能牌友 B</b><small>右侧牌友</small></div>
           <div class="live-table-center"><small>三人斗地主 · 牌桌预览</small><h1 id="live-table-title">还差你</h1><div class="lobby-card-scene" aria-hidden="true">${cardBack(true,'live-card-back')}${previewPoker(10,'spade')}${previewPoker(11,'spade')}${previewPoker(12,'heart')}${previewPoker(13,'club')}</div></div>
           <div class="live-table-seat live-seat-you"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>你的座位</small></div>
-          <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="直接入桌，创建斗地主牌局">直接入桌 <b>→</b></button><span class="sr-only">点击后创建真实牌局，智能牌友自动补位，服务端统一判定。</span></div>
+          <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="${firstGame?'开始首局':'快速人机'}，创建斗地主牌局">${firstGame?'开始首局':'快速人机'} <b>→</b></button><small>游客免注册 · 智能牌友补位 · 可断线恢复</small><span class="sr-only">点击后创建真实牌局，服务端统一判定。</span></div>
         </section>
         <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--mahjong ${ddzActive?'':'is-active'}" data-hero-stage="mahjong" aria-labelledby="mahjong-hero-title" aria-hidden="${ddzActive?'true':'false'}" ${ddzActive?'inert':''}>
           <div class="mahjong-preview-table" aria-hidden="true">
@@ -190,20 +231,20 @@ function lobby() {
         <nav class="hero-switcher" aria-label="切换主玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">↔ 滑动</span></nav>
         <p class="sr-only" data-hero-status aria-live="polite">当前展示${ddzActive?'斗地主':'麻将'}</p>
       </section>
-      <nav class="lobby-mode-rail" aria-label="大厅玩法入口"><button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><b>斗地主</b><small>三人牌桌</small></button><button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><b>麻将</b><small>四人速战</small></button><button class="mode-entry" data-action="create-room"><b>好友房</b><small>创建斗地主房间</small></button></nav>
+      <nav class="lobby-mode-rail" aria-label="大厅玩法入口"><button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><b>斗地主</b><small>三人牌桌</small></button><button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><b>麻将</b><small>四人速战</small></button><button class="mode-entry" data-action="open-1048"><b>1048 <em>新</em></b><small>数字合并</small></button><button class="mode-entry" data-action="create-room"><b>好友房</b><small>创建斗地主房间</small></button></nav>
       <section class="lobby-shortcuts" aria-label="大厅快捷入口">
         <article class="room-panel"><div><span>房间码</span><h2>加入好友桌</h2></div><div class="room-actions"><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入 6 位房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
         <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
       </section>
-      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">游戏世界</span><h2>换一种节奏</h2></div><button class="text-link" data-action="scroll-games">全部玩法</button></div>
-        <div class="world-strip">
+      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>5 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 4 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 5 款玩法</p>
+        <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
           <article class="game-world world-ddz"><div><span>服务端三人桌</span><h3>斗地主</h3><p>争分、出牌、结算，完成一局会写入战绩。</p><button class="btn primary" data-action="quick">快速开局</button></div><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div></article>
+          <article class="game-world world-1048"><span class="world-badge">${saved1048?'进度已保存':'新上线'}</span><div><span>数字合并 · 单机益智</span><h3>1048</h3><p>普通数字逐级翻倍，最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action}</button></div><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div></article>
           <article class="game-world world-three"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><div><span>三张定胜负</span><h3>炸金花训练</h3><p>免费单机比牌，不计竞技分。</p><button class="btn" data-action="open-three">翻开这一手</button></div></article>
           <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
           <article class="game-world world-reels"><div><span>大厅彩蛋</span><h3>算力转轮</h3><p>免费娱乐 · 无现金下注 · 无提现。</p></div><button class="btn" data-action="open-slots" aria-label="打开算力转轮"><span aria-hidden="true">7 · KAI · ⚡</span> 试转一次</button></article>
         </div>
       </section>
-      <article class="daily-table"><div><span>每日残局</span><h2>残局题库正在准备</h2><p>当前版本尚未接入每日题目与评估。</p></div><button class="btn" disabled>筹备中</button></article>
     </main>${nav('lobby')}</div>`;
 }
 
@@ -212,9 +253,10 @@ function nav(active) { return `<nav class="nav"><button class="btn ${active==='l
 function room() {
   const r = state.room;
   if (!r) return lobby();
+  const syncStopped = state.error.startsWith('房间同步已停止');
   const seats = [0,1,2].map(i => { const m=r.members[i]; return m ? `<div class="seat"><div class="avatar">${esc(m.name.slice(0,1))}</div><b>${esc(m.name)}${m.isYou?'（我）':''}</b><p class="muted">${m.id===r.hostId?'房主':'已加入'}</p></div>` : `<div class="seat empty"><div class="avatar">＋</div><b>等待加入</b><p>分享房号邀请好友</p></div>`; }).join('');
   const exitDialog = state.roomExitConfirm ? `<div class="exit-shade"><section class="exit-dialog" role="dialog" aria-modal="true" aria-labelledby="room-exit-title"><span>离开好友房</span><h2 id="room-exit-title">确定退出当前房间？</h2><p>退出后将不再占用座位；如果你是房主，房主会自动转交给下一位牌友。</p><div><button class="btn" data-action="cancel-room-exit">继续等待</button><button class="btn danger" data-action="leave-room">退出房间</button></div></section></div>` : '';
-  return `<div class="shell">${header('room')}<div class="page-head"><button class="btn ghost" data-action="open-room-exit">← 退出</button><h1>斗地主 · 好友同桌</h1><button class="btn" data-action="refresh-room">立即刷新</button></div><section class="card"><p class="room-sync-status"><i></i>牌友与开局状态自动同步</p><p class="muted" style="text-align:center">邀请房号</p><div class="room-code">${esc(r.code)}</div><div class="actions" style="justify-content:center"><button class="btn gold" data-action="copy-room">复制房号</button></div><div class="seats" style="margin-top:24px">${seats}</div><div class="actions" style="justify-content:center;margin-top:24px">${r.isHost?`<button class="btn primary" data-action="start-room">${r.members.length===3?'三人开始':'智能牌友补位'}</button>`:'<span class="muted">等待房主开始游戏…</span>'}</div></section>${exitDialog}</div>`;
+  return `<div class="shell">${header('room')}${syncFailureNotice()}<div class="page-head"><button class="btn ghost" data-action="open-room-exit">← 退出</button><h1>斗地主 · 好友同桌</h1><button class="btn" data-action="refresh-room">立即刷新</button></div><section class="card"><p class="room-sync-status ${syncStopped?'is-stopped':''}"><i></i>${syncStopped?'同步已停止，等待重新连接':'牌友与开局状态自动同步'}</p><p class="muted" style="text-align:center">邀请房号</p><div class="room-code">${esc(r.code)}</div><div class="actions" style="justify-content:center"><button class="btn gold" data-action="copy-room">复制房号</button></div><div class="seats" style="margin-top:24px">${seats}</div><div class="actions" style="justify-content:center;margin-top:24px">${r.isHost?`<button class="btn primary" data-action="start-room">${r.members.length===3?'三人开始':'智能牌友补位'}</button>`:'<span class="muted">等待房主开始游戏…</span>'}</div></section>${exitDialog}</div>`;
 }
 
 const PIP_PATTERNS = Object.freeze({
@@ -358,7 +400,7 @@ function matchResult(g, viewer) {
       <div class="decision-row"><span>最后行动</span><b>${esc(lastAction)}</b><small>当前视图保留最近 ${(g.recentEvents || []).length} 条行动</small></div>
       <div class="decision-row"><span>公平校验</span><b>${esc(fairnessCode)}</b><small>完整牌序在结束后由服务端公开校验</small></div>
     </section>
-    <div class="result-actions"><button class="btn primary" data-action="rematch">再来一局 <b>→</b></button><button class="btn" data-action="finish">返回大厅</button></div>
+    <div class="result-actions"><button class="btn primary" data-action="rematch">快速人机再来一局 <b>→</b></button><button class="btn" data-action="finish">返回大厅</button></div>
   </main>`;
 }
 
@@ -383,7 +425,7 @@ function game() {
   const turnText = isDealing?'正在依次发牌':g.phase==='finished'?'本局已结束':viewerTurn?(g.phase==='bidding'?'轮到你选择争分':'轮到你出牌'):`${currentPlayer?.name||'牌友'}正在思考`;
   const handHint = handInteractive ? (selectionCount ? `已选 ${selectionCount} 张 · 可重选或确认出牌` : '点击手牌选择 · 再确认出牌') : '等待轮次 · 规则由服务端统一判定';
   const exitDialog=state.exitConfirm?`<div class="exit-shade"><section class="exit-dialog" role="dialog" aria-modal="true" aria-labelledby="exit-title"><span>结束本局</span><h2 id="exit-title">确定不打了吗？</h2><p>退出会按本局负场结算；好友局也会同时结束。你可以留下继续完成这一局。</p><div><button class="btn" data-action="cancel-exit">继续本局</button><button class="btn danger" data-action="confirm-exit">认输并退出</button></div></section></div>`:'';
-  return `<div class="shell table route-game"><header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主</small></div></div></div><div class="round-state"><span>${turnText}</span><b>基础分 ${g.baseStake} · 明示倍数 ${currentMultiplier}</b></div><div class="score-pill compact-score"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></header><section class="landscape-table ddz-table ${isDealing?'is-dealing':''}">${tableFrame('game')}<button class="table-exit table-exit-float" data-action="open-exit" aria-label="退出当前牌局">← 退出</button><div class="table-score"><b>基础分 ${g.baseStake}</b><span>明示倍数 ${currentMultiplier}</span></div>${playerPod(rivals[0]||viewer,'opponent-left')}${playerPod(rivals[1]||viewer,'opponent-right')}${playerPod(viewer,'viewer-pod')}${g.bottomCards?.length?`<div class="bottom-reveal"><small>增补牌</small>${g.bottomCards.map(c=>poker(c,false)).join('')}</div>`:''}<div class="play-zone"><div class="play-cards">${lead}</div>${actionTrail(g)}</div><div class="center-controls" ${isDealing?'aria-hidden="true"':''}>${turnFeedback(g,viewerTurn)}<div class="game-actions">${actions}</div></div><footer class="hand-dock" ${isDealing?'aria-hidden="true"':''}><div class="hand" style="--hand-count:${g.hand.length}">${g.hand.map((c,index,hand)=>poker(c,handInteractive,false,{index,total:hand.length})).join('')}</div><p>${handHint}</p></footer>${isDealing?dealSequence(g):''}</section>${exitDialog}</div>`;
+  return `<div class="shell table route-game"><header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主</small></div></div></div><div class="round-state"><span>${turnText}</span><b>基础分 ${g.baseStake} · 明示倍数 ${currentMultiplier}</b></div><div class="score-pill compact-score"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></header>${syncFailureNotice()}<section class="landscape-table ddz-table ${isDealing?'is-dealing':''}">${tableFrame('game')}<button class="table-exit table-exit-float" data-action="open-exit" aria-label="退出当前牌局">← 退出</button><div class="table-score"><b>基础分 ${g.baseStake}</b><span>明示倍数 ${currentMultiplier}</span></div>${playerPod(rivals[0]||viewer,'opponent-left')}${playerPod(rivals[1]||viewer,'opponent-right')}${playerPod(viewer,'viewer-pod')}${g.bottomCards?.length?`<div class="bottom-reveal"><small>增补牌</small>${g.bottomCards.map(c=>poker(c,false)).join('')}</div>`:''}<div class="play-zone"><div class="play-cards">${lead}</div>${actionTrail(g)}</div><div class="center-controls" ${isDealing?'aria-hidden="true"':''}>${turnFeedback(g,viewerTurn)}<div class="game-actions">${actions}</div></div><footer class="hand-dock" ${isDealing?'aria-hidden="true"':''}><div class="hand" style="--hand-count:${g.hand.length}">${g.hand.map((c,index,hand)=>poker(c,handInteractive,false,{index,total:hand.length})).join('')}</div><p>${handHint}</p></footer>${isDealing?dealSequence(g):''}</section>${exitDialog}</div>`;
 }
 
 function casualHeader(title, mode, status) {
@@ -530,6 +572,37 @@ function mahjongGame() {
   </section>${mahjongConfirmDialog()}<p class="casual-disclaimer">四人东一局基础速战：136 张牌、三位智能牌友、四家牌河，支持常规和牌、七对与国士无双的自摸/荣和。当前为基础规则，吃碰杠、立直、宝牌与完整点数结算将在后续版本加入。</p></div>`;
 }
 
+function merge1048Tile(value, index) {
+  const label = value ? `数字 ${value}` : '空格';
+  return `<div class="merge-1048-tile value-${value || 0}" role="gridcell" aria-label="第 ${index + 1} 格，${label}">${value ? `<b>${value}</b>` : ''}</div>`;
+}
+
+function merge1048Result(game) {
+  if (game.status === 'won') {
+    return `<section class="merge-1048-result is-win" data-1048-result role="dialog" aria-labelledby="merge-1048-result-title" tabindex="-1"><span>目标达成</span><h2 id="merge-1048-result-title">合成 1048</h2><p>你用了 ${game.moves} 步，当前得分 ${money(game.score)}。</p><div><button class="btn primary" data-action="1048-continue">继续挑战</button><button class="btn" data-action="1048-new">再来一局</button></div></section>`;
+  }
+  if (game.status === 'over') {
+    return `<section class="merge-1048-result is-over" data-1048-result role="dialog" aria-labelledby="merge-1048-result-title" tabindex="-1"><span>本局结束</span><h2 id="merge-1048-result-title">没有可移动的方块</h2><p>最高方块 ${game.bestTile} · 得分 ${money(game.score)}</p><button class="btn primary" data-action="1048-new">重新开局</button></section>`;
+  }
+  return '';
+}
+
+function merge1048Game() {
+  const game = state.casual?.game;
+  if (!game) return lobby();
+  const status = game.status === 'won' ? '已达成 1048' : game.status === 'over' ? '本局结束' : game.lastGained ? `刚刚 +${game.lastGained}` : '合并相同数字';
+  return `<div class="shell casual-shell merge-1048-route">${casualHeader('1048','NUMBER MERGE',`目标 ${MERGE_1048_TARGET}`)}<main class="merge-1048-stage">
+    <section class="merge-1048-copy"><div><span>免费单机益智 · 自动保存</span><h1>把数字推向 <b>1048</b></h1><p>滑动棋盘或使用方向键。普通方块逐级翻倍；KAI 特殊终局规则会让最后两枚 512 融合成 1048。</p></div><button class="btn" data-action="1048-new">重新开局</button></section>
+    <section class="merge-1048-play"><div class="merge-1048-metrics" aria-label="本局数据"><div><small>得分</small><strong>${money(game.score)}</strong></div><div><small>最高方块</small><strong>${game.bestTile}</strong></div><div><small>移动</small><strong>${game.moves}</strong></div></div>
+      <div class="merge-1048-status" role="status" aria-live="polite"><i></i><b>${esc(status)}</b><span>512 + 512 = 1048</span></div>
+      <div class="merge-1048-board" data-1048-board role="grid" aria-label="1048 数字棋盘，使用方向键或滑动移动" aria-rowcount="4" aria-colcount="4" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D" aria-disabled="${game.status === 'playing' ? 'false' : 'true'}" tabindex="${game.status === 'playing' ? '0' : '-1'}">${game.board.map(merge1048Tile).join('')}</div>
+      <div class="merge-1048-controls" aria-label="移动方向"><span></span><button data-action="1048-move" data-merge-direction="up" aria-label="向上移动" ${game.status === 'playing' ? '' : 'disabled'}>↑</button><span></span><button data-action="1048-move" data-merge-direction="left" aria-label="向左移动" ${game.status === 'playing' ? '' : 'disabled'}>←</button><button data-action="1048-move" data-merge-direction="down" aria-label="向下移动" ${game.status === 'playing' ? '' : 'disabled'}>↓</button><button data-action="1048-move" data-merge-direction="right" aria-label="向右移动" ${game.status === 'playing' ? '' : 'disabled'}>→</button></div>
+      <p class="merge-1048-hint">键盘：方向键 / WASD　·　触屏：在棋盘上滑动</p>
+      ${merge1048Result(game)}
+    </section>
+  </main><p class="casual-disclaimer">本局进度自动保存在当前浏览器。1048 是免费本地益智训练，不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
 function slotsGame() {
   const casual = state.casual;
   if (!casual) return lobby();
@@ -591,16 +664,23 @@ function history() {
   }).join('') : `<div class="empty-state"><b>还没有完成的牌局</b><p>你的段位、趋势和最近对局会在首局结算后出现在这里。</p><button class="btn primary" data-action="quick">开始第一局</button></div>`;
   const statusNotice=state.historyStatus==='error' ? `<div class="history-inline-error" role="alert"><span>显示上次成功读取的记录</span><b>${esc(state.historyError || '最新战绩同步失败')}</b><button class="btn" data-action="retry-history">重试</button></div>` : '';
   return `<div class="shell page-shell season-page">${header()}${statusNotice}
-    <section class="season-hero"><div class="season-rank"><span>我的赛季</span><h1>${tierName(profile)}</h1><p>当前记录周期 · 全部已保存对局</p></div><div class="score-overview"><small>竞技分</small><strong>${money(competitiveScore(profile))}</strong></div></section>
-    <section class="season-metrics" aria-label="赛季战绩摘要"><div><strong>${totalGames}</strong><span>完成对局</span></div><div><strong>${totalGames?winRatePercent(profile):0}%</strong><span>总胜率</span></div><div><strong>${totalWins}</strong><span>累计胜局</span></div><div><strong>${currentWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局当前连胜</span></div><div><strong>${bestWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局最佳连胜</span></div></section>
+    <section class="season-hero"><div class="season-rank"><span>我的战绩</span><h1>${tierName(profile)}</h1><p>当前账户 · 全部已保存对局</p></div><div class="score-overview"><small>竞技分</small><strong>${money(competitiveScore(profile))}</strong></div></section>
+    <section class="season-metrics" aria-label="战绩摘要"><div><strong>${totalGames}</strong><span>完成对局</span></div><div><strong>${totalGames?winRatePercent(profile):0}%</strong><span>总胜率</span></div><div><strong>${totalWins}</strong><span>累计胜局</span></div><div><strong>${currentWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局当前连胜</span></div><div><strong>${bestWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局最佳连胜</span></div></section>
     <section class="trend-strip"><div class="history-summary"><div><span>近期走势</span><h2>最近 ${trend.length} 局</h2></div><strong class="${recentDelta>=0?'positive':'negative'}">${recentDelta>=0?'+':''}${money(recentDelta)}<small> 分</small></strong></div><div class="trend-bars" aria-label="最近对局竞技分变化">${trendBars}</div></section>
     <section class="history-list"><div class="section-head"><div><span class="section-kicker">最近牌局</span><h2>${matches.length?'逐局记录':'等待第一场记录'}</h2></div><p>最多展示服务端返回的最近 20 局</p></div>${recentMatches}</section>
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统自动发牌</h3><p class="muted">斗地主开局向三位玩家各发 17 张并预留 3 张增补牌；炸金花每轮独立发三张；麻将使用 136 张基础牌墙。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；炸金花、麻将和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与数字生成</h3><p class="muted">斗地主开局向三位玩家各发 17 张并预留 3 张增补牌；炸金花每轮独立发三张；麻将使用 136 张基础牌墙；1048 每次有效移动后生成一个新数字。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；炸金花、麻将、1048 和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
 
-function render() { app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby(); }
+function render() {
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='1048'?merge1048Game():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.setAttribute('aria-busy', String(state.busy));
+  if (state.busy) {
+    app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
+    app.insertAdjacentHTML('beforeend', '<div class="global-busy" role="status" aria-live="polite"><i aria-hidden="true"></i><span>正在处理，请稍候…</span></div>');
+  }
+}
 
 function stopMahjongBotSequence() {
   if (mahjongBotTimer) clearTimeout(mahjongBotTimer);
@@ -712,6 +792,29 @@ function openMahjong() {
   localStorage.setItem(HERO_GAME_KEY, 'mahjong');
   state.casual = { kind: 'mahjong', game, selectedTileId: null, confirmAction: null };
   state.view = 'mahjong';
+}
+function open1048() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const game = loadSaved1048Game() || new1048Game();
+  state.casual = { kind: '1048', game };
+  save1048Game(game);
+  state.view = '1048';
+}
+function focus1048Interaction() {
+  const target = document.querySelector('[data-1048-result]') || document.querySelector('[data-1048-board]');
+  target?.focus({ preventScroll: true });
+}
+function perform1048Move(direction) {
+  const game = state.casual?.game;
+  if (state.view !== '1048' || !game || game.status !== 'playing') return;
+  const next = move1048(game, direction);
+  state.casual.game = next;
+  save1048Game(next);
+  render();
+  focus1048Interaction();
 }
 function openSlots() {
   stopGameSync();
@@ -850,16 +953,40 @@ async function startQuickGame(){
   }
   enterGame(nextGame,{animateDeal:nextGame.id!==activeGameId});
 }
-async function act(fn){ if(state.busy)return; state.busy=true; try{await fn(); state.error='';}catch(e){toast(e.message);}finally{state.busy=false;render();} }
+async function act(fn){ if(state.busy)return; state.busy=true;render();try{await fn(); state.error='';}catch(e){toast(e.message);}finally{state.busy=false;render();} }
+
+function scrollWorldCarousel(direction) {
+  const strip=document.querySelector('[data-world-strip]');
+  const card=strip?.querySelector('.game-world');
+  if(!strip||!card)return;
+  const gap=Number.parseFloat(globalThis.getComputedStyle?.(strip).columnGap||'0')||16;
+  const step=card.getBoundingClientRect().width+gap;
+  const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  strip.scrollBy({left:direction*step,behavior:reduceMotion?'auto':'smooth'});
+}
 
 app.addEventListener('click', e => {
   const el=e.target.closest('button'); if(!el)return;
-  if(el.dataset.card){ const id=el.dataset.card; state.selected.has(id)?state.selected.delete(id):state.selected.add(id); render(); return; }
+  if(el.dataset.card){
+    const id=el.dataset.card;
+    const previousScroll=el.closest('.hand')?.scrollLeft || 0;
+    state.selected.has(id)?state.selected.delete(id):state.selected.add(id);
+    render();
+    const nextHand=document.querySelector('.hand-dock .hand');
+    if(nextHand) nextHand.scrollLeft=previousScroll;
+    [...document.querySelectorAll('[data-card]')].find((control)=>control.dataset.card===id)?.focus({preventScroll:true});
+    return;
+  }
   if(el.dataset.mahjongTile){
     const game=state.casual?.game;
     if(state.view==='mahjong'&&game?.phase==='playing'&&game.currentSeat===0&&game.hands[0].length===14){
+      const previousScroll=el.closest('.match-player-hand')?.scrollLeft || 0;
+      const tileId=el.dataset.mahjongTile;
       state.casual.selectedTileId=state.casual.selectedTileId===el.dataset.mahjongTile?null:el.dataset.mahjongTile;
       render();
+      const nextHand=document.querySelector('.match-player-hand');
+      if(nextHand) nextHand.scrollLeft=previousScroll;
+      [...document.querySelectorAll('[data-mahjong-tile]')].find((control)=>control.dataset.mahjongTile===tileId)?.focus({preventScroll:true});
     }
     return;
   }
@@ -874,11 +1001,13 @@ app.addEventListener('click', e => {
   if(el.dataset.bid!==undefined) act(async()=>{const current=state.game;const body={score:Number(el.dataset.bid),expectedSequence:current.sequence};const r=await api(`/v1/games/${current.id}/bid`,{method:'POST',body:JSON.stringify(body),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);});
   const a=el.dataset.action;
   if(a==='hero-select'){switchHero(el.dataset.heroGame,el.dataset.heroGame==='ddz'?'previous':'next');return;}
+  if(a==='world-prev'){scrollWorldCarousel(-1);return;}
+  if(a==='world-next'){scrollWorldCarousel(1);return;}
   if(a==='clear-selection'){state.selected.clear();render();return;}
   if(a==='quick') act(startQuickGame);
-  if(a==='scroll-games') document.querySelector('#game-selection')?.scrollIntoView({behavior:'smooth',block:'start'});
   if(a==='open-three'){openThreeCard();render();}
   if(a==='open-mahjong'){openMahjong();render();globalThis.scrollTo?.(0,0);}
+  if(a==='open-1048'){open1048();render();globalThis.scrollTo?.(0,0);focus1048Interaction();}
   if(a==='open-slots'){openSlots();render();}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
@@ -912,6 +1041,15 @@ app.addEventListener('click', e => {
     if(!game||!tileId||game.phase!=='playing'||game.currentSeat!==0)return;
     try{state.casual.game=playMahjongDiscard(game,tileId,{advanceBots:false});state.casual.selectedTileId=null;}catch(error){toast(error.message);}render();queueMahjongBotTurn();return;
   }
+  if(a==='1048-move'){perform1048Move(el.dataset.mergeDirection);return;}
+  if(a==='1048-new'){const game=new1048Game();state.casual={kind:'1048',game};save1048Game(game);state.view='1048';render();focus1048Interaction();return;}
+  if(a==='1048-continue'){
+    const game=state.casual?.game;
+    if(state.view==='1048'&&game?.status==='won'){
+      state.casual.game={...game,status:canMove1048(game.board)?'playing':'over',continued:true};save1048Game(state.casual.game);render();focus1048Interaction();
+    }
+    return;
+  }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     const casual=state.casual;
     casual.spinning=true;casual.last=null;render();
@@ -932,6 +1070,10 @@ app.addEventListener('click', e => {
   if(a==='open-room-exit'){state.roomExitConfirm=true;render();return;}
   if(a==='cancel-room-exit'){state.roomExitConfirm=false;render();return;}
   if(a==='refresh-room') act(async()=>{state.room=(await api(`/v1/rooms/${state.room.id}`)).room;if(state.room.gameId)await loadGame(state.room.gameId,{animateDeal:true});else startRoomSync();});
+  if(a==='retry-sync') act(async()=>{
+    if(state.view==='room'&&state.room){state.room=(await api(`/v1/rooms/${state.room.id}`)).room;if(state.room.gameId)await loadGame(state.room.gameId,{animateDeal:true});else startRoomSync();return;}
+    if(state.view==='game'&&state.game){const currentId=state.game.id;const next=(await api(`/v1/games/${currentId}`)).game;if(state.game?.id===currentId){state.game=next;startGameSync();}}
+  });
   if(a==='start-room') act(async()=>{const r=await api(`/v1/rooms/${state.room.id}/start`,{method:'POST',body:'{}'});state.room=r.room;enterGame(r.game,{animateDeal:true});});
   if(a==='leave-room') act(async()=>{const roomId=state.room.id;stopRoomSync();try{await api(`/v1/rooms/${roomId}/leave`,{method:'POST',body:'{}'});}catch(error){startRoomSync();throw error;}state.room=null;state.roomExitConfirm=false;state.view='lobby';});
   if(a==='pass') act(async()=>{const current=state.game;const r=await api(`/v1/games/${current.id}/pass`,{method:'POST',body:JSON.stringify({expectedSequence:current.sequence}),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);state.selected.clear();});
@@ -953,6 +1095,12 @@ app.addEventListener('click', e => {
 });
 
 app.addEventListener('pointerdown', (event) => {
+  const mergeBoard = event.target.closest?.('[data-1048-board]');
+  if (mergeBoard && state.view === '1048') {
+    merge1048Pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    mergeBoard.setPointerCapture?.(event.pointerId);
+    return;
+  }
   const carousel = event.target.closest?.('[data-hero-carousel]');
   if (!carousel || event.target.closest?.('button, input, a')) return;
   heroPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -960,6 +1108,15 @@ app.addEventListener('pointerdown', (event) => {
 });
 
 app.addEventListener('pointerup', (event) => {
+  if (merge1048Pointer && merge1048Pointer.id === event.pointerId) {
+    const deltaX = event.clientX - merge1048Pointer.x;
+    const deltaY = event.clientY - merge1048Pointer.y;
+    merge1048Pointer = null;
+    const horizontal = Math.abs(deltaX) >= Math.abs(deltaY) * 1.2;
+    const distance = horizontal ? Math.abs(deltaX) : Math.abs(deltaY);
+    if (distance >= 28) perform1048Move(horizontal ? (deltaX < 0 ? 'left' : 'right') : (deltaY < 0 ? 'up' : 'down'));
+    return;
+  }
   if (!heroPointer || heroPointer.id !== event.pointerId) return;
   const deltaX = event.clientX - heroPointer.x;
   const deltaY = event.clientY - heroPointer.y;
@@ -969,9 +1126,23 @@ app.addEventListener('pointerup', (event) => {
   switchHero(nextGame, deltaX < 0 ? 'next' : 'previous');
 });
 
-app.addEventListener('pointercancel', () => { heroPointer = null; });
+app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; });
 
 app.addEventListener('keydown', (event) => {
+  if (state.view === '1048' && event.target.closest?.('[data-1048-board]')) {
+    const direction = ({ ArrowLeft:'left', a:'left', A:'left', ArrowRight:'right', d:'right', D:'right', ArrowUp:'up', w:'up', W:'up', ArrowDown:'down', s:'down', S:'down' })[event.key];
+    if (direction) {
+      event.preventDefault();
+      perform1048Move(direction);
+      return;
+    }
+  }
+  const worldStrip = event.target.closest?.('[data-world-strip]');
+  if (worldStrip && event.target === worldStrip && ['ArrowLeft','ArrowRight'].includes(event.key)) {
+    event.preventDefault();
+    scrollWorldCarousel(event.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
   const carousel = event.target.closest?.('[data-hero-carousel]');
   if (!carousel || event.target !== carousel || !['ArrowLeft','ArrowRight'].includes(event.key)) return;
   event.preventDefault();

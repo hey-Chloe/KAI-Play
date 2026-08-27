@@ -30,6 +30,13 @@ const comboNames: Record<ComboType, string> = {
 
 function number(value: number) { return new Intl.NumberFormat('zh-CN').format(value); }
 
+function greetingForHour(hour = new Date().getHours()) {
+  if (hour < 6) return '夜深了';
+  if (hour < 12) return '早上好';
+  if (hour < 18) return '下午好';
+  return '晚上好';
+}
+
 function productCopy(value: string) {
   return value
     .replace(/新玩家欢迎赠豆/g, '新玩家初始竞技分')
@@ -134,45 +141,20 @@ function Lobby({ profile, busy, onQuick, onRelief, onCreateRoom, onJoinRoom }: {
   onCreateRoom: () => void; onJoinRoom: (code: string) => void;
 }) {
   const [roomCode, setRoomCode] = useState('');
-  const games: ReadonlyArray<{ name: string; copy: string; icon: keyof typeof Ionicons.glyphMap; available: boolean }> = [
-    { name: '三人争先', copy: '原创三人牌局', icon: 'layers-outline', available: true },
-    { name: 'KAI 象棋', copy: '棋局与 AI 复盘', icon: 'grid-outline', available: false },
-    { name: '三张竞技', copy: '积分回合竞技', icon: 'copy-outline', available: false },
-    { name: 'AI 挑战场', copy: '残局与棋力闯关', icon: 'sparkles-outline', available: false },
-  ];
   return <ScrollView contentContainerStyle={styles.lobby} showsVerticalScrollIndicator={false}>
-    <View style={styles.greeting}><Text style={styles.eyebrow}>KAI PLAY · 晚上好，{profile.name}</Text><Text style={styles.heroTitle}>算力驱动，随时开局。</Text><Text style={styles.heroCopy}>游戏免费，胜负只影响不可交易的竞技分。</Text></View>
+    <View style={styles.greeting}><Text style={styles.eyebrow}>KAI PLAY · {greetingForHour()}，{profile.name}</Text><Text style={styles.heroTitle}>{profile.games === 0 ? '开始你的第一局。' : '随时回来，再开一局。'}</Text><Text style={styles.heroCopy}>免费开局 · 服务端判定 · 可断线恢复</Text></View>
     <LinearGradient colors={['#174F40', '#092A23']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
       <View style={styles.heroGlow} />
       <View style={styles.tableStamp}><Text style={styles.tableStampTop}>原 创</Text><Text style={styles.tableStampMain}>争</Text><Text style={styles.tableStampBottom}>三人场</Text></View>
       <View style={styles.heroBody}>
         <Pill icon="shield-checkmark" tone="lime">公平洗牌 · 服务端判定</Pill>
-        <Text style={styles.modeTitle}>三人争先</Text>
+        <Text style={styles.modeTitle}>斗地主 · 三人争先</Text>
         <Text style={styles.modeMeta}>竞技分保护性底分 · 最高 64 倍 · 不涉及现实资产</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="快速开始三人争先" accessibilityHint="立即匹配一局三人牌局" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={onQuick} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, busy && { opacity: 0.7 }]}>
-          {busy ? <ActivityIndicator color={C.deep} /> : <><Text style={styles.primaryText}>快速开始</Text><Ionicons name="arrow-forward" size={20} color={C.deep} /></>}
+          {busy ? <ActivityIndicator color={C.deep} /> : <><Text style={styles.primaryText}>{profile.games === 0 ? '开始首局' : '快速人机'}</Text><Ionicons name="arrow-forward" size={20} color={C.deep} /></>}
         </Pressable>
       </View>
     </LinearGradient>
-
-    <View style={styles.gameSection}>
-      <View style={styles.sectionHeadingRow}><Text style={styles.sectionHeading}>游戏大厅</Text><Text style={styles.sectionHint}>更多玩法持续加入</Text></View>
-      <View style={styles.gameGrid}>{games.map((item) => <Pressable
-        key={item.name}
-        accessibilityRole="button"
-        accessibilityLabel={`${item.name}，${item.available ? '当前可玩' : '即将开放'}`}
-        accessibilityHint={item.available ? '快速开始游戏' : '该游戏仍在开发中'}
-        accessibilityState={{ disabled: !item.available || busy, busy: item.available && busy }}
-        disabled={!item.available || busy}
-        onPress={item.available ? onQuick : undefined}
-        style={({ pressed }) => [styles.gameCard, item.available && styles.gameCardAvailable, pressed && styles.pressed]}
-      >
-        <View style={[styles.gameIcon, item.available && styles.gameIconAvailable]}><Ionicons name={item.icon} size={21} color={item.available ? C.deep : C.muted} /></View>
-        <Text style={styles.gameName}>{item.name}</Text>
-        <Text style={styles.gameCopy}>{item.copy}</Text>
-        <Text style={[styles.gameStatus, item.available && styles.gameStatusAvailable]}>{item.available ? '当前可玩' : '即将开放'}</Text>
-      </Pressable>)}</View>
-    </View>
 
     <View style={styles.statRow}>
       <View style={styles.stat}><Text style={styles.statValue}>{profile.games}</Text><Text style={styles.statLabel}>已玩牌局</Text></View>
@@ -201,12 +183,6 @@ function Lobby({ profile, busy, onQuick, onRelief, onCreateRoom, onJoinRoom }: {
       <View style={{ flex: 1 }}><Text style={styles.policyTitle}>竞技分只记录游戏表现</Text><Text style={styles.policyCopy}>不可购买 · 不可提现 · 不可转让 · 不可兑换</Text></View>
     </View>
 
-    <View accessible accessibilityLabel="卡时服务规划中，包括 AI 复盘、高级 AI 对手和云端托管；暂未接入，当前不会扣除卡时" style={styles.computeCard}>
-      <View style={styles.computeTop}><View style={styles.computeIcon}><Ionicons name="flash-outline" size={22} color={C.gold} /></View><View style={{ flex: 1 }}><Text style={styles.computeTitle}>卡时服务</Text><Text style={styles.computeBadge}>规划中 · 尚未接入</Text></View></View>
-      <Text style={styles.computeCopy}>未来可使用 KAI 卡时购买真实算力服务，不参与牌局输赢。</Text>
-      <View style={styles.computeTags}>{['AI 复盘', '高级 AI', '云端托管'].map((label) => <View key={label} style={styles.computeTag}><Text style={styles.computeTagText}>{label}</Text></View>)}</View>
-      <Text style={styles.computeNotice}>当前不会产生任何卡时消耗</Text>
-    </View>
   </ScrollView>;
 }
 
@@ -249,9 +225,10 @@ function Opponent({ player, active, turnRemaining }: { player: PlayerView; activ
   </View>;
 }
 
-function Table({ game, profile, busy, onAction, onExit, onReport }: {
+function Table({ game, profile, busy, onAction, onExit, onReplay, onHistory, onReport }: {
   game: GameView; profile: Profile; busy: boolean;
   onAction: (kind: 'bid' | 'play' | 'pass', input?: object) => void; onExit: () => void;
+  onReplay: () => void; onHistory: () => void;
   onReport: (reason: 'collusion' | 'cheating' | 'harassment' | 'other') => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -344,7 +321,13 @@ function Table({ game, profile, busy, onAction, onExit, onReport }: {
         <Text style={[styles.resultDelta, delta < 0 && { color: C.red }]}>{delta >= 0 ? '+' : ''}{number(delta)} <Text style={styles.resultUnit}>竞技分</Text></Text>
         <Text style={styles.resultMeta}>{game.settlement?.multiplier} 倍结算 · 竞技记录已保存</Text>
         <Text style={styles.fairnessCode}>公平校验 {game.fairness.commitment.slice(0, 12)}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="回到大厅" onPress={onExit} style={styles.primaryButton}><Text style={styles.primaryText}>回到大厅</Text><Ionicons name="home-outline" size={20} color={C.deep} /></Pressable>
+        <View style={styles.resultActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel="开始一局快速人机" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={onReplay} style={styles.primaryButton}><Text style={styles.primaryText}>快速人机再来一局</Text><Ionicons name="refresh" size={20} color={C.deep} /></Pressable>
+          <View style={styles.resultSecondaryRow}>
+            <Pressable accessibilityRole="button" accessibilityLabel="查看战绩" onPress={onHistory} style={styles.resultSecondaryButton}><Ionicons name="stats-chart-outline" size={17} color={C.ink} /><Text style={styles.resultSecondaryText}>查看战绩</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="回到大厅" onPress={onExit} style={styles.resultSecondaryButton}><Ionicons name="home-outline" size={17} color={C.ink} /><Text style={styles.resultSecondaryText}>回到大厅</Text></Pressable>
+          </View>
+        </View>
       </View>
     </View> : null}
   </View>;
@@ -511,6 +494,10 @@ export default function App() {
       { text: '认输并退出', style: 'destructive', onPress: () => { void exitGame(); } },
     ]);
   }
+  function showResultHistory() {
+    replaceGame(null);
+    setTab('history');
+  }
   async function shareRoomCode() {
     if (!room) return;
     try {
@@ -552,7 +539,7 @@ export default function App() {
   return <SafeAreaProvider><LinearGradient colors={[C.deep, '#08251E']} style={styles.root}><StatusBar style="light" />
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       {profile ? <ConnectionBanner status={connectionStatus} retrying={retrying} onRetry={retryConnection} /> : null}
-      {!profile ? <View style={styles.loading}><View style={styles.brandMarkLarge}><Text style={styles.brandMarkLargeText}>K</Text></View><Text style={styles.loadingBrand}>KAI PLAY</Text><Text style={styles.loadingSub}>算力局</Text>{bootError ? <><Text accessibilityRole="alert" style={styles.bootError}>{bootError}</Text><Pressable accessibilityRole="button" accessibilityLabel="重新连接牌局服务" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={initialize} style={styles.retryButton}><Text style={styles.retryText}>重新连接</Text></Pressable></> : <ActivityIndicator accessibilityLabel="正在连接牌局服务" color={C.lime} style={{ marginTop: 24 }} />}</View> : game ? <Table game={game} profile={profile} busy={busy} onAction={act} onReport={report} onExit={confirmExitGame} /> : room ? <RoomScreen room={room} busy={busy} onStart={beginRoom} onLeave={exitRoom} onShare={shareRoomCode} /> : <>
+      {!profile ? <View style={styles.loading}><View style={styles.brandMarkLarge}><Text style={styles.brandMarkLargeText}>K</Text></View><Text style={styles.loadingBrand}>KAI PLAY</Text><Text style={styles.loadingSub}>算力局</Text>{bootError ? <><Text accessibilityRole="alert" style={styles.bootError}>{bootError}</Text><Pressable accessibilityRole="button" accessibilityLabel="重新连接牌局服务" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={initialize} style={styles.retryButton}><Text style={styles.retryText}>重新连接</Text></Pressable></> : <ActivityIndicator accessibilityLabel="正在连接牌局服务" color={C.lime} style={{ marginTop: 24 }} />}</View> : game ? <Table game={game} profile={profile} busy={busy} onAction={act} onReport={report} onExit={confirmExitGame} onReplay={start} onHistory={showResultHistory} /> : room ? <RoomScreen room={room} busy={busy} onStart={beginRoom} onLeave={exitRoom} onShare={shareRoomCode} /> : <>
         <AppHeader profile={profile} onHome={() => setTab('lobby')} />
         <View style={{ flex: 1 }} accessibilityLabel={title}>{tab === 'lobby' ? <Lobby profile={profile} busy={busy} onQuick={start} onRelief={relief} onCreateRoom={makeRoom} onJoinRoom={enterRoom} /> : tab === 'history' ? <HistoryScreen data={historyData} loading={busy} /> : <RulesScreen />}</View>
         <BottomNav tab={tab} onChange={setTab} />
@@ -590,7 +577,7 @@ const styles = StyleSheet.create({
   bidPanel: { padding: 15 }, actionPanel: { padding: 15 }, actionHint: { color: C.muted, fontSize: 10, lineHeight: 15, textAlign: 'center', marginBottom: 9 }, actionRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 }, secondaryButton: { minWidth: 76, minHeight: 44, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' }, secondaryText: { color: C.ink, fontSize: 13, fontWeight: '800' }, bidButton: { minWidth: 68, minHeight: 44, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' }, bidText: { color: C.deep, fontSize: 13, fontWeight: '900' }, playButton: { minWidth: 110, minHeight: 44, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 14, backgroundColor: C.lime, alignItems: 'center', justifyContent: 'center' }, playText: { color: C.deep, fontSize: 14, fontWeight: '900' }, disabled: { opacity: 0.3 },
   myInfo: { paddingHorizontal: 16, paddingTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, myName: { color: C.ink, fontSize: 12, fontWeight: '800' }, myBalance: { color: C.gold, fontSize: 9, marginTop: 3 }, handCount: { color: C.muted, fontSize: 10 }, hand: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 12, minWidth: '100%', justifyContent: 'center', alignItems: 'flex-end' },
   card: { width: 49, height: 74, borderRadius: 8, backgroundColor: C.white, borderWidth: 1, borderColor: '#D9D2C5', padding: 5, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 2 }, elevation: 3 }, cardSelected: { transform: [{ translateY: -14 }], borderColor: C.lime, borderWidth: 2, backgroundColor: '#F7FFE9' }, cardSmall: { width: 31, height: 45, borderRadius: 6, padding: 3 }, cardRank: { color: C.black, fontSize: 16, lineHeight: 18, fontWeight: '900' }, cardRankSmall: { fontSize: 9, lineHeight: 11 }, cardSuit: { color: C.black, fontSize: 18, lineHeight: 20 }, cardSuitSmall: { fontSize: 10, lineHeight: 11 }, cardRed: { color: '#D84942' },
-  resultShade: { position: 'absolute', inset: 0, zIndex: 20, backgroundColor: 'rgba(2,12,10,0.78)', alignItems: 'center', justifyContent: 'center', padding: 28 }, resultCard: { width: '100%', borderRadius: 28, backgroundColor: '#12342B', borderWidth: 1, borderColor: 'rgba(183,243,93,0.3)', padding: 26, alignItems: 'center' }, resultEyebrow: { color: C.gold, fontSize: 11, fontWeight: '900', letterSpacing: 2 }, resultTitle: { color: C.ink, fontSize: 34, fontWeight: '900', marginTop: 10 }, resultDelta: { color: C.lime, fontSize: 30, fontWeight: '900', marginVertical: 12 }, resultUnit: { fontSize: 12 }, resultMeta: { color: C.muted, fontSize: 11, marginBottom: 5 }, fairnessCode: { color: '#74867D', fontSize: 9, fontFamily: 'monospace', marginBottom: 22 },
+  resultShade: { position: 'absolute', inset: 0, zIndex: 20, backgroundColor: 'rgba(2,12,10,0.78)', alignItems: 'center', justifyContent: 'center', padding: 28 }, resultCard: { width: '100%', borderRadius: 28, backgroundColor: '#12342B', borderWidth: 1, borderColor: 'rgba(183,243,93,0.3)', padding: 26, alignItems: 'center' }, resultEyebrow: { color: C.gold, fontSize: 11, fontWeight: '900', letterSpacing: 2 }, resultTitle: { color: C.ink, fontSize: 34, fontWeight: '900', marginTop: 10 }, resultDelta: { color: C.lime, fontSize: 30, fontWeight: '900', marginVertical: 12 }, resultUnit: { fontSize: 12 }, resultMeta: { color: C.muted, fontSize: 11, marginBottom: 5 }, fairnessCode: { color: '#9AA9A1', fontSize: 9, fontFamily: 'monospace', marginBottom: 22 }, resultActions: { width: '100%', gap: 10 }, resultSecondaryRow: { flexDirection: 'row', gap: 10 }, resultSecondaryButton: { flex: 1, minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 14, borderWidth: 1, borderColor: C.line, backgroundColor: 'rgba(255,255,255,0.055)' }, resultSecondaryText: { color: C.ink, fontSize: 11, fontWeight: '800' },
   contentPage: { padding: 20, paddingBottom: 36 }, pageEyebrow: { color: C.lime, fontSize: 10, fontWeight: '900', letterSpacing: 3, marginTop: 10 }, pageTitle: { color: C.ink, fontSize: 30, fontWeight: '900', marginTop: 7, marginBottom: 24 }, pageIntro: { color: C.muted, fontSize: 14, lineHeight: 22, marginTop: -15, marginBottom: 24 }, sectionTitle: { color: C.ink, fontSize: 14, fontWeight: '900', marginBottom: 12 }, empty: { minHeight: 120, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', borderColor: C.line, alignItems: 'center', justifyContent: 'center', gap: 9 }, emptyText: { color: C.muted, fontSize: 12 },
   historyRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, gap: 12 }, historyIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, historyWin: { backgroundColor: 'rgba(183,243,93,0.09)' }, historyLose: { backgroundColor: 'rgba(230,99,90,0.09)' }, historyTitle: { color: C.ink, fontSize: 13, fontWeight: '800' }, historyDate: { color: C.muted, fontSize: 9, marginTop: 4 }, historyDelta: { color: C.lime, fontWeight: '900', fontSize: 15 }, ledgerRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line }, ledgerMemo: { color: C.ink, fontSize: 12, fontWeight: '700' }, ledgerAmount: { color: C.lime, fontSize: 13, fontWeight: '900' },
   ruleRow: { flexDirection: 'row', gap: 16, paddingVertical: 18, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }, ruleIndex: { color: C.lime, fontSize: 11, fontWeight: '900', letterSpacing: 1 }, ruleTitle: { color: C.ink, fontSize: 15, fontWeight: '900' }, ruleCopy: { color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 7 }, fairCard: { marginTop: 22, borderRadius: 22, padding: 20, borderWidth: 1, borderColor: 'rgba(183,243,93,0.2)', backgroundColor: 'rgba(183,243,93,0.06)' }, fairTitle: { color: C.ink, fontSize: 16, fontWeight: '900', marginTop: 12 }, fairCopy: { color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 8 },

@@ -27,6 +27,7 @@ test('every statically rendered button action has a reachable click handler', ()
 test('authoritative game mutations are busy-guarded and carry unique request ids', () => {
   const actSource = sourceBetween('async function act(fn)', "app.addEventListener('click'");
   assert.match(actSource, /if\(state\.busy\)return/);
+  assert.match(actSource, /state\.busy=true;render\(\);try/, 'busy feedback must render before awaiting the network');
   assert.match(actSource, /finally\{state\.busy=false;render\(\);\}/);
 
   for (const [action, next] of [['pass', 'play'], ['play', 'rematch']] as const) {
