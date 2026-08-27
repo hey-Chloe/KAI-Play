@@ -74,15 +74,16 @@ test('the Hero keeps a branded five-card fan at 1.2 to 1.3 times the V3 scale', 
   assert.match(v4Styles, /rotate\(16deg\)/);
 });
 
-test('the Hero actions remain real while unavailable daily puzzles stay disabled', () => {
+test('the Hero actions remain real while unavailable daily puzzles stay out of the lobby', () => {
   for (const action of ['quick', 'open-mahjong', 'create-room', 'join-room']) {
     assert.match(lobbySource, new RegExp(`data-action=["']${action}["']`));
     assert.match(appSource, new RegExp(`a\\s*===\\s*["']${action}["']`));
   }
   assert.match(appSource, /\/v1\/games\/quick/);
   assert.match(appSource, /\/v1\/rooms(?:\/join)?/);
-  assert.match(lobbySource, /每日残局/);
-  assert.match(lobbySource, /<button class="btn" disabled>筹备中<\/button>/);
+  assert.match(lobbySource, /5 款玩法，即刻开局/);
+  assert.match(lobbySource, /1 款竞技 · 4 款免费训练/);
+  assert.doesNotMatch(lobbySource, /每日残局|筹备中/);
   assert.doesNotMatch(lobbySource, /在线牌桌|好友正在玩|\d+\s*人在线|已入桌|正在进行/);
 });
 
