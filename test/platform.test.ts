@@ -185,3 +185,30 @@ test('friend rooms support three humans, host controls, and private hands', asyn
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('a player cannot join a second waiting friend room', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'doujoy-room-guard-'));
+  try {
+    const store = new JsonGameStore(join(directory, 'state.json'));
+    await store.load();
+    const platform = new DouJoyPlatform(store);
+    const first = await platform.guest('已有房间玩家');
+    const second = await platform.guest('另一个房主');
+    const firstRoom = await platform.createRoom(first.profile.id);
+    const secondRoom = await platform.createRoom(second.profile.id);
+
+    const sameRoom = await platform.joinRoom(first.profile.id, firstRoom.code);
+    assert.equal(sameRoom.id, firstRoom.id);
+
+    await assert.rejects(
+      () => platform.joinRoom(first.profile.id, secondRoom.code),
+      (error) => error instanceof PlatformError && error.status === 409 && error.code === 'ROOM_WAITING',
+    );
+
+    const resumed = await platform.resume(first.profile.id);
+    assert.equal(resumed.room?.id, firstRoom.id);
+    assert.equal(platform.room(secondRoom.id, second.profile.id).members.length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, View,
+  ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Text, View,
   TextInput,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -8,7 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { ApiError, bootstrap, claimRelief, createRoom, gameAction, getGame, getRoom, history, joinRoom, leaveRoom, me, quickGame, reportGame, resumeSession, startRoom } from './src/api';
+import { abandonGame, ApiError, bootstrap, claimRelief, createRoom, gameAction, getGame, getRoom, history, joinRoom, leaveRoom, me, quickGame, reportGame, resumeSession, startRoom } from './src/api';
 import type { Card, ComboType, GameView, History, PlayerView, Profile, RoomView } from './src/types';
 import { useRoomSync } from './src/use-room-sync';
 import { useGameSync } from './src/use-game-sync';
@@ -57,7 +57,7 @@ function cardAccessibilityLabel(card: Card) {
 }
 
 function isConnectionIssue(value: unknown) {
-  return !(value instanceof ApiError) || value.status >= 500 || value.code === 'NETWORK_ERROR';
+  return !(value instanceof ApiError) || value.status >= 500 || value.code === 'NETWORK_ERROR' || value.code === 'REQUEST_TIMEOUT';
 }
 
 function PlayingCard({ card, selected = false, small = false, onPress }: {
@@ -269,7 +269,10 @@ function Table({ game, profile, busy, onAction, onExit, onReport }: {
   const myTurn = game.currentSeat === game.viewerSeat && game.phase !== 'finished';
   const current = game.players[game.currentSeat];
   const delta = game.settlement?.deltas[profile.id] ?? 0;
-  const turnDeadline = Date.parse(game.updatedAt) + TURN_TIMEOUT_SECONDS * 1_000;
+  const authoritativeDeadline = Date.parse(game.turn?.deadline ?? '');
+  const turnDeadline = Number.isFinite(authoritativeDeadline)
+    ? authoritativeDeadline
+    : Date.parse(game.updatedAt) + TURN_TIMEOUT_SECONDS * 1_000;
   const turnRemaining = game.phase === 'finished' ? 0 : Math.max(0, Math.ceil((turnDeadline - clock) / 1_000));
   const timerUrgent = turnRemaining <= 10;
 
@@ -395,6 +398,24 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [retrying, setRetrying] = useState(false);
+  const gameRef = useRef<GameView | null>(null);
+  gameRef.current = game;
+
+  function replaceGame(next: GameView | null) {
+    gameRef.current = next;
+    setGame(next);
+  }
+  function acceptGame(next: GameView, nextProfile?: Profile) {
+    const current = gameRef.current;
+    if (!current || current.id !== next.id || next.sequence < current.sequence) return false;
+    replaceGame(next);
+    if (nextProfile) setProfile(nextProfile);
+    return true;
+  }
+  function handleSyncError(value: unknown, terminal: boolean) {
+    if (terminal || isConnectionIssue(value)) setConnectionStatus('offline');
+    if (terminal) showError(value);
+  }
 
   useEffect(() => { initialize(); }, []);
   useEffect(() => {
@@ -404,18 +425,18 @@ export default function App() {
   useEffect(() => { if (!error) return; const timer = setTimeout(() => setError(null), 3200); return () => clearTimeout(timer); }, [error]);
   useRoomSync(room, {
     onRoom: (next) => { setRoom(next); setConnectionStatus('online'); },
-    onGame: (next) => { setGame(next); setRoom(null); setConnectionStatus('online'); },
+    onGame: (next) => { replaceGame(next); setRoom(null); setConnectionStatus('online'); },
     onConnected: () => setConnectionStatus('online'),
-    onError: (value) => { if (isConnectionIssue(value)) setConnectionStatus('offline'); },
+    onError: handleSyncError,
   });
   useGameSync(game, {
     onGame: (next) => {
-      setGame(next);
+      if (!acceptGame(next)) return;
       setConnectionStatus('online');
       if (next.phase === 'finished') void me().then(setProfile).catch(showError);
     },
     onConnected: () => setConnectionStatus('online'),
-    onError: (value) => { if (isConnectionIssue(value)) setConnectionStatus('offline'); },
+    onError: handleSyncError,
   });
 
   function showError(value: unknown) {
@@ -428,7 +449,7 @@ export default function App() {
       const nextProfile = await bootstrap();
       const resumable = await resumeSession();
       setProfile(nextProfile);
-      if (resumable.game) setGame(resumable.game);
+      if (resumable.game) replaceGame(resumable.game);
       else if (resumable.room) setRoom(resumable.room);
       setConnectionStatus('online');
     }
@@ -436,11 +457,12 @@ export default function App() {
     finally { setBusy(false); }
   }
   async function start() {
-    setBusy(true); try { setGame(await quickGame()); setConnectionStatus('online'); await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch (value) { showError(value); } finally { setBusy(false); }
+    setBusy(true); try { replaceGame(await quickGame()); setConnectionStatus('online'); await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch (value) { showError(value); } finally { setBusy(false); }
   }
   async function act(kind: 'bid' | 'play' | 'pass', input?: object) {
-    if (!game) return;
-    setBusy(true); try { const result = await gameAction(game.id, game.sequence, kind, input); setGame(result.game); setProfile(result.profile); setConnectionStatus('online'); await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch (value) { showError(value); await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } finally { setBusy(false); }
+    const current = gameRef.current;
+    if (!current) return;
+    setBusy(true); try { const result = await gameAction(current.id, current.sequence, kind, input); acceptGame(result.game, result.profile); setConnectionStatus('online'); await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch (value) { showError(value); await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } finally { setBusy(false); }
   }
   async function relief() {
     setBusy(true); try { const result = await claimRelief(); setProfile(result.profile); setConnectionStatus('online'); setError(result.claimed ? '今日竞技分补给已到账' : '当前不满足补给条件'); } catch (value) { showError(value); } finally { setBusy(false); }
@@ -448,7 +470,7 @@ export default function App() {
   async function makeRoom() {
     setBusy(true); try {
       const next = await createRoom();
-      if (next.status === 'playing' && next.gameId) setGame(await getGame(next.gameId));
+      if (next.status === 'playing' && next.gameId) replaceGame(await getGame(next.gameId));
       else setRoom(next);
       setConnectionStatus('online');
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -459,7 +481,7 @@ export default function App() {
   }
   async function beginRoom() {
     if (!room) return;
-    setBusy(true); try { const result = await startRoom(room.id); setRoom(null); setGame(result.game); setConnectionStatus('online'); } catch (value) { showError(value); } finally { setBusy(false); }
+    setBusy(true); try { const result = await startRoom(room.id); setRoom(null); replaceGame(result.game); setConnectionStatus('online'); } catch (value) { showError(value); } finally { setBusy(false); }
   }
   async function exitRoom() {
     if (!room) return;
@@ -468,6 +490,26 @@ export default function App() {
   async function report(reason: 'collusion' | 'cheating' | 'harassment' | 'other') {
     if (!game) return;
     setBusy(true); try { const result = await reportGame(game.id, reason); setConnectionStatus('online'); setError(result.report.created ? '举报已提交，我们会保留本局记录' : '这项举报已经提交过'); } catch (value) { showError(value); } finally { setBusy(false); }
+  }
+  async function exitGame() {
+    if (!game) return;
+    if (game.phase === 'finished') { replaceGame(null); setTab('lobby'); return; }
+    setBusy(true);
+    try {
+      const result = await abandonGame(game.id);
+      setProfile(result.profile);
+      replaceGame(null);
+      setTab('lobby');
+      setConnectionStatus('online');
+    } catch (value) { showError(value); }
+    finally { setBusy(false); }
+  }
+  function confirmExitGame() {
+    if (game?.phase === 'finished') { void exitGame(); return; }
+    Alert.alert('结束本局', '退出会按本局负场结算。确定认输并返回大厅吗？', [
+      { text: '继续本局', style: 'cancel' },
+      { text: '认输并退出', style: 'destructive', onPress: () => { void exitGame(); } },
+    ]);
   }
   async function shareRoomCode() {
     if (!room) return;
@@ -488,12 +530,12 @@ export default function App() {
     try {
       if (game) {
         const nextGame = await getGame(game.id);
-        setGame(nextGame);
+        acceptGame(nextGame);
         setProfile(await me());
       } else if (room) {
         const nextRoom = await getRoom(room.id);
         if (nextRoom.status === 'playing' && nextRoom.gameId) {
-          setGame(await getGame(nextRoom.gameId));
+          replaceGame(await getGame(nextRoom.gameId));
           setRoom(null);
         } else setRoom(nextRoom);
       } else {
@@ -510,7 +552,7 @@ export default function App() {
   return <SafeAreaProvider><LinearGradient colors={[C.deep, '#08251E']} style={styles.root}><StatusBar style="light" />
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       {profile ? <ConnectionBanner status={connectionStatus} retrying={retrying} onRetry={retryConnection} /> : null}
-      {!profile ? <View style={styles.loading}><View style={styles.brandMarkLarge}><Text style={styles.brandMarkLargeText}>K</Text></View><Text style={styles.loadingBrand}>KAI PLAY</Text><Text style={styles.loadingSub}>算力局</Text>{bootError ? <><Text accessibilityRole="alert" style={styles.bootError}>{bootError}</Text><Pressable accessibilityRole="button" accessibilityLabel="重新连接牌局服务" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={initialize} style={styles.retryButton}><Text style={styles.retryText}>重新连接</Text></Pressable></> : <ActivityIndicator accessibilityLabel="正在连接牌局服务" color={C.lime} style={{ marginTop: 24 }} />}</View> : game ? <Table game={game} profile={profile} busy={busy} onAction={act} onReport={report} onExit={() => { setGame(null); setTab('lobby'); }} /> : room ? <RoomScreen room={room} busy={busy} onStart={beginRoom} onLeave={exitRoom} onShare={shareRoomCode} /> : <>
+      {!profile ? <View style={styles.loading}><View style={styles.brandMarkLarge}><Text style={styles.brandMarkLargeText}>K</Text></View><Text style={styles.loadingBrand}>KAI PLAY</Text><Text style={styles.loadingSub}>算力局</Text>{bootError ? <><Text accessibilityRole="alert" style={styles.bootError}>{bootError}</Text><Pressable accessibilityRole="button" accessibilityLabel="重新连接牌局服务" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={initialize} style={styles.retryButton}><Text style={styles.retryText}>重新连接</Text></Pressable></> : <ActivityIndicator accessibilityLabel="正在连接牌局服务" color={C.lime} style={{ marginTop: 24 }} />}</View> : game ? <Table game={game} profile={profile} busy={busy} onAction={act} onReport={report} onExit={confirmExitGame} /> : room ? <RoomScreen room={room} busy={busy} onStart={beginRoom} onLeave={exitRoom} onShare={shareRoomCode} /> : <>
         <AppHeader profile={profile} onHome={() => setTab('lobby')} />
         <View style={{ flex: 1 }} accessibilityLabel={title}>{tab === 'lobby' ? <Lobby profile={profile} busy={busy} onQuick={start} onRelief={relief} onCreateRoom={makeRoom} onJoinRoom={enterRoom} /> : tab === 'history' ? <HistoryScreen data={historyData} loading={busy} /> : <RulesScreen />}</View>
         <BottomNav tab={tab} onChange={setTab} />

@@ -5,7 +5,7 @@ export function gameView(state: GameState, viewerId: string) {
   const viewerSeat = state.players.findIndex((player) => player.id === viewerId);
   if (viewerSeat < 0) throw new Error('VIEWER_NOT_IN_GAME');
   const allKnownCards = createDeck();
-  return {
+  const view = {
     id: state.id,
     phase: state.phase,
     players: state.players.map((player, seat) => ({
@@ -39,4 +39,8 @@ export function gameView(state: GameState, viewerId: string) {
     },
     updatedAt: state.updatedAt,
   };
+  // Views cross both the HTTP and idempotency-cache boundaries. Returning a
+  // detached graph prevents callers or later engine mutations from changing
+  // an already-issued authoritative response.
+  return structuredClone(view);
 }

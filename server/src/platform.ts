@@ -3,7 +3,7 @@ import { gameView } from '../../core/view.ts';
 import { GameRuleError } from '../../core/types.ts';
 import { JsonGameStore } from './store.ts';
 import type { RoomRecord } from './store.ts';
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { ChangeBroker } from './change-broker.ts';
 
 export class PlatformError extends Error {
@@ -17,6 +17,28 @@ export class PlatformError extends Error {
   }
 }
 
+function actionFingerprint(input: Readonly<{
+  expectedSequence: number;
+  kind: 'bid' | 'play' | 'pass';
+  score?: number;
+  cardIds?: readonly string[];
+}>) {
+  return createHash('sha256').update(JSON.stringify({
+    expectedSequence: input.expectedSequence,
+    kind: input.kind,
+    score: input.score ?? null,
+    cardIds: input.cardIds ? [...input.cardIds] : null,
+  })).digest('hex');
+}
+
+function cachedAction(value: unknown): { requestFingerprint: string; result: unknown } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.requestFingerprint === 'string' && 'result' in candidate
+    ? { requestFingerprint: candidate.requestFingerprint, result: candidate.result }
+    : null;
+}
+
 export class DouJoyPlatform {
   readonly store: JsonGameStore;
   readonly turnTimeoutMs: number;
@@ -24,6 +46,11 @@ export class DouJoyPlatform {
   readonly botThinkMinMs: number;
   readonly botThinkMaxMs: number;
   private readonly botTurnSchedules = new Map<string, { sequence: number; durationMs: number; deadlineMs: number }>();
+  private actionQueue: Promise<void> = Promise.resolve();
+  private readonly inFlightActions = new Map<string, {
+    requestFingerprint: string;
+    promise: ReturnType<DouJoyPlatform['performAction']>;
+  }>();
 
   constructor(store: JsonGameStore, turnTimeoutMs = 45_000, botThinkMinMs = 1_200, botThinkMaxMs = 2_200, changes = new ChangeBroker()) {
     this.store = store;
@@ -167,6 +194,9 @@ export class DouJoyPlatform {
     if (!/^\d{6}$/.test(code)) throw new PlatformError(400, 'ROOM_CODE_INVALID', '请输入 6 位房间号。');
     const room = this.store.roomByCode(code);
     if (!room) throw new PlatformError(404, 'ROOM_NOT_FOUND', '房间不存在或已经开局。');
+    const otherWaitingRoom = this.store.roomsForUser(userId)
+      .find((candidate) => candidate.status === 'waiting' && candidate.id !== room.id);
+    if (otherWaitingRoom) throw new PlatformError(409, 'ROOM_WAITING', '你正在好友房中，请先返回房间或退出。');
     if (!room.memberIds.includes(userId)) {
       if (room.memberIds.length >= 3) throw new PlatformError(409, 'ROOM_FULL', '房间已经满员。');
       room.memberIds.push(userId);
@@ -300,8 +330,49 @@ export class DouJoyPlatform {
   }>) {
     if (!input.requestId || input.requestId.length > 100) throw new PlatformError(400, 'REQUEST_ID_REQUIRED', '缺少有效的请求编号。');
     const key = `${input.userId}:${input.gameId}:${input.requestId}`;
+    const requestFingerprint = actionFingerprint(input);
+    const pending = this.inFlightActions.get(key);
+    if (pending) {
+      if (pending.requestFingerprint !== requestFingerprint) {
+        throw new PlatformError(409, 'IDEMPOTENCY_CONFLICT', '同一请求编号不能用于不同的牌局操作。');
+      }
+      return structuredClone(await pending.promise);
+    }
     const replay = this.store.actionResult(key);
-    if (replay) return replay;
+    if (replay !== undefined) {
+      const cached = cachedAction(replay);
+      // Schema v1 snapshots may contain the former unwrapped result. Those
+      // remain replayable for compatibility; all new entries enforce payload identity.
+      if (!cached) return replay;
+      if (cached.requestFingerprint !== requestFingerprint) {
+        throw new PlatformError(409, 'IDEMPOTENCY_CONFLICT', '同一请求编号不能用于不同的牌局操作。');
+      }
+      return cached.result;
+    }
+    // The JSON store writes one complete snapshot at a time. Queueing unique
+    // actions keeps their in-memory mutations in the same order as their
+    // durable snapshots, while same-key retries share the in-flight promise.
+    const operation = this.actionQueue
+      .catch(() => undefined)
+      .then(() => this.performAction(input, key, requestFingerprint));
+    this.actionQueue = operation.then(() => undefined, () => undefined);
+    this.inFlightActions.set(key, { requestFingerprint, promise: operation });
+    try {
+      return await operation;
+    } finally {
+      if (this.inFlightActions.get(key)?.promise === operation) this.inFlightActions.delete(key);
+    }
+  }
+
+  private async performAction(input: Readonly<{
+    gameId: string;
+    userId: string;
+    requestId: string;
+    expectedSequence: number;
+    kind: 'bid' | 'play' | 'pass';
+    score?: number;
+    cardIds?: readonly string[];
+  }>, key: string, requestFingerprint: string) {
     const game = this.store.game(input.gameId);
     if (!game) throw new PlatformError(404, 'GAME_NOT_FOUND', '牌局不存在。');
     if (!Number.isInteger(input.expectedSequence) || input.expectedSequence !== game.sequence) {
@@ -318,8 +389,16 @@ export class DouJoyPlatform {
     this.postSettlement(game);
     const finishedRoomId = game.phase === 'finished' ? this.finishRoomForGame(game.id) : null;
     const result = { game: this.timedGameView(game, input.userId), profile: this.profile(input.userId) };
-    this.store.setActionResult(key, result);
-    await this.store.save();
+    this.store.setActionResult(key, requestFingerprint, result);
+    try {
+      await this.store.save();
+    } catch (error) {
+      // Never let a retry observe a response that failed to become durable.
+      // The remaining game-state rollback limitation is documented until the
+      // single-file store is replaced by a transactional database.
+      this.store.deleteActionResult(key);
+      throw error;
+    }
     this.changes.notify(this.gameResource(game.id));
     if (finishedRoomId) this.changes.notify(this.roomResource(finishedRoomId));
     return result;

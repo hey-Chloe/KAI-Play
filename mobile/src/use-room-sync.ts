@@ -1,26 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { ApiError, getGame, waitForRoom } from './api';
+import { syncRetryDelay } from './sync-retry';
 import type { GameView, RoomView } from './types';
 
 type RoomSyncCallbacks = {
   onRoom: (room: RoomView) => void;
   onGame: (game: GameView) => void;
   onConnected?: () => void;
-  onError?: (error: unknown) => void;
+  onError?: (error: unknown, terminal: boolean) => void;
 };
-
-function retryDelay(signal: AbortSignal, milliseconds = 1_000) {
-  return new Promise<void>((resolve) => {
-    if (signal.aborted) return resolve();
-    const done = () => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', done);
-      resolve();
-    };
-    const timer = setTimeout(done, milliseconds);
-    signal.addEventListener('abort', done, { once: true });
-  });
-}
 
 /** Keeps a waiting friend room current without fixed-interval polling. */
 export function useRoomSync(room: RoomView | null, callbacks: RoomSyncCallbacks) {
@@ -34,10 +22,12 @@ export function useRoomSync(room: RoomView | null, callbacks: RoomSyncCallbacks)
 
     async function synchronize() {
       let version = room!.version;
+      let failureCount = 0;
       while (!signal.aborted) {
         try {
           const result = await waitForRoom(room!.id, version, signal);
           if (signal.aborted) return;
+          failureCount = 0;
           callbacksRef.current.onConnected?.();
           version = result.version;
           if (!result.changed) continue;
@@ -50,9 +40,11 @@ export function useRoomSync(room: RoomView | null, callbacks: RoomSyncCallbacks)
           if (result.room.status !== 'waiting') return;
         } catch (error) {
           if (signal.aborted) return;
-          callbacksRef.current.onError?.(error);
-          if (error instanceof ApiError && [401, 403, 404].includes(error.status)) return;
-          await retryDelay(signal);
+          const terminal = error instanceof ApiError && [401, 403, 404].includes(error.status);
+          callbacksRef.current.onError?.(error, terminal);
+          if (terminal) return;
+          failureCount += 1;
+          await syncRetryDelay(signal, failureCount);
         }
       }
     }

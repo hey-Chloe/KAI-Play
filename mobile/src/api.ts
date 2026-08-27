@@ -15,15 +15,37 @@ export class ApiError extends Error {
 let token: string | null = null;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
-  const payload = await response.json().catch(() => null) as ({ ok: boolean; error?: { code: string; message: string } } & T) | null;
+  const controller = new AbortController();
+  const externalSignal = options.signal;
+  const forwardAbort = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener('abort', forwardAbort, { once: true });
+  const timeoutMs = path.includes('/wait?') ? 30_000 : 12_000;
+  let timedOut = false;
+  const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  let response: Response;
+  let payload: ({ ok: boolean; error?: { code: string; message: string } } & T) | null = null;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+    payload = await response.json().catch((error) => {
+      if (controller.signal.aborted) throw error;
+      return null;
+    }) as ({ ok: boolean; error?: { code: string; message: string } } & T) | null;
+  } catch (error) {
+    if (timedOut) throw new ApiError('REQUEST_TIMEOUT', '请求超时，请检查网络后重试。', 0);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', forwardAbort);
+  }
   if (!response.ok || !payload?.ok) {
     throw new ApiError(payload?.error?.code ?? 'NETWORK_ERROR', payload?.error?.message ?? '连接失败，请检查服务端。', response.status);
   }
@@ -61,6 +83,12 @@ function requestId() { return `${Date.now()}-${Math.random().toString(36).slice(
 export async function gameAction(gameId: string, expectedSequence: number, kind: 'bid' | 'play' | 'pass', input: object = {}) {
   return request<{ game: GameView; profile: Profile }>(`/v1/games/${gameId}/${kind}`, {
     method: 'POST', body: JSON.stringify({ ...input, expectedSequence }), headers: { 'x-request-id': requestId() },
+  });
+}
+
+export async function abandonGame(gameId: string) {
+  return request<{ left: true; game: GameView; profile: Profile }>(`/v1/games/${gameId}/abandon`, {
+    method: 'POST', body: '{}',
   });
 }
 

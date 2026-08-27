@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install locked mobile dependencies
+        run: npm ci --prefix mobile
+
+      - name: Build and run all quality gates
+        run: npm run verify
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build container images
+        run: docker compose build
+
+      - name: Start container stack
+        run: docker compose up --detach --no-build --wait --wait-timeout 60
+
+      - name: Smoke container endpoints
+        run: |
+          curl --fail --show-error http://127.0.0.1:4310/health
+          curl --fail --show-error http://127.0.0.1:8081/api/health
+          curl --fail --show-error http://127.0.0.1:8081/assets/kai-card-back.svg --output /dev/null
+
+      - name: Stop container stack
+        if: always()
+        run: docker compose down --volumes

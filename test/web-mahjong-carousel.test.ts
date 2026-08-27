@@ -51,7 +51,8 @@ test('the Mahjong CTA opens one player plus three deterministic bot seats', () =
 });
 
 test('the Mahjong surface exposes honest interaction, result and scope contracts', () => {
-  assert.match(mahjongSource, /点两次手牌/);
+  assert.match(mahjongSource, /选择一张手牌，再确认打出/);
+  assert.doesNotMatch(mahjongSource, /点两次手牌/);
   assert.match(mahjongSource, /data-action="mahjong-discard"/);
   assert.match(mahjongSource, /result\.kind === 'tsumo'/);
   assert.match(mahjongSource, /result\.kind === 'ron'/);

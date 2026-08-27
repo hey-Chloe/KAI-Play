@@ -360,21 +360,35 @@ export function chooseMahjongBotDiscard(hand, drawnId = null) {
   return best.tile;
 }
 
+function advanceMahjongBotTurnInPlace(game) {
+  if (game.phase !== 'playing' || !game.players[game.currentSeat].isBot) return false;
+  const seat = game.currentSeat;
+  const pattern = evaluateMahjongHand(game.hands[seat]);
+  if (pattern) {
+    finishMahjongGame(game, {
+      kind: 'tsumo', winnerSeat: seat, fromSeat: null, tileId: game.drawnId, pattern,
+    });
+  } else {
+    const tile = chooseMahjongBotDiscard(game.hands[seat], game.drawnId);
+    discardAndAdvanceMahjong(game, seat, tile.id);
+  }
+  return true;
+}
+
 function advanceMahjongBotsInPlace(game) {
   let safety = 0;
   while (game.phase === 'playing' && game.players[game.currentSeat].isBot) {
     if (safety++ >= 128) throw new Error('MAHJONG_BOT_TURN_SAFETY_LIMIT');
-    const seat = game.currentSeat;
-    const pattern = evaluateMahjongHand(game.hands[seat]);
-    if (pattern) {
-      finishMahjongGame(game, {
-        kind: 'tsumo', winnerSeat: seat, fromSeat: null, tileId: game.drawnId, pattern,
-      });
-      break;
-    }
-    const tile = chooseMahjongBotDiscard(game.hands[seat], game.drawnId);
-    discardAndAdvanceMahjong(game, seat, tile.id);
+    advanceMahjongBotTurnInPlace(game);
   }
+}
+
+export function advanceMahjongBotTurn(game) {
+  assertMahjongGame(game);
+  const next = cloneMahjongGame(game);
+  advanceMahjongBotTurnInPlace(next);
+  assertMahjongGame(next);
+  return next;
 }
 
 export function advanceMahjongBots(game) {
@@ -385,14 +399,14 @@ export function advanceMahjongBots(game) {
   return next;
 }
 
-export function playMahjongDiscard(game, tileId) {
+export function playMahjongDiscard(game, tileId, options = {}) {
   assertMahjongGame(game);
   if (game.phase !== 'playing') throw new MahjongRuleError('MAHJONG_FINISHED', '本局麻将已经结束。');
   const player = game.players[game.currentSeat];
   if (player.isBot) throw new MahjongRuleError('MAHJONG_BOT_TURN', '智能牌友正在行动，请稍候。');
   const next = cloneMahjongGame(game);
   discardAndAdvanceMahjong(next, next.currentSeat, tileId);
-  advanceMahjongBotsInPlace(next);
+  if (options.advanceBots !== false) advanceMahjongBotsInPlace(next);
   assertMahjongGame(next);
   return next;
 }

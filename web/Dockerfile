@@ -2,6 +2,7 @@ FROM node:22.18.0-alpine
 
 WORKDIR /app/web
 COPY web/index.html web/styles.css web/app.js web/casual-games.js web/serve.mjs ./
+COPY web/assets ./assets
 
 RUN addgroup -S doujoy && adduser -S doujoy -G doujoy \
   && chown -R doujoy:doujoy /app
@@ -11,7 +12,9 @@ USER doujoy
 ENV NODE_ENV=production \
     DOUJOY_WEB_HOST=0.0.0.0 \
     DOUJOY_WEB_PORT=8081 \
-    DOUJOY_WEB_UPSTREAM=http://doujoy-server:4310
+    DOUJOY_WEB_UPSTREAM=http://doujoy-server:4310 \
+    DOUJOY_WEB_UPSTREAM_TIMEOUT_MS=35000 \
+    DOUJOY_WEB_TRUST_PROXY=false
 
 EXPOSE 8081
 

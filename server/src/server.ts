@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { isIP } from 'node:net';
 import { CloudPayBillingService, SandboxBillingStore, sandboxWarning, type CloudPayMode } from './billing.ts';
 import { DouJoyPlatform, PlatformError } from './platform.ts';
 import { JsonGameStore } from './store.ts';
@@ -15,6 +16,8 @@ const botThinkMaxMs = Number(process.env.DOUJOY_BOT_THINK_MAX_MS ?? 2_200);
 const backupCount = Number(process.env.DOUJOY_BACKUP_COUNT ?? 3);
 const waitTimeoutMaxMs = Number(process.env.DOUJOY_WAIT_TIMEOUT_MAX_MS ?? 25_000);
 const cloudPayMode = process.env.DOUJOY_CLOUDPAY_MODE ?? 'disabled';
+const trustProxyValue = process.env.DOUJOY_TRUST_PROXY ?? 'false';
+const trustProxy = ['1', 'true'].includes(trustProxyValue.toLowerCase());
 const cloudPaySandboxDataPath = process.env.DOUJOY_CLOUDPAY_SANDBOX_DATA_PATH
   ?? resolve(dirname(dataPath), 'cloudpay-sandbox-orders.json');
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('DOUJOY_PORT_INVALID');
@@ -27,6 +30,7 @@ if (!Number.isInteger(botThinkMinMs) || !Number.isInteger(botThinkMaxMs)
 if (!Number.isInteger(backupCount) || backupCount < 1 || backupCount > 10) throw new Error('DOUJOY_BACKUP_COUNT_INVALID');
 if (!Number.isInteger(waitTimeoutMaxMs) || waitTimeoutMaxMs < 100 || waitTimeoutMaxMs > 30_000) throw new Error('DOUJOY_WAIT_TIMEOUT_MAX_MS_INVALID');
 if (!['disabled', 'sandbox'].includes(cloudPayMode)) throw new Error('DOUJOY_CLOUDPAY_MODE_INVALID');
+if (!['0', '1', 'false', 'true'].includes(trustProxyValue.toLowerCase())) throw new Error('DOUJOY_TRUST_PROXY_INVALID');
 if (cloudPayMode === 'sandbox' && resolve(cloudPaySandboxDataPath) === resolve(dataPath)) {
   throw new Error('DOUJOY_CLOUDPAY_SANDBOX_DATA_PATH_MUST_BE_ISOLATED');
 }
@@ -41,6 +45,7 @@ const requestLimiter = new SlidingWindowLimiter();
 const guestLimiter = new SlidingWindowLimiter();
 const pendingWaitsByUser = new Map<string, number>();
 const pendingWaitsByAddress = new Map<string, number>();
+const activeWaitControllers = new Set<AbortController>();
 
 function json(response: import('node:http').ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -65,8 +70,16 @@ async function body(request: import('node:http').IncomingMessage) {
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>; }
-  catch { throw new PlatformError(400, 'INVALID_JSON', '请求格式不正确。'); }
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new PlatformError(400, 'INVALID_JSON', '请求正文必须是 JSON 对象。');
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof PlatformError) throw error;
+    throw new PlatformError(400, 'INVALID_JSON', '请求格式不正确。');
+  }
 }
 
 function waitInput(url: URL) {
@@ -81,6 +94,14 @@ function waitInput(url: URL) {
     throw new PlatformError(400, 'WAIT_TIMEOUT_INVALID', '等待时长无效。');
   }
   return { version, timeoutMs: Math.min(requestedTimeout, waitTimeoutMaxMs) };
+}
+
+function clientAddress(request: import('node:http').IncomingMessage) {
+  if (trustProxy && typeof request.headers['x-forwarded-for'] === 'string') {
+    const forwarded = request.headers['x-forwarded-for'].split(',')[0]!.trim();
+    if (isIP(forwarded)) return forwarded;
+  }
+  return request.socket.remoteAddress ?? 'unknown';
 }
 
 function acquireWait(clientAddress: string, userId: string) {
@@ -109,17 +130,22 @@ async function longPoll<T extends object>(
 ) {
   const release = acquireWait(clientAddress, userId);
   const controller = new AbortController();
+  activeWaitControllers.add(controller);
   const abort = () => controller.abort();
   request.once('aborted', abort);
   response.once('close', abort);
   if (request.aborted || response.destroyed) controller.abort();
   try {
     const result = await wait(controller.signal);
-    if (result === null || controller.signal.aborted || response.destroyed) return;
+    if (result === null || controller.signal.aborted || response.destroyed) {
+      if (!response.destroyed && !response.writableEnded) response.end();
+      return;
+    }
     json(response, 200, { ok: true, ...result });
   } finally {
     request.off('aborted', abort);
     response.off('close', abort);
+    activeWaitControllers.delete(controller);
     release();
   }
 }
@@ -128,14 +154,14 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === 'OPTIONS') return json(response, 204, null);
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
-    const clientAddress = request.socket.remoteAddress ?? 'unknown';
-    const rate = requestLimiter.consume(clientAddress, 180, 60_000);
+    const requesterAddress = clientAddress(request);
+    const rate = requestLimiter.consume(requesterAddress, 180, 60_000);
     if (!rate.allowed) throw new PlatformError(429, 'RATE_LIMITED', `请求过于频繁，请在 ${rate.retryAfterSeconds} 秒后重试。`);
     if (request.method === 'GET' && url.pathname === '/health') {
       return json(response, 200, { ok: true, service: 'doujoy', tokenMode: 'play-only' });
     }
     if (request.method === 'POST' && url.pathname === '/v1/sessions/guest') {
-      const guestRate = guestLimiter.consume(clientAddress, 12, 60 * 60_000);
+      const guestRate = guestLimiter.consume(requesterAddress, 12, 60 * 60_000);
       if (!guestRate.allowed) throw new PlatformError(429, 'GUEST_RATE_LIMITED', '创建游客账号过于频繁，请稍后再试。');
       const input = await body(request);
       return json(response, 201, { ok: true, ...(await platform.guest(typeof input.name === 'string' ? input.name : undefined)) });
@@ -183,7 +209,7 @@ const server = createServer(async (request, response) => {
     if (roomMatch && request.method === 'GET' && !roomMatch[2]) return json(response, 200, { ok: true, room: platform.room(roomMatch[1]!, user.id) });
     if (roomMatch && request.method === 'GET' && roomMatch[2] === 'wait') {
       const input = waitInput(url);
-      return await longPoll(request, response, clientAddress, user.id, (signal) => platform.waitRoom(roomMatch[1]!, user.id, input.version, input.timeoutMs, signal));
+      return await longPoll(request, response, requesterAddress, user.id, (signal) => platform.waitRoom(roomMatch[1]!, user.id, input.version, input.timeoutMs, signal));
     }
     if (roomMatch && request.method === 'POST' && roomMatch[2] === 'start') return json(response, 200, { ok: true, ...(await platform.startRoom(roomMatch[1]!, user.id)) });
     if (roomMatch && request.method === 'POST' && roomMatch[2] === 'leave') return json(response, 200, { ok: true, ...(await platform.leaveRoom(roomMatch[1]!, user.id)) });
@@ -191,12 +217,12 @@ const server = createServer(async (request, response) => {
     if (gameMatch && request.method === 'GET' && !gameMatch[2]) return json(response, 200, { ok: true, game: await platform.refreshedView(gameMatch[1]!, user.id) });
     if (gameMatch && request.method === 'GET' && gameMatch[2] === 'wait') {
       const input = waitInput(url);
-      return await longPoll(request, response, clientAddress, user.id, (signal) => platform.waitGame(gameMatch[1]!, user.id, input.version, input.timeoutMs, signal));
+      return await longPoll(request, response, requesterAddress, user.id, (signal) => platform.waitGame(gameMatch[1]!, user.id, input.version, input.timeoutMs, signal));
     }
     if (gameMatch && request.method === 'POST' && gameMatch[2] === 'abandon') {
       return json(response, 200, { ok: true, ...(await platform.abandonGame(gameMatch[1]!, user.id)) });
     }
-    if (gameMatch && request.method === 'POST' && gameMatch[2]) {
+    if (gameMatch && request.method === 'POST' && ['bid', 'play', 'pass'].includes(gameMatch[2] ?? '')) {
       const input = await body(request);
       const result = await platform.action({
         gameId: gameMatch[1]!, userId: user.id,
@@ -221,3 +247,27 @@ server.listen(port, '0.0.0.0', () => {
   console.log('Token mode: play-only; purchase/withdraw/transfer/redeem are disabled');
   console.log(`CloudPay card-hour billing mode: ${cloudPayMode}`);
 });
+
+let shuttingDown = false;
+function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`DouJoy server received ${signal}; draining requests`);
+  for (const controller of activeWaitControllers) controller.abort();
+  server.closeIdleConnections();
+  const forceTimer = setTimeout(() => {
+    console.error('DouJoy server graceful shutdown timed out');
+    server.closeAllConnections();
+    process.exitCode = 1;
+  }, 10_000);
+  forceTimer.unref();
+  server.close((error) => {
+    clearTimeout(forceTimer);
+    if (error) {
+      console.error(error);
+      process.exitCode = 1;
+    }
+  });
+}
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));

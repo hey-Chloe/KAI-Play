@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { advanceBotTurn, bid, createGame, forfeit, pass, play } from '../core/engine.ts';
-import { createDeck } from '../core/cards.ts';
+import { createDeck, dealCards } from '../core/cards.ts';
 import { GameRuleError } from '../core/types.ts';
 import { createHash } from 'node:crypto';
 
@@ -13,6 +13,16 @@ test('deals unique cards and assigns the winning bidder as landlord', () => {
   assert.equal(game.landlordSeat, 0);
   assert.equal(game.hands.human.length, 20);
   assert.equal(game.players[0]?.role, 'landlord');
+});
+
+test('deals the first 51 cards clockwise before reserving three bottom cards', () => {
+  const deck = createDeck();
+  const dealt = dealCards(deck);
+  for (let seat = 0; seat < 3; seat += 1) {
+    const expected = new Set(deck.slice(0, 51).filter((_, index) => index % 3 === seat).map((card) => card.id));
+    assert.deepEqual(new Set(dealt.hands[seat].map((card) => card.id)), expected);
+  }
+  assert.deepEqual(new Set(dealt.bottomCards.map((card) => card.id)), new Set(deck.slice(51).map((card) => card.id)));
 });
 
 test('enforces ownership, valid combinations and turn order', () => {

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 180">
+  <defs>
+    <linearGradient id="q-red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c65b53"/><stop offset="1" stop-color="#7d2930"/></linearGradient>
+    <linearGradient id="q-blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#55768b"/><stop offset="1" stop-color="#243f54"/></linearGradient>
+    <g id="queen-half">
+      <path d="m31 27 6-20 13 12L60 4l10 15L84 7l5 20Z" fill="#d7ad4b" stroke="#67451f" stroke-width="2"/>
+      <circle cx="37" cy="8" r="4" fill="#b94f45"/><circle cx="60" cy="5" r="4" fill="#315f78"/><circle cx="84" cy="8" r="4" fill="#b94f45"/>
+      <path d="M38 28c0-10 9-18 22-18s22 8 22 18v22c0 14-9 24-22 24S38 64 38 50Z" fill="#edc79b" stroke="#5a3427" stroke-width="2"/>
+      <path d="M37 34c4-15 10-20 23-20s19 5 23 20c-8-5-15-7-23-7s-15 2-23 7Z" fill="#6b3b29"/>
+      <path d="M48 45h7m10 0h7" stroke="#273238" stroke-width="2" stroke-linecap="round"/>
+      <path d="M55 59c4 3 7 3 11 0" fill="none" stroke="#a75046" stroke-width="2" stroke-linecap="round"/>
+      <path d="M19 89c5-21 20-33 41-33s36 12 41 33Z" fill="url(#q-blue)" stroke="#24313a" stroke-width="2"/>
+      <path d="m36 64 24 24 24-24-8 25H44Z" fill="url(#q-red)" stroke="#6e2930" stroke-width="2"/>
+      <g transform="translate(23 58)">
+        <circle cx="0" cy="0" r="9" fill="#f2d889" stroke="#71431e" stroke-width="2"/>
+        <path d="M0-11v22M-11 0h22" stroke="#b94f45" stroke-width="4"/>
+      </g>
+    </g>
+  </defs>
+  <rect width="120" height="180" rx="8" fill="#f4e6c3"/>
+  <use href="#queen-half"/>
+  <use href="#queen-half" transform="rotate(180 60 90)"/>
+  <path d="m6 90 18-7 18 7 18-7 18 7 18-7 18 7-18 7-18-7-18 7-18-7-18 7Z" fill="#d7ad4b" stroke="#7a5528" stroke-width="1.5"/>
+</svg>

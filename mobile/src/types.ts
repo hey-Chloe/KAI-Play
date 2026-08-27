@@ -33,6 +33,7 @@ export type GameView = {
     commitment: string;
     revealed: { nonce: string; deckOrder: string[] } | null;
   };
+  turn: { kind: 'human' | 'bot'; durationMs: number; deadline: string } | null;
   updatedAt: string;
 };
 export type History = {

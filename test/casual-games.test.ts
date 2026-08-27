@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  advanceMahjongBotTurn,
   chooseMahjongBotDiscard,
   compareThreeCard,
   createMahjongWall,
@@ -160,6 +161,49 @@ test('a player discard advances three deterministic bots to the next player deci
   assert.equal(replay.events.filter((event) => event.kind === 'draw').length, 4);
   assert.equal(replay.hands[0]!.some((entry) => entry.id === replay.drawnId), true);
   assert.equal(validateMahjongTileConservation(replay), true);
+});
+
+test('a player discard can pause for one visible bot turn at a time', () => {
+  let game: ReturnType<typeof newMahjongGame> | null = null;
+  let paused: ReturnType<typeof newMahjongGame> | null = null;
+  let stepped: ReturnType<typeof newMahjongGame> | null = null;
+  for (let seed = 1; seed < 200 && !stepped; seed += 1) {
+    const candidate = activeMahjongGame(seed);
+    const discard = chooseMahjongBotDiscard(candidate.hands[0]!, candidate.drawnId);
+    const candidatePaused = playMahjongDiscard(candidate, discard.id, { advanceBots: false });
+    if (candidatePaused.phase !== 'playing' || candidatePaused.currentSeat !== 1) continue;
+    const candidateStepped = advanceMahjongBotTurn(candidatePaused);
+    if (candidateStepped.phase !== 'playing' || candidateStepped.currentSeat !== 2) continue;
+    game = candidate;
+    paused = candidatePaused;
+    stepped = candidateStepped;
+  }
+
+  assert.ok(game && paused && stepped);
+  const original = structuredClone(game);
+  const discard = chooseMahjongBotDiscard(game.hands[0]!, game.drawnId);
+  const replayPaused = playMahjongDiscard(game, discard.id, { advanceBots: false });
+  assert.deepEqual(game, original, 'pausing after the player discard must not mutate the input');
+  assert.equal(replayPaused.phase, 'playing');
+  assert.equal(replayPaused.currentSeat, 1);
+  assert.deepEqual(replayPaused.hands.map((hand) => hand.length), [13, 14, 13, 13]);
+  assert.deepEqual(replayPaused.rivers.map((river) => river.length), [1, 0, 0, 0]);
+  assert.equal(replayPaused.wall.length, 82);
+  assert.equal(replayPaused.events.filter((event) => event.kind === 'discard').length, 1);
+  assert.equal(replayPaused.events.filter((event) => event.kind === 'draw').length, 1);
+  assert.equal(validateMahjongTileConservation(replayPaused), true);
+
+  const pausedSnapshot = structuredClone(paused);
+  const replayStepped = advanceMahjongBotTurn(paused);
+  assert.deepEqual(paused, pausedSnapshot, 'advancing one bot must not mutate the paused state');
+  assert.equal(replayStepped.phase, 'playing');
+  assert.equal(replayStepped.currentSeat, 2);
+  assert.deepEqual(replayStepped.hands.map((hand) => hand.length), [13, 13, 14, 13]);
+  assert.deepEqual(replayStepped.rivers.map((river) => river.length), [1, 1, 0, 0]);
+  assert.equal(replayStepped.wall.length, 81);
+  assert.equal(replayStepped.events.filter((event) => event.kind === 'discard').length, 2);
+  assert.equal(replayStepped.events.filter((event) => event.kind === 'draw').length, 2);
+  assert.equal(validateMahjongTileConservation(replayStepped), true);
 });
 
 test('a discarded winning tile ends the game by ron without duplicating the tile', () => {

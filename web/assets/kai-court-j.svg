@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 180">
+  <defs>
+    <linearGradient id="j-blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#315f78"/><stop offset="1" stop-color="#173648"/></linearGradient>
+    <linearGradient id="j-gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f0d489"/><stop offset="1" stop-color="#bd8c3d"/></linearGradient>
+    <g id="jack-half">
+      <path d="M25 20 43 7l17 9L77 7l18 13-9 11H34Z" fill="url(#j-blue)" stroke="#182b33" stroke-width="2"/>
+      <path d="m43 7 3 20m31-20-4 20" fill="none" stroke="#c9574e" stroke-width="4"/>
+      <path d="M38 31c0-12 10-20 22-20s22 8 22 20v19c0 13-9 23-22 23S38 63 38 50Z" fill="#edc79b" stroke="#5a3427" stroke-width="2"/>
+      <path d="M37 38c2-18 8-23 23-23 13 0 20 7 23 23-8-6-15-9-23-9s-15 3-23 9Z" fill="#5d3525"/>
+      <path d="M48 45h7m10 0h7" stroke="#273238" stroke-width="2" stroke-linecap="round"/>
+      <path d="M56 58c3 2 6 2 9 0" fill="none" stroke="#9f5542" stroke-width="2" stroke-linecap="round"/>
+      <path d="M22 88c4-20 18-31 38-31s34 11 38 31Z" fill="url(#j-gold)" stroke="#513825" stroke-width="2"/>
+      <path d="M36 65 53 88H27m57-23L67 88h26" fill="url(#j-blue)" stroke="#173648" stroke-width="2"/>
+      <path d="M16 79 92 15" stroke="#c7a14d" stroke-width="5" stroke-linecap="round"/>
+      <path d="m88 12 9-6 3 10-9 5Z" fill="#d8e0d7" stroke="#33444a" stroke-width="2"/>
+    </g>
+  </defs>
+  <rect width="120" height="180" rx="8" fill="#f4e6c3"/>
+  <use href="#jack-half"/>
+  <use href="#jack-half" transform="rotate(180 60 90)"/>
+  <path d="M3 86h114v8H3Z" fill="#b94f45" opacity=".9"/>
+  <path d="M12 89h96" stroke="#f4d68b" stroke-width="2" stroke-dasharray="7 4"/>
+</svg>

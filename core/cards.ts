@@ -33,8 +33,10 @@ export function dealCards(deck = secureShuffle(createDeck())): Readonly<{
   if (deck.length !== 54 || new Set(deck.map((card) => card.id)).size !== 54) {
     throw new Error('A valid 54-card deck is required');
   }
+  const hands: [Card[], Card[], Card[]] = [[], [], []];
+  for (let index = 0; index < 51; index += 1) hands[index % 3].push(deck[index]!);
   return {
-    hands: [sortCards(deck.slice(0, 17)), sortCards(deck.slice(17, 34)), sortCards(deck.slice(34, 51))],
+    hands: hands.map((hand) => sortCards(hand)) as [Card[], Card[], Card[]],
     bottomCards: sortCards(deck.slice(51)),
   };
 }

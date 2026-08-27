@@ -3773,3 +3773,745 @@ body:has(.lobby-v4) {
     --mahjong-preview-size: min(480px, 44vw, calc(100dvh - 210px));
   }
 }
+
+/* V7: clearer selection, turn feedback and short-screen action safety. */
+.lobby-game-carousel:focus-visible {
+  outline: 3px solid rgba(219,126,93,.72);
+  outline-offset: -5px;
+}
+
+.poker.poker-face.selected {
+  border-color: #e3b95e;
+  box-shadow: 0 0 0 3px rgba(227,185,94,.38), var(--card-shadow-lift);
+}
+
+.poker.poker-face:focus-visible,
+.mahjong-match-stage .mahjong-tile:focus-visible {
+  z-index: 16;
+  outline: 3px solid #e57d61;
+  outline-offset: 2px;
+}
+
+.ddz-table .table-action.selection-reset {
+  border-color: rgba(239,210,143,.5);
+  background: rgba(26,43,36,.88);
+  color: #f4d99a;
+}
+
+.mahjong-match-stage .mahjong-tile.selected {
+  border-color: #e4bb62;
+  box-shadow: 0 8px 0 #9c7131, 0 0 0 3px rgba(228,187,98,.32), 0 15px 16px rgba(0,0,0,.34);
+}
+
+.mahjong-face.river-face.is-latest {
+  position: relative;
+  z-index: 3;
+  outline: 2px solid #f2cf75;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(242,207,117,.2), 0 4px 8px rgba(0,0,0,.28);
+}
+
+@media (min-width: 561px) {
+  .game-stage--mahjong .mahjong-preview-seat.seat-west {
+    left: max(8px, calc(50% - var(--mahjong-preview-size) / 2 - 120px));
+  }
+  .game-stage--mahjong .mahjong-preview-seat.seat-east {
+    right: max(8px, calc(50% - var(--mahjong-preview-size) / 2 - 120px));
+  }
+}
+
+@media (min-width: 561px) and (max-width: 700px) {
+  .game-stage--mahjong .mahjong-preview-seat.seat-west,
+  .game-stage--mahjong .mahjong-preview-seat.seat-east {
+    width: 78px;
+    min-width: 78px;
+    grid-template-columns: 46px;
+    grid-template-rows: 46px auto;
+    justify-items: center;
+    gap: 3px;
+  }
+
+  .game-stage--mahjong .mahjong-preview-seat.seat-west > span,
+  .game-stage--mahjong .mahjong-preview-seat.seat-east > span {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .game-stage--mahjong .mahjong-preview-seat.seat-west b,
+  .game-stage--mahjong .mahjong-preview-seat.seat-east b { display: none; }
+
+  .game-stage--mahjong .mahjong-preview-seat.seat-west small,
+  .game-stage--mahjong .mahjong-preview-seat.seat-east small {
+    grid-column: 1;
+    grid-row: 2;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(7,27,20,.84);
+    color: #fff;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 560px) {
+  .hero-switcher > span {
+    display: inline;
+    padding: 0 5px 0 2px;
+    font-size: .5rem;
+  }
+}
+
+@media (max-width: 340px) and (max-height: 700px) {
+  .lobby-hero-v4.game-stage--ddz .live-join-bar,
+  .game-stage--mahjong .mahjong-hero-action { bottom: 88px; }
+
+  .lobby-hero-v4.game-stage--ddz .live-seat-you,
+  .game-stage--mahjong .mahjong-preview-seat.seat-south { bottom: 146px; }
+
+  .game-stage--mahjong .mahjong-hero-action small { display: none; }
+}
+
+/* V8: physical card faces and one shared material language across both tables. */
+.poker.poker-face {
+  height: auto;
+  aspect-ratio: 9 / 13;
+}
+
+.poker.poker-face .card-index {
+  font-family: "Arial Narrow", "DIN Condensed", Arial, sans-serif;
+  font-weight: 900;
+}
+
+.poker.poker-face .card-index small { font-family: Georgia, "Times New Roman", serif; }
+.poker.poker-face .card-index-bottom {
+  right: 7px;
+  bottom: 7px;
+  left: auto;
+  top: auto;
+  transform: rotate(180deg);
+}
+
+.poker.poker-face .card-pips {
+  position: absolute;
+  z-index: 2;
+  inset: 13% 12% 12% 27%;
+  color: currentColor;
+  font-style: normal;
+}
+
+.poker.poker-face .card-pips .pip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.18em;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  text-shadow: 0 1px rgba(255,255,255,.7);
+  transform: translate(-50%,-50%);
+}
+.poker.poker-face .card-pips-1 .pip { font-size: 2.45em; }
+.poker.poker-face .card-pips .pip.is-inverted { transform: translate(-50%,-50%) rotate(180deg); }
+.poker.poker-face .pip-tl { left: 22%; top: 14%; }
+.poker.poker-face .pip-tc { left: 50%; top: 14%; }
+.poker.poker-face .pip-tr { left: 78%; top: 14%; }
+.poker.poker-face .pip-ul { left: 27%; top: 32%; }
+.poker.poker-face .pip-ur { left: 73%; top: 32%; }
+.poker.poker-face .pip-ml { left: 22%; top: 50%; }
+.poker.poker-face .pip-mc { left: 50%; top: 50%; }
+.poker.poker-face .pip-mr { left: 78%; top: 50%; }
+.poker.poker-face .pip-ll { left: 27%; top: 68%; }
+.poker.poker-face .pip-lr { left: 73%; top: 68%; }
+.poker.poker-face .pip-bl { left: 22%; top: 86%; }
+.poker.poker-face .pip-bc { left: 50%; top: 86%; }
+.poker.poker-face .pip-br { left: 78%; top: 86%; }
+
+.ddz-table .hand-dock .poker.hand-card {
+  z-index: calc(2 + var(--card-order));
+  transform: translateY(var(--card-curve)) rotate(var(--card-angle));
+  transform-origin: 50% 108%;
+  box-shadow: 0 3px 5px rgba(2,12,9,.2), inset 0 0 0 1px rgba(255,255,255,.58);
+}
+.ddz-table .hand-dock .poker.hand-card:hover:not(:disabled) {
+  transform: translateY(calc(var(--card-curve) - 7px)) rotate(var(--card-angle));
+  box-shadow: 0 10px 16px rgba(2,12,9,.28), inset 0 0 0 1px rgba(255,255,255,.66);
+}
+.ddz-table .hand-dock .poker.hand-card.selected {
+  transform: translateY(calc(var(--card-curve) - 18px)) rotate(var(--card-angle)) scale(1.015);
+  box-shadow: 0 0 0 2px rgba(227,185,94,.42), 0 15px 24px rgba(2,12,9,.34);
+}
+.ddz-table .play-zone .poker.poker-face {
+  margin-left: -7px;
+  box-shadow: 0 4px 7px rgba(2,12,9,.25), inset 0 0 0 1px rgba(255,255,255,.62);
+}
+
+/* The V5 textures are generated material swatches; geometry and labels stay responsive DOM/CSS. */
+.table-layer-base {
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,.13), rgba(255,255,255,.02) 18%, rgba(0,0,0,.34) 68%, rgba(0,0,0,.8)),
+    url("./assets/kai-leather-v5.jpg");
+}
+.table-layer-rail {
+  background-image:
+    linear-gradient(178deg, rgba(255,255,255,.28), rgba(255,255,255,.05) 18%, transparent 34%, rgba(0,0,0,.48) 76%, rgba(0,0,0,.8)),
+    url("./assets/kai-leather-v5.jpg");
+}
+.table-layer-felt {
+  background-image:
+    radial-gradient(ellipse 58% 48% at 49% 37%, rgba(111,178,142,.17), transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,.045), rgba(0,29,20,.25)),
+    url("./assets/kai-felt-v5.jpg");
+  background-size: auto, auto, 360px 360px;
+}
+.mahjong-table-base {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.16), transparent 28%, rgba(0,0,0,.52)),
+    url("./assets/kai-leather-v5.jpg") center / 280px repeat;
+}
+.mahjong-table-felt {
+  background:
+    radial-gradient(circle at 50% 32%, rgba(255,255,255,.09), transparent 48%),
+    linear-gradient(150deg, rgba(11,111,74,.12), rgba(0,38,27,.2)),
+    url("./assets/kai-felt-v5.jpg") center / 300px repeat;
+  background-blend-mode: screen, multiply, normal;
+}
+
+.mahjong-table-volume {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.14), transparent 24%, rgba(0,0,0,.46)),
+    url("./assets/kai-leather-v5.jpg") center / 300px repeat;
+  background-blend-mode: soft-light, normal;
+  box-shadow: 0 28px 0 #080f0d, 0 40px 48px rgba(0,0,0,.5), inset 0 0 0 11px rgba(3,10,8,.62), inset 0 2px rgba(255,255,255,.15);
+}
+.mahjong-table-volume::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 2px solid rgba(200,101,79,.7);
+  border-radius: 20%;
+  box-shadow: 0 2px 3px rgba(0,0,0,.55), inset 0 1px rgba(255,255,255,.13);
+}
+.mahjong-match-felt {
+  border-color: #b96854;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(86,178,137,.18), transparent 52%),
+    linear-gradient(145deg, rgba(255,255,255,.035), rgba(0,35,24,.26)),
+    url("./assets/kai-felt-v5.jpg") center / 320px repeat;
+  background-blend-mode: screen, multiply, normal;
+  box-shadow: inset 0 0 0 5px #142a24, inset 0 0 72px rgba(0,0,0,.28), 0 2px rgba(255,255,255,.12);
+}
+
+.mahjong-wall-ring {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 47%;
+  width: calc(var(--mahjong-table-size) - 76px);
+  height: calc(var(--mahjong-table-size) - 76px);
+  transform: translate(-50%,-50%) rotateX(2.4deg);
+  pointer-events: none;
+}
+.mahjong-wall-ring .mahjong-wall-track {
+  position: absolute;
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  width: max-content;
+  display: flex;
+  justify-content: center;
+  transform: none;
+}
+.mahjong-wall-ring .wall-track--north { left: 50%; top: 0; transform: translate(-50%,-50%); }
+.mahjong-wall-ring .wall-track--south { left: 50%; bottom: 0; transform: translate(-50%,50%) rotate(180deg); }
+.mahjong-wall-ring .wall-track--west { left: 0; top: 50%; transform: translate(-50%,-50%) rotate(90deg); }
+.mahjong-wall-ring .wall-track--east { right: 0; top: 50%; transform: translate(50%,-50%) rotate(-90deg); }
+.mahjong-wall-ring .mahjong-wall-track i {
+  position: relative;
+  width: 22px;
+  height: 18px;
+  margin-left: -4px;
+  border: 1px solid #d9cfb6;
+  border-radius: 3px 3px 2px 2px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.22), transparent 44%),
+    linear-gradient(145deg,#176f60,#0a4a42);
+  box-shadow: 0 3px 0 #eadfc5, 0 6px 0 #b9aa8d, 0 9px 8px rgba(0,0,0,.26);
+  transition: opacity .2s ease, transform .2s ease;
+}
+.mahjong-wall-ring .mahjong-wall-track i:first-child { margin-left: 0; }
+.mahjong-wall-ring .mahjong-wall-track i.is-used { opacity: 0; transform: translateY(4px); }
+.mahjong-hidden-hand i,
+.mahjong-preview-wall i {
+  border-color: #d8ceb5;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.2), transparent 44%),
+    linear-gradient(145deg,#176f60,#0a4a42);
+  box-shadow: 0 3px 0 #eadfc5, 0 5px 0 #b9aa8d, 0 8px 7px rgba(0,0,0,.22), inset 0 0 0 1px rgba(4,45,38,.28);
+}
+
+.mahjong-face,
+.mahjong-match-stage .mahjong-tile,
+.mahjong-preview-hand > i {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: #f7f0df;
+  background-image: url("./assets/card-paper.svg"), linear-gradient(145deg,#fffef8,#e8dfc7 74%);
+  background-blend-mode: multiply, normal;
+}
+.mahjong-face::after,
+.mahjong-match-stage .mahjong-tile::after,
+.mahjong-preview-hand > i::after {
+  content: "";
+  position: absolute;
+  z-index: 5;
+  inset: 2px;
+  border: 1px solid rgba(73,66,48,.08);
+  border-radius: inherit;
+  box-shadow: inset 1px 1px rgba(255,255,255,.72), inset -1px -1px rgba(99,83,54,.08);
+  pointer-events: none;
+}
+.mahjong-mark {
+  position: absolute;
+  z-index: 2;
+  inset: 7%;
+  display: block;
+  color: #24483c;
+  pointer-events: none;
+}
+.mahjong-mark.mark-wan,
+.mahjong-mark.mark-honor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+.mahjong-mark.mark-wan > b,
+.mahjong-mark.mark-honor > b {
+  color: #1d4f42;
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+  font-size: 1.02em;
+  font-weight: 900;
+  line-height: .92;
+}
+.mahjong-mark.mark-wan > small {
+  margin-top: .08em;
+  color: #b43d36;
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+  font-size: .46em;
+  font-weight: 900;
+  line-height: 1;
+}
+.honor-red .mahjong-mark.mark-honor > b { color: #bd3936; }
+.honor-green .mahjong-mark.mark-honor > b { color: #12805b; }
+.mahjong-mark.mark-blank::before {
+  content: "";
+  width: 58%;
+  height: 66%;
+  border: 2px double #2a7791;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 2px rgba(42,119,145,.1);
+}
+.mahjong-symbol {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  transform: translate(-50%,-50%);
+}
+.symbol-tong {
+  width: 22%;
+  aspect-ratio: 1;
+  border: 1px solid #256f9c;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f7efe0 0 22%, #bf4540 23% 34%, #f7efe0 35% 48%, #2979a5 49% 67%, #f7efe0 68%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.55);
+}
+.mark-count-5 .symbol-mc,
+.mark-count-7 .symbol-mc,
+.mark-count-9 .symbol-mc { filter: hue-rotate(118deg) saturate(.82); }
+.symbol-tiao {
+  width: 14%;
+  height: 28%;
+  border-radius: 45% 45% 36% 36%;
+  background: repeating-linear-gradient(0deg,#146f52 0 20%,#e6c36e 21% 27%,#19835f 28% 49%);
+  box-shadow: inset 1px 0 rgba(255,255,255,.36), 0 1px 1px rgba(0,0,0,.13);
+}
+.bamboo-bird {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  color: #167759;
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+  font-size: 1.1em;
+  font-style: normal;
+  transform: translate(-50%,-50%) rotate(-8deg);
+  text-shadow: 1px 1px #d55d4f;
+}
+.mahjong-mark .symbol-tl { left: 23%; top: 15%; }
+.mahjong-mark .symbol-tc { left: 50%; top: 15%; }
+.mahjong-mark .symbol-tr { left: 77%; top: 15%; }
+.mahjong-mark .symbol-ul { left: 28%; top: 33%; }
+.mahjong-mark .symbol-ur { left: 72%; top: 33%; }
+.mahjong-mark .symbol-ml { left: 23%; top: 50%; }
+.mahjong-mark .symbol-mc { left: 50%; top: 50%; }
+.mahjong-mark .symbol-mr { left: 77%; top: 50%; }
+.mahjong-mark .symbol-ll { left: 28%; top: 67%; }
+.mahjong-mark .symbol-lr { left: 72%; top: 67%; }
+.mahjong-mark .symbol-bl { left: 23%; top: 85%; }
+.mahjong-mark .symbol-bc { left: 50%; top: 85%; }
+.mahjong-mark .symbol-br { left: 77%; top: 85%; }
+.mahjong-match-stage .mahjong-tile .mahjong-mark.mark-wan > b,
+.mahjong-match-stage .mahjong-tile .mahjong-mark.mark-honor > b { font-size: 1.35rem; }
+.mahjong-match-stage .mahjong-tile .mahjong-mark.mark-wan > small { font-size: .64rem; }
+.mahjong-face .mahjong-mark.mark-wan > b,
+.mahjong-face .mahjong-mark.mark-honor > b { font-size: clamp(.43rem,.72vw,.62rem); }
+.mahjong-face .mahjong-mark.mark-wan > small { font-size: clamp(.25rem,.4vw,.36rem); }
+.mahjong-preview-hand .mahjong-mark.mark-wan > b,
+.mahjong-preview-hand .mahjong-mark.mark-honor > b { font-size: .84rem; }
+.mahjong-preview-hand .mahjong-mark.mark-wan > small { font-size: .4rem; }
+.mahjong-preview-hand > i .mahjong-symbol {
+  position: absolute;
+  display: block;
+  margin: 0;
+  transform: translate(-50%,-50%);
+}
+.mahjong-preview-hand > i .symbol-tong {
+  width: 22%;
+  height: auto;
+  aspect-ratio: 1;
+  border: 1px solid #256f9c;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f7efe0 0 22%, #bf4540 23% 34%, #f7efe0 35% 48%, #2979a5 49% 67%, #f7efe0 68%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.55);
+}
+.mahjong-preview-hand > i .symbol-tiao {
+  width: 14%;
+  height: 28%;
+  border: 0;
+  border-radius: 45% 45% 36% 36%;
+  background: repeating-linear-gradient(0deg,#146f52 0 20%,#e6c36e 21% 27%,#19835f 28% 49%);
+  box-shadow: inset 1px 0 rgba(255,255,255,.36), 0 1px 1px rgba(0,0,0,.13);
+}
+
+@media (max-width: 560px) {
+  .poker.poker-face .card-index-bottom { right: 4px; bottom: 4px; }
+  .poker.poker-face .card-pips { inset: 12% 8% 10% 25%; }
+  .poker.poker-face .card-pips .pip { font-size: .96em; }
+  .poker.poker-face .card-pips-1 .pip { font-size: 2.1em; }
+  .ddz-table .hand-dock .poker.hand-card.selected { transform: translateY(calc(var(--card-curve) - 12px)) rotate(var(--card-angle)) scale(1.01); }
+
+  .mahjong-wall-ring {
+    top: 42%;
+    width: calc(var(--mahjong-table-size) - 40px);
+    height: calc(var(--mahjong-table-size) - 40px);
+  }
+  .mahjong-wall-ring .mahjong-wall-track i {
+    width: 15px;
+    height: 13px;
+    margin-left: -3px;
+    box-shadow: 0 2px 0 #eadfc5, 0 4px 0 #b9aa8d, 0 6px 5px rgba(0,0,0,.24);
+  }
+  .mahjong-match-stage .mahjong-tile .mahjong-mark.mark-wan > b,
+  .mahjong-match-stage .mahjong-tile .mahjong-mark.mark-honor > b { font-size: .94rem; }
+  .mahjong-match-stage .mahjong-tile .mahjong-mark.mark-wan > small { font-size: .46rem; }
+  .mahjong-match-stage .mahjong-tile.drawn { margin-left: 5px; }
+  .mahjong-match-stage .mahjong-match-seat:not(.match-seat--south)::before {
+    content: attr(data-wind);
+    position: absolute;
+    left: 50%;
+    top: 42px;
+    padding: 2px 5px;
+    border-radius: 999px;
+    background: rgba(5,24,19,.88);
+    color: #d2e9e0;
+    font-size: .43rem;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ddz-table .hand-dock .poker.hand-card,
+  .mahjong-wall-ring .mahjong-wall-track i { transition: none !important; }
+}
+
+/* V9: authentic court artwork, denser Mahjong construction and functional evidence. */
+.poker.poker-face .card-court {
+  left: 25%;
+  right: 5%;
+  top: 5%;
+  bottom: 5%;
+  border-color: #917347;
+  border-radius: 4px;
+  background-color: #f4e6c3;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.46), 0 1px 2px rgba(60,39,20,.18);
+}
+.poker.poker-face .card-court.face-j { background-image: url("./assets/kai-court-j.svg"); }
+.poker.poker-face .card-court.face-q { background-image: url("./assets/kai-court-q.svg"); }
+.poker.poker-face .card-court.face-k { background-image: url("./assets/kai-court-k.svg"); }
+.poker.poker-face .card-court::before,
+.poker.poker-face .card-court::after { content: none; }
+.poker.poker-face .card-court > :where(em,b,strong) { display: none; }
+.poker.poker-face .joker-face {
+  left: 25%;
+  right: 5%;
+  top: 5%;
+  bottom: 5%;
+  border-color: #8a7147;
+  border-radius: 4px;
+  background: #f1ead8 url("./assets/kai-joker-court.svg") center / 100% 100% no-repeat;
+  opacity: 1;
+}
+.poker.poker-face .joker-face::before { content: none; }
+.poker.poker-face .joker-face > :where(em,b,strong) { display: none; }
+
+.ddz-table .hand-dock .poker.poker-face,
+.ddz-table .play-zone .poker.poker-face,
+.ddz-table .bottom-reveal .poker.poker-face,
+.three-hand .poker.poker-face {
+  height: auto;
+  aspect-ratio: 9 / 13;
+}
+.ddz-table .play-zone .play-cards { perspective: 700px; }
+.ddz-table .play-zone .poker.poker-face {
+  transform: rotateX(3deg);
+  box-shadow: 0 3px 2px rgba(2,12,9,.28), 0 6px 8px rgba(2,12,9,.18), inset 0 0 0 1px rgba(255,255,255,.64);
+}
+.ddz-table .play-zone .poker.poker-face:nth-child(2n) { transform: rotateX(3deg) rotate(.7deg); }
+.ddz-table .play-zone .poker.poker-face:nth-child(3n) { transform: rotateX(3deg) rotate(-.7deg); }
+
+.mahjong-mark.mark-tong.mark-count-1 .symbol-tong { width: 62%; }
+.bamboo-bird {
+  width: 76%;
+  height: 88%;
+  background: url("./assets/kai-bamboo-bird.svg") center / contain no-repeat;
+  color: transparent;
+  font-size: 0;
+  text-shadow: none;
+}
+
+.mahjong-table-volume { border-radius: 9%; }
+.mahjong-table-volume::before { border-radius: 8%; }
+.mahjong-match-felt { border-radius: 7%; }
+.game-stage--mahjong .mahjong-preview-table > :where(.mahjong-table-shadow,.mahjong-table-base,.mahjong-table-felt) { border-radius: 8%; }
+
+.mahjong-wall-ring .mahjong-wall-track {
+  width: 74%;
+  display: grid;
+  grid-template-columns: repeat(17, minmax(0,1fr));
+}
+.mahjong-wall-ring .mahjong-wall-track i {
+  width: auto;
+  height: auto;
+  margin-left: 0;
+  aspect-ratio: 1.16 / 1;
+}
+.mahjong-hidden-hand { gap: 1px; }
+.mahjong-hidden-hand i { margin-left: 0; }
+
+.game-stage--mahjong .mahjong-preview-wall {
+  width: 74%;
+  display: grid;
+  grid-template-columns: repeat(17,minmax(0,1fr));
+}
+.game-stage--mahjong .mahjong-preview-wall i {
+  width: auto;
+  height: auto;
+  margin-left: 0;
+  aspect-ratio: 1.16 / 1;
+}
+.game-stage--mahjong .preview-wall-top { top: 9%; left: 50%; transform: translateX(-50%); }
+.game-stage--mahjong .preview-wall-bottom { left: 50%; bottom: 9%; transform: translateX(-50%) rotate(180deg); }
+.game-stage--mahjong .preview-wall-left { top: 50%; left: 9%; transform: translate(-50%,-50%) rotate(90deg); }
+.game-stage--mahjong .preview-wall-right { top: 50%; right: 9%; transform: translate(50%,-50%) rotate(-90deg); }
+
+.game-stage--mahjong .mahjong-preview-rivers {
+  top: 50%;
+  left: 50%;
+  width: 45%;
+  height: 45%;
+  display: block;
+  transform: translate(-50%,-50%);
+}
+.mahjong-preview-rivers .preview-river {
+  position: absolute;
+  display: flex;
+  gap: 1px;
+}
+.mahjong-preview-rivers .preview-river--north { left: 50%; top: 0; transform: translateX(-50%) rotate(180deg); }
+.mahjong-preview-rivers .preview-river--south { left: 50%; bottom: 0; transform: translateX(-50%); }
+.mahjong-preview-rivers .preview-river--west { left: 0; top: 50%; transform: translate(-50%,-50%) rotate(90deg); }
+.mahjong-preview-rivers .preview-river--east { right: 0; top: 50%; transform: translate(50%,-50%) rotate(-90deg); }
+.mahjong-preview-rivers .mahjong-face.preview-river-tile {
+  width: 19px;
+  min-width: 19px;
+  min-height: 0;
+  display: block;
+  aspect-ratio: 4 / 5;
+  padding: 0;
+  border-radius: 2px;
+  background-color: #f7f0df;
+  box-shadow: 0 2px 3px rgba(0,0,0,.2);
+}
+.mahjong-preview-rivers .mahjong-face.preview-river-tile .mahjong-mark {
+  position: absolute;
+  inset: 7%;
+  min-height: 0;
+  display: block;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.mahjong-preview-rivers .mahjong-face.preview-river-tile .mahjong-mark.mark-wan,
+.mahjong-preview-rivers .mahjong-face.preview-river-tile .mahjong-mark.mark-honor { display: flex; }
+.game-stage--mahjong .mahjong-preview-center { top: 50%; }
+.game-stage--mahjong .mahjong-preview-hand { bottom: 8%; gap: 1px; }
+.game-stage--mahjong .mahjong-preview-hand > i {
+  width: 25px;
+  height: auto;
+  margin-left: 0;
+  aspect-ratio: 2 / 3;
+}
+.game-stage--mahjong .mahjong-preview-hand > i:nth-last-child(1) { margin-left: 6px; }
+
+@media (max-width: 760px) {
+  .three-opponent.is-revealed .three-hand { display: flex; }
+  .three-opponent.is-revealed .three-hand .poker {
+    width: 46px;
+    flex-basis: 46px;
+    margin-left: -13px;
+    font-size: .7rem;
+  }
+  .three-opponent.is-revealed .three-hand .poker:first-child { margin-left: 0; transform: rotate(-5deg); }
+  .three-opponent.is-revealed .three-hand .poker:nth-child(2) { transform: translateY(-4px); }
+  .three-opponent.is-revealed .three-hand .poker:nth-child(3) { transform: rotate(5deg); }
+}
+
+@media (max-width: 560px) {
+  .game-stage--mahjong .mahjong-preview-hand > i { width: 18px; }
+  .mahjong-preview-rivers .mahjong-face.preview-river-tile { width: 14px; min-width: 14px; }
+
+  .mahjong-wall-ring {
+    width: calc(var(--mahjong-table-size) - 68px);
+    height: calc(var(--mahjong-table-size) - 68px);
+  }
+  .mahjong-river-board {
+    width: min(270px, calc(var(--mahjong-table-size) - 100px));
+    height: min(270px, calc(var(--mahjong-table-size) - 100px));
+  }
+  .mahjong-wall-ring .mahjong-wall-track i { margin-left: 0; }
+  .mahjong-hidden-hand { gap: 0; }
+  .mahjong-hidden-hand i { margin-left: 0; }
+
+  .mahjong-match-stage .match-player-hand {
+    --tile-width: calc((100% - 19px) / 14);
+    gap: 1px;
+    padding-inline: 3px;
+  }
+  .mahjong-match-stage .mahjong-tile {
+    width: var(--tile-width);
+    flex: 0 0 var(--tile-width);
+    height: clamp(43px, 13vw, 55px);
+    margin-left: 0;
+  }
+  .mahjong-match-stage .mahjong-tile:first-child { margin-left: 0; }
+  .mahjong-match-stage .mahjong-tile.drawn { margin-left: 5px; }
+}
+
+@media (max-width: 340px) {
+  .mahjong-match-stage .mahjong-tile {
+    width: var(--tile-width);
+    flex-basis: var(--tile-width);
+    height: 44px;
+    margin-left: 0;
+  }
+  .mahjong-match-stage .mahjong-tile.drawn { margin-left: 5px; }
+}
+/* V10 — resilient room and history feedback */
+.room-sync-status {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto 18px;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(87, 203, 146, .2);
+  border-radius: 999px;
+  color: #a7dfc1;
+  background: rgba(35, 111, 79, .16);
+  font-size: 12px;
+  letter-spacing: .03em;
+}
+.room-sync-status i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #65d59b;
+  box-shadow: 0 0 0 4px rgba(101, 213, 155, .12), 0 0 14px rgba(101, 213, 155, .55);
+  animation: room-sync-pulse 1.8s ease-in-out infinite;
+}
+@keyframes room-sync-pulse { 50% { opacity: .46; transform: scale(.78); } }
+
+.history-state-card {
+  width: min(720px, calc(100% - 32px));
+  min-height: 310px;
+  margin: clamp(42px, 9vh, 90px) auto 92px;
+  padding: 48px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px solid rgba(224, 190, 113, .18);
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(18, 35, 31, .96), rgba(8, 17, 16, .98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .28), inset 0 1px rgba(255, 255, 255, .04);
+}
+.history-state-card > span { color: var(--gold, #dfbe71); font-size: 12px; letter-spacing: .14em; }
+.history-state-card h1 { margin: 12px 0 8px; font-size: clamp(27px, 5vw, 44px); }
+.history-state-card p { max-width: 460px; margin: 0 0 22px; color: var(--muted, #9aaaa4); line-height: 1.7; }
+.history-state-card.is-error { border-color: rgba(223, 112, 92, .26); }
+.history-state-spinner {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 22px;
+  border: 3px solid rgba(225, 194, 121, .17);
+  border-top-color: #e1c279;
+  border-radius: 50%;
+  animation: history-spin .8s linear infinite;
+}
+@keyframes history-spin { to { transform: rotate(360deg); } }
+.history-inline-error {
+  margin: 18px auto -4px;
+  width: min(1120px, calc(100% - 32px));
+  padding: 10px 12px 10px 16px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(223, 112, 92, .22);
+  border-radius: 14px;
+  background: rgba(102, 44, 37, .2);
+}
+.history-inline-error span { color: #edb2a8; font-size: 12px; }
+.history-inline-error b { font-size: 13px; font-weight: 600; }
+.history-inline-error .btn { padding: 7px 12px; min-height: 34px; }
+
+@media (max-width: 560px) {
+  .history-state-card { width: calc(100% - 24px); min-height: 260px; margin-top: 28px; padding: 34px 20px; border-radius: 18px; }
+  .history-inline-error { width: calc(100% - 24px); grid-template-columns: 1fr auto; }
+  .history-inline-error span { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-sync-status i,
+  .history-state-spinner { animation: none; }
+}

@@ -1,25 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { ApiError, waitForGame } from './api';
+import { syncRetryDelay } from './sync-retry';
 import type { GameView } from './types';
 
 type GameSyncCallbacks = {
   onGame: (game: GameView) => void;
   onConnected?: () => void;
-  onError?: (error: unknown) => void;
+  onError?: (error: unknown, terminal: boolean) => void;
 };
-
-function retryDelay(signal: AbortSignal, milliseconds = 1_000) {
-  return new Promise<void>((resolve) => {
-    if (signal.aborted) return resolve();
-    const done = () => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', done);
-      resolve();
-    };
-    const timer = setTimeout(done, milliseconds);
-    signal.addEventListener('abort', done, { once: true });
-  });
-}
 
 /** Receives immediate game changes and refreshes at most every five seconds for server timeout enforcement. */
 export function useGameSync(game: GameView | null, callbacks: GameSyncCallbacks) {
@@ -33,10 +21,12 @@ export function useGameSync(game: GameView | null, callbacks: GameSyncCallbacks)
 
     async function synchronize() {
       let version = game!.sequence;
+      let failureCount = 0;
       while (!signal.aborted) {
         try {
           const result = await waitForGame(game!.id, version, signal, 5_000);
           if (signal.aborted) return;
+          failureCount = 0;
           callbacksRef.current.onConnected?.();
           version = result.version;
           if (!result.changed) continue;
@@ -44,9 +34,11 @@ export function useGameSync(game: GameView | null, callbacks: GameSyncCallbacks)
           if (result.game.phase === 'finished') return;
         } catch (error) {
           if (signal.aborted) return;
-          callbacksRef.current.onError?.(error);
-          if (error instanceof ApiError && [401, 403, 404].includes(error.status)) return;
-          await retryDelay(signal);
+          const terminal = error instanceof ApiError && [401, 403, 404].includes(error.status);
+          callbacksRef.current.onError?.(error, terminal);
+          if (terminal) return;
+          failureCount += 1;
+          await syncRetryDelay(signal, failureCount);
         }
       }
     }

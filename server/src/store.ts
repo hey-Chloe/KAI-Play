@@ -73,6 +73,7 @@ export type JsonGameStoreOptions = Readonly<{ backupCount?: number }>;
 const CURRENT_SCHEMA_VERSION = 1 as const;
 const DEFAULT_BACKUP_COUNT = 3;
 const MAX_BACKUP_COUNT = 10;
+export const MAX_ACTION_RESULT_ENTRIES = 512;
 
 const initialState = (): PersistedState => ({
   users: {}, sessions: {}, balances: { treasury: 0 }, games: {}, rooms: {}, reports: [],
@@ -208,7 +209,9 @@ const encodeSnapshot = (state: PersistedState) => {
     checksum: { algorithm: 'sha256', value: checksumFor(stateJson) },
     state: normalizedState,
   };
-  return `${JSON.stringify(envelope, null, 2)}\n`;
+  // Snapshots are machine-owned and checksum protected. Compact JSON avoids
+  // multiplying disk I/O across the primary plus every rolling backup.
+  return `${JSON.stringify(envelope)}\n`;
 };
 
 export class StoreSnapshotError extends Error {
@@ -307,6 +310,13 @@ export class JsonGameStore {
 
   private backupPath(generation: number) { return `${this.path}.bak.${generation}`; }
 
+  private pruneActionResults() {
+    const keys = Object.keys(this.state.actionResults);
+    const excess = keys.length - MAX_ACTION_RESULT_ENTRIES;
+    if (excess <= 0) return;
+    for (const key of keys.slice(0, excess)) delete this.state.actionResults[key];
+  }
+
   recoverySource() { return this.recoveredFrom; }
 
   async load() {
@@ -326,6 +336,7 @@ export class JsonGameStore {
 
       try {
         this.state = decodeSnapshot(contents, candidate);
+        this.pruneActionResults();
         this.recoveredFrom = index === 0 ? null : candidate;
         if (index > 0) await atomicWrite(this.path, contents);
         return;
@@ -395,8 +406,8 @@ export class JsonGameStore {
     this.post({
       key: `welcome:${id}`, referenceType: 'welcome', referenceId: id,
       entries: [
-        { accountId: 'treasury', amount: -10_000, memo: '新玩家欢迎赠豆' },
-        { accountId: id, amount: 10_000, memo: '新玩家欢迎赠豆' },
+        { accountId: 'treasury', amount: -10_000, memo: '新玩家初始竞技分' },
+        { accountId: id, amount: 10_000, memo: '新玩家初始竞技分' },
       ],
     });
     return { user, token };
@@ -431,8 +442,16 @@ export class JsonGameStore {
     return { report, created: true };
   }
 
-  actionResult(key: string) { return this.state.actionResults[key]; }
-  setActionResult(key: string, result: unknown) { this.state.actionResults[key] = result; }
+  actionResult(key: string) {
+    const result = this.state.actionResults[key];
+    return result === undefined ? undefined : structuredClone(result);
+  }
+  actionResultCount() { return Object.keys(this.state.actionResults).length; }
+  setActionResult(key: string, requestFingerprint: string, result: unknown) {
+    this.state.actionResults[key] = structuredClone({ requestFingerprint, result });
+    this.pruneActionResults();
+  }
+  deleteActionResult(key: string) { delete this.state.actionResults[key]; }
 
   post(input: Readonly<{
     key: string;
@@ -467,8 +486,8 @@ export class JsonGameStore {
     this.post({
       key: `relief:${userId}:${date}`, referenceType: 'relief', referenceId: userId,
       entries: [
-        { accountId: 'treasury', amount: -amount, memo: '每日补助' },
-        { accountId: userId, amount, memo: '每日补助' },
+        { accountId: 'treasury', amount: -amount, memo: '每日竞技分补给' },
+        { accountId: userId, amount, memo: '每日竞技分补给' },
       ],
     });
     user.lastReliefDate = date;
