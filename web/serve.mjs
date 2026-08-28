@@ -19,6 +19,7 @@ const types = {
   '.png':'image/png', '.webp':'image/webp', '.woff2':'font/woff2',
 };
 const compressible = new Set(['.html', '.js', '.css', '.json', '.svg']);
+const fingerprintedAssetName = /(?:^|[._-])[a-f0-9]{8,}(?=[._-]|$)/i;
 const securityHeaders = {
   'x-content-type-options':'nosniff',
   'referrer-policy':'no-referrer',
@@ -126,8 +127,12 @@ const server = createServer((req, res) => {
     if (!metadata.isFile()) throw new Error('not file');
     const extension = extname(file).toLowerCase();
     const etag = `W/"${metadata.size.toString(16)}-${Math.trunc(metadata.mtimeMs).toString(16)}"`;
-    const cacheControl = url.pathname.startsWith('/assets/')
-      ? 'public, max-age=3600, must-revalidate'
+    const isAsset = url.pathname.startsWith('/assets/');
+    const assetName = isAsset ? requested.slice(requested.lastIndexOf('/') + 1) : '';
+    const cacheControl = isAsset
+      ? fingerprintedAssetName.test(assetName)
+        ? 'public, max-age=31536000, immutable'
+        : 'public, max-age=3600, must-revalidate'
       : 'no-cache';
     const commonHeaders = {
       ...securityHeaders,

@@ -59,6 +59,7 @@ test('web preview serves cache-aware local assets and proxies a complete authent
     const asset = await fetch(`${webOrigin}/assets/kai-card-back.svg`);
     assert.equal(asset.status, 200);
     assert.match(asset.headers.get('content-type') ?? '', /^image\/svg\+xml/);
+    assert.equal(asset.headers.get('cache-control'), 'public, max-age=3600, must-revalidate');
     const etag = asset.headers.get('etag');
     assert.ok(etag, 'static assets should expose a validator');
     assert.match(await asset.text(), /<svg/);
@@ -66,15 +67,22 @@ test('web preview serves cache-aware local assets and proxies a complete authent
     assert.equal(cached.status, 304);
     assert.equal(await cached.text(), '');
 
-    const cardStock = await fetch(`${webOrigin}/assets/kai-card-stock-1b727d8e.jpg`);
+    const cardStock = await fetch(`${webOrigin}/assets/kai-card-stock-6912c163.jpg`);
     assert.equal(cardStock.status, 200);
     assert.match(cardStock.headers.get('content-type') ?? '', /^image\/jpeg/);
-    assert.match(cardStock.headers.get('cache-control') ?? '', /public/);
+    const cardStockCache = new Set(
+      (cardStock.headers.get('cache-control') ?? '').split(',').map((directive) => directive.trim().toLowerCase()),
+    );
+    assert.ok(cardStockCache.has('public'));
+    assert.ok(cardStockCache.has('max-age=31536000'));
+    assert.ok(cardStockCache.has('immutable'));
     const cardStockEtag = cardStock.headers.get('etag');
     assert.ok(cardStockEtag, 'generated card stock must expose a validator');
     assert.ok((await cardStock.arrayBuffer()).byteLength > 40_000, 'card stock texture must not be an empty placeholder');
-    const cachedCardStock = await fetch(`${webOrigin}/assets/kai-card-stock-1b727d8e.jpg`, { headers: { 'if-none-match': cardStockEtag } });
+    const cachedCardStock = await fetch(`${webOrigin}/assets/kai-card-stock-6912c163.jpg`, { headers: { 'if-none-match': cardStockEtag } });
     assert.equal(cachedCardStock.status, 304);
+    assert.equal(cachedCardStock.headers.get('etag'), cardStockEtag);
+    assert.equal(cachedCardStock.headers.get('cache-control'), 'public, max-age=31536000, immutable');
     assert.equal((await cachedCardStock.arrayBuffer()).byteLength, 0);
 
     for (const path of ['/styles.css', '/app.js', '/sudoku6.js']) {

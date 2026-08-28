@@ -1,8 +1,8 @@
 # KAI PLAY — Existing → New Asset Replacement Map
 
-Pass: P0 media fidelity + Card Material V11<br>
+Pass: P0 media fidelity + Card Material V11 + Fidelity V12<br>
 Decision date: 2026-08-28<br>
-Implementation gate: **V11 CARD-STOCK MATERIAL ADOPTED — LIVE DOM/SVG FACES PRESERVED**
+Implementation gate: **V11 CARD STOCK ADOPTED — V12 SIZE-AWARE FIDELITY ACTIVE — LIVE DOM/SVG FACES PRESERVED**
 
 ## Decision rule
 
@@ -13,7 +13,7 @@ An image can replace a live material layer only when it is:
 3. rights/provenance appropriate;
 4. better than the current asset after crop, perspective, scale, alpha, and loading-budget checks.
 
-`kai-card-stock-1b727d8e.jpg` meets these requirements as a shared face material. It does not replace live rank/suit markup or the existing KAI card back; it is combined with them.
+`kai-card-stock-6912c163.jpg` meets these requirements as a shared face material. It does not replace live rank/suit markup or the existing KAI card back; it is combined with them.
 
 ## P0 mapping
 
@@ -21,7 +21,7 @@ An image can replace a live material layer only when it is:
 |---|---|---|---|---|---|---|
 | P0 Hero table surface | `.live-table-shell`, `.live-table-felt` | `kai-felt-v4.avif` + desktop/mobile masks | **KEEP / COMBINE** | Felt image remains clipped by the responsive felt mask. DOM players, cards, state, and CTA remain above it. | Desktop uses 1200×680 masks; mobile uses 680×760 masks. Existing solid/gradient CSS remains fallback. | Already referenced at `styles.css:2341–2355`; rollback target is the prior CSS fallback, asset SHA `a5178d07…`. |
 | P0 Hero padded rail / depth | `.live-table-shell::before`, `.live-table-rail` | `kai-leather-v4.avif` + outer/rail masks | **KEEP / COMBINE** | Leather provides material; SVG masks provide geometry. Existing inner highlights, elevation and ambient shadow preserve physical separation. | Separate desktop/mobile masks avoid destructive cropping. Existing graphite fill remains fallback. | Already referenced at `styles.css:2310–2332`; asset SHA `fe4ee9ba…`. |
-| P0 Playing-card face material | `.poker.poker-face` plus DOM ranks/suits/pips | `kai-card-stock-1b727d8e.jpg` combined with local J/Q/K/Joker SVGs | **ADOPT / COMBINE** | Use the JPEG only as warm card-stock surface. Keep ranks, suits, pips, ARIA and state in DOM; keep court/Joker art as local SVG. Never rasterize a dynamic hand into a static face sheet. | Full/Compact/Micro progressively reduce decorative detail while preserving the left index and `9:13` geometry. Solid warm-white and gradient remain fallback. | Asset SHA `6912c163…`; rollback removes the JPEG layer and restores `card-paper.svg`/warm-white fallback. Acceptance is defined in `KAI_PLAY_CARD_MATERIAL_V11.md`. |
+| P0 Playing-card face material | `.poker.poker-face` plus DOM ranks/suits/pips | `kai-card-stock-6912c163.jpg` combined with local J/Q/K/Joker SVGs | **ADOPT / COMBINE** | Use the JPEG only as warm card-stock surface. Keep ranks, suits, pips, ARIA and state in DOM; keep court/Joker art as local SVG. Never rasterize a dynamic hand into a static face sheet. | Full/Compact/Micro progressively reduce decorative detail while preserving the left index and `9:13` geometry. Solid warm-white and gradient remain fallback. | Asset SHA `6912c163…`; rollback removes the JPEG layer and restores `card-paper.svg`/warm-white fallback. Acceptance is defined in `KAI_PLAY_CARD_MATERIAL_V11.md`. |
 | P0 KAI card back | `.kai-card-back`, `.deal-card`, `.training-card-back` | Existing `kai-card-back.svg` | **KEEP / REUSE** | Preserve one KAI SVG back so dealing motion, fan, overlap, z-index and dynamic counts remain DOM driven. V11 does not require a replacement bitmap. | SVG scales cleanly at desktop and mobile and shares the face `9:13` ratio. | Existing asset SHA `426fe840…`; rollback not required. |
 | P0 Table geometry | desktop/mobile outer, rail and felt mask files | No complete transparent KAI hero-table cutout found | **KEEP** | Masks remain geometry only. They do not replace real table state or interaction. | Dedicated 1440/390 geometry already exists. | Six mask SHAs recorded in inventory. |
 | P0 Material source masters | 1254² felt/leather PNGs | Current 720² AVIFs | **KEEP optimized derivative** | Do not swap 2.8 MB PNGs into runtime; AVIF retains material fidelity at a fraction of weight. | Tiled/background rendering avoids viewport-specific crops. | PNG masters remain outside runtime; AVIFs are 77.5 KB and 93.6 KB. |
@@ -53,7 +53,7 @@ Only material and geometry files remain in the image layer.
 - Contact Sheet: complete.
 - Inventory: complete.
 - Replacement Map: complete.
-- P0 card-face material: **1 adopted project asset**, `kai-card-stock-1b727d8e.jpg`.
+- P0 card-face material: **1 adopted project asset**, `kai-card-stock-6912c163.jpg`.
 - Dynamic face system: **kept**, including DOM ranks/suits/pips, semantic labels and local J/Q/K/Joker SVGs.
 - KAI card back: **kept**, because the existing branded vector already meets the role.
 - Required visual evidence: 1440×1000 lobby, 1280×720 live table, 390×844 phone, 844×390 landscape and 320×568 Micro checks.

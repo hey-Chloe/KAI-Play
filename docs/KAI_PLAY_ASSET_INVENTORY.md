@@ -1,12 +1,12 @@
 # KAI PLAY — Asset Inventory
 
 Snapshot time: 2026-08-28 (Asia/Shanghai)<br>
-Pass: `CARD MATERIAL V11 ADOPTION` / historical inventory updated with current project media<br>
-Page implementation status: **V11 card-stock material adopted; semantic DOM/SVG faces preserved**
+Pass: `CARD MATERIAL V11 + FIDELITY V12` / historical inventory updated with current project media<br>
+Page implementation status: **V11 card stock adopted; V12 size-aware fidelity active; semantic DOM/SVG faces preserved**
 
 ## Finding
 
-The repository now contains one newly generated, production-eligible KAI PLAY face material: `kai-card-stock-1b727d8e.jpg`. It is a neutral card-stock surface rather than a baked card face, so live ranks, suits, pips, accessibility labels and interaction state remain DOM driven.
+The repository now contains one newly generated, production-eligible KAI PLAY face material: `kai-card-stock-6912c163.jpg`. It is a neutral card-stock surface rather than a baked card face, so live ranks, suits, pips, accessibility labels and interaction state remain DOM driven.
 
 The adopted card stock combines with the repository-native KAI card back and mirrored J/Q/K/Joker SVG artwork. Existing felt, leather and responsive masks remain table materials. The historical XIAOYUE archive/stationery imagery and ten supplied clipboard images remain references or rejected inputs, not production cutouts.
 
@@ -40,7 +40,7 @@ Source directory: `web/assets`
 |---|---|---|---|---|---|---|---|---|
 | `kai-felt-v4.avif` | 720×720 AVIF; 77,522 B; no alpha; 2026-08-26 08:37:10; SHA `a5178d07db5ff96e…` | Seamless deep emerald felt with restrained fibre variation | Table-center material under responsive masks | High | **No** — it already replaces flat fill | Excellent as tiled material | Excellent as tiled material | USED |
 | `kai-leather-v4.avif` | 720×720 AVIF; 93,563 B; no alpha; 2026-08-26 08:37:10; SHA `fe4ee9ba14860784…` | Graphite leather with subtle grain and lighting-neutral tonal range | Outer table shell and padded rail | High | **No** — it is already the current material | Excellent | Excellent | USED |
-| `kai-card-stock-1b727d8e.jpg` | 512×512 JPEG; 60,976 B; no alpha; 2026-08-28 14:32:11; SHA `6912c16336df5876…` | Warm ivory card stock with a restrained, even micro-weave and diffuse lighting; no ranks, suits, logos or watermark | Primary V11 material beneath DOM-rendered card faces | High; neutral enough for red and graphite ink | **Yes — ADOPT as the V11 face-stock material**, with CSS colour/gradient fallback | Excellent in Full/Compact | Good in Compact/Micro when contrast is restrained | ADOPTED / USED V11 |
+| `kai-card-stock-6912c163.jpg` | 512×512 JPEG; 60,976 B; no alpha; 2026-08-28 14:32:11; SHA `6912c16336df5876…` | Warm ivory card stock with a restrained, even micro-weave and diffuse lighting; no ranks, suits, logos or watermark | Primary V11 material beneath DOM-rendered card faces | High; neutral enough for red and graphite ink | **Yes — ADOPT as the V11 face-stock material**, with CSS colour/gradient fallback | Excellent in Full/Compact | Good in Compact; Micro hides raster detail | ADOPTED / USED V11+V12 |
 | `kai-card-back.svg` | 180×260 SVG; 2,367 B; transparent outside card; 2026-08-25 17:47:39; SHA `426fe8400fd13973…` | KAI-branded emerald/graphite card back with coral accent and geometric K pattern | Current lobby, deal, stack, and gameplay backs | Good vector asset at all delivered sizes | **KEEP — V11 requires no replacement** | Good | Good | USED / KEEP |
 | `card-paper.svg` | 64×64 SVG; 440 B; transparent noise; 2026-08-25 17:47:39; SHA `ebbcc2b4e63bbc3e…` | Subtle warm-white procedural paper grain | Lightweight fallback beneath DOM-rendered card faces and compatible tile surfaces | Good supporting fallback | **KEEP as fallback**, not the primary V11 material | Good | Good | USED / FALLBACK |
 | `kai-court-j.svg`, `kai-court-q.svg`, `kai-court-k.svg`, `kai-joker-court.svg` | Four local 120×180 SVGs; 1,438–1,773 B each; internal mirrored `<use>` construction; no external media | Original KAI two-headed court and Joker illustrations | J/Q/K/Joker center artwork while rank/suit indices stay semantic DOM | Good and resolution-independent | **KEEP / COMBINE** with V11 card stock | Excellent | Good when Compact/Micro rules are applied | USED / KEEP |
@@ -97,7 +97,7 @@ These files have no alpha and contain complete third-party layouts, backgrounds,
 
 ## Provenance and rights
 
-- V11 card stock: generated for KAI PLAY in the current project pass, stored locally as `kai-card-stock-1b727d8e.jpg`; no third-party card face or brand is embedded in the image.
+- V11 card stock: generated for KAI PLAY in the current project pass, stored locally as `kai-card-stock-6912c163.jpg`; no third-party card face or brand is embedded in the image.
 - Existing table textures: generated in a prior KAI PLAY run and optimized locally; generation provenance is known, but explicit commercial-rights documentation is not stored beside the files.
 - Current SVGs: repository-native KAI PLAY implementation assets.
 - Clipboard references: user-supplied as visual references; original creator/license is UNKNOWN.

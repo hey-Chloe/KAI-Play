@@ -14,7 +14,6 @@
       <path d="m14 9 9 2-3 9-9-3Z" fill="#dce1db" stroke="#34444a" stroke-width="2"/>
     </g>
   </defs>
-  <rect width="120" height="180" rx="8" fill="#f4e6c3"/>
   <use href="#king-half"/>
   <use href="#king-half" transform="rotate(180 60 90)"/>
   <path d="M4 85h112v10H4Z" fill="#315f78"/>

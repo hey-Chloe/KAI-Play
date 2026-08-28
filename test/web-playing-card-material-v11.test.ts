@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import test from 'node:test';
@@ -169,8 +170,17 @@ test('V11 uses a cache-busted local 512px JPEG card-stock material', async () =>
     const path = resolve(gameRoot, 'web/assets', file);
     const [metadata, bytes] = await Promise.all([stat(path), readFile(path)]);
     assert.ok(metadata.size >= 16 * 1024, `${file} is too small to carry a useful paper texture`);
-    assert.ok(metadata.size <= 256 * 1024, `${file} is too large for a reusable card texture`);
+    assert.ok(metadata.size <= 80 * 1024, `${file} exceeds the 80 KiB card-stock budget`);
     assert.deepEqual(jpegDimensions(bytes), { width: 512, height: 512 });
+
+    const nameDigest = file.match(/[._-]([a-f0-9]{8,})\.jpe?g$/i)?.[1].toLowerCase();
+    assert.ok(nameDigest, `${file} should end in an 8+ character hexadecimal content digest`);
+    const contentDigest = createHash('sha256').update(bytes).digest('hex');
+    assert.equal(
+      nameDigest,
+      contentDigest.slice(0, nameDigest.length),
+      `${file} should use the leading characters of its SHA-256 digest`,
+    );
   }
 });
 

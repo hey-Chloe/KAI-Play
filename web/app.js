@@ -577,22 +577,58 @@ const PIP_PATTERNS = Object.freeze({
   4: ['tl','tr','bl','br'],
   5: ['tl','tr','mc','bl','br'],
   6: ['tl','tr','ml','mr','bl','br'],
-  7: ['tl','tr','ml','mc','mr','bl','br'],
-  8: ['tl','tr','ul','ur','ll','lr','bl','br'],
+  7: ['tl','tr','cu','ml','mr','bl','br'],
+  8: ['tl','tr','cu','ml','mr','cl','bl','br'],
   9: ['tl','tr','ul','ur','mc','ll','lr','bl','br'],
-  10: ['tl','tr','ul','ur','ml','mr','ll','lr','bl','br'],
+  10: ['tl','tr','ul','ur','cu','cl','ll','lr','bl','br'],
 });
+
+const CARD_RANK_DATA = Object.freeze({
+  3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10',
+  11: 'j', 12: 'q', 13: 'k', 14: 'a', 15: '2', 16: 'small-joker', 17: 'big-joker',
+});
+const CARD_RANK_STOCK_INDEX = Object.freeze({
+  3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10,
+  11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17,
+});
+const CARD_SUIT_DATA = Object.freeze({
+  spade: 'spade', heart: 'heart', club: 'club', diamond: 'diamond', joker: 'joker',
+});
+const CARD_SUIT_LABELS = Object.freeze({
+  spade: '黑桃', heart: '红桃', club: '梅花', diamond: '方块', joker: '王',
+});
+const CARD_SUIT_STOCK_INDEX = Object.freeze({
+  spade: 1, heart: 2, club: 3, diamond: 4, joker: 5,
+});
+
+function cardMappedValue(map, key, fallback) {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : fallback;
+}
+
+function cardStockPosition(rankValue, suitValue) {
+  const rankIndex = cardMappedValue(CARD_RANK_STOCK_INDEX, rankValue, 0);
+  const suitIndex = cardMappedValue(CARD_SUIT_STOCK_INDEX, suitValue, 0);
+  const seed = (rankIndex * 5) + suitIndex;
+  return {
+    x: 9 + ((seed * 37) % 83),
+    y: 9 + ((seed * 61) % 83),
+  };
+}
 
 function cardPips(card, symbol) {
   const count = card.rank === 14 ? 1 : card.rank === 15 ? 2 : Number(card.rank);
   const pattern = PIP_PATTERNS[count];
   if (!pattern) return '';
-  return `<i class="card-pips card-pips-${count}" aria-hidden="true">${pattern.map((position)=>`<b class="pip pip-${position} ${['ll','lr','bl','bc','br'].includes(position)?'is-inverted':''}">${symbol}</b>`).join('')}</i>`;
+  return `<i class="card-pips card-pips-${count}" aria-hidden="true">${pattern.map((position)=>`<b class="pip pip-${position} ${['cl','ll','lr','bl','bc','br'].includes(position)?'is-inverted':''}">${symbol}</b>`).join('')}</i>`;
 }
 
 function poker(c, selectable = true, decorative = false, fan = null) {
   const rawLabel = rank(c.rank);
   const symbol = suit(c.suit);
+  const rankData = cardMappedValue(CARD_RANK_DATA, c.rank, 'unknown');
+  const suitData = cardMappedValue(CARD_SUIT_DATA, c.suit, 'unknown');
+  const suitLabel = cardMappedValue(CARD_SUIT_LABELS, c.suit, '未知花色');
+  const stock = cardStockPosition(c.rank, c.suit);
   const joker = c.suit === 'joker';
   const bigJoker = joker && c.rank === 17;
   const classes = ['poker-face', isRed(c)?'red':'', joker?'joker-card':'', joker?(bigJoker?'joker-red':'joker-gray'):'', decorative?'is-decorative':'', fan?'hand-card':''].filter(Boolean).join(' ');
@@ -602,13 +638,21 @@ function poker(c, selectable = true, decorative = false, fan = null) {
     : `<span class="card-index"><b>${rawLabel}</b><small>${symbol}</small></span>${bottomIndex}${[11,12,13].includes(c.rank)
       ? `<i class="card-court face-${String(rawLabel).toLowerCase()}"><em>${rawLabel}</em><b>${symbol}</b><strong>KAI</strong></i>`
       : cardPips(c, symbol)}<span class="card-signature">KAI</span>`;
-  const aria = joker ? `${bigJoker?'大王':'小王'} ${bigJoker?'红色':'灰色'} JOKER` : `${rawLabel}${symbol}`;
+  const aria = joker ? `${bigJoker?'大王':'小王'} ${bigJoker?'红色':'灰色'} JOKER` : `${suitLabel} ${rawLabel}`;
   const selected = state.selected.has(c.id);
-  const fanStyle = fan ? ` style="--card-angle:${(((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 3).toFixed(2)}deg;--card-curve:${(Math.abs((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 4).toFixed(2)}px;--card-order:${fan.index}"` : '';
+  const style = [`--card-stock-x:${stock.x}%`, `--card-stock-y:${stock.y}%`];
+  if (fan) {
+    style.push(
+      `--card-angle:${(((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 3).toFixed(2)}deg`,
+      `--card-curve:${(Math.abs((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 4).toFixed(2)}px`,
+      `--card-order:${fan.index}`,
+    );
+  }
+  const faceAttributes = `data-rank="${rankData}" data-suit="${suitData}" style="${style.join(';')}"`;
   if (!selectable) return decorative
-    ? `<span class="poker ${classes}" aria-hidden="true">${content}</span>`
-    : `<span class="poker ${classes}" role="img" aria-label="${esc(aria)}"${fanStyle}>${content}</span>`;
-  return `<button class="poker ${classes} ${selected?'selected':''}" data-card="${esc(c.id)}" aria-label="${esc(aria)}" aria-pressed="${selected?'true':'false'}"${fanStyle}>${content}</button>`;
+    ? `<span class="poker ${classes}" ${faceAttributes} aria-hidden="true">${content}</span>`
+    : `<span class="poker ${classes}" ${faceAttributes} role="img" aria-label="${esc(aria)}">${content}</span>`;
+  return `<button class="poker ${classes} ${selected?'selected':''}" ${faceAttributes} data-card="${esc(c.id)}" aria-label="${esc(aria)}" aria-pressed="${selected?'true':'false'}">${content}</button>`;
 }
 
 function previewPoker(rankValue, suitValue) {
