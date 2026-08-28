@@ -24,7 +24,7 @@ function sourceBetween(source: string, start: string, end: string) {
 test('the eight-card catalog keeps KAI Sudoku playable immediately after 1048', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /8 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 7 款免费训练/);
+  assert.match(lobby, /1 款竞技 · 7 款免费畅玩/);
   assert.match(lobby, /class="game-world world-sudoku6"/);
   assert.match(lobby, /<h3>KAI 数独<\/h3>/);
   assert.match(lobby, /data-action="open-sudoku6"/);

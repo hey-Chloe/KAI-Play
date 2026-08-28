@@ -1,5 +1,7 @@
 # KAI PLAY Lobby Hero V4
 
+> 状态：材质基础保留，页面信息架构已由 Game Center V10 取代。V4 的五层牌桌、原创纹理、真实性和无障碍契约继续生效；620px 单牌桌首屏及“移除介绍标题”的布局约束不再作为当前大厅验收标准。当前结构见 `KAI_PLAY_PRODUCT_V2.md`。
+
 ## Product route
 
 - Primary archetype: Consumer App

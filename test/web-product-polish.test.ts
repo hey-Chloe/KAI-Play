@@ -40,9 +40,35 @@ test('the lobby promotes only playable content and makes 1048 discoverable', () 
   assert.match(lobby, /开始首局/);
   assert.match(lobby, /游客免注册 · 智能牌友补位 · 可断线恢复/);
   assert.match(lobby, /world-badge/);
-  assert.match(lobby, /进度已保存/);
+  assert.match(lobby, /继续游玩/);
+  assert.match(lobby, /resume-progress/);
   assert.doesNotMatch(lobby, /scroll-games|每日残局|筹备中/);
   assert.match(stylesSource, /\.world-swipe-hint/);
+});
+
+test('the game center puts discovery before room and history utilities', () => {
+  const lobby = between(appSource, 'function lobby()', 'function nav(');
+  const intro = lobby.indexOf('game-center-intro');
+  const discovery = lobby.indexOf('hub-discovery');
+  const catalog = lobby.indexOf('id="game-selection"');
+  const tools = lobby.indexOf('id="lobby-tools"');
+  assert.ok(intro >= 0 && intro < discovery);
+  assert.ok(discovery < catalog);
+  assert.ok(catalog < tools);
+  assert.match(lobby, /现在，想玩点什么？/);
+  assert.match(lobby, /按心情选择玩法/);
+  assert.match(lobby, /本地自动保存/);
+});
+
+test('poster cards keep one real action and a truthful benefit promise', () => {
+  const lobby = between(appSource, 'function lobby()', 'function nav(');
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 8);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 8);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 8);
+  assert.match(lobby, /首击必安全/);
+  assert.match(lobby, /三档 KAI 对手/);
+  assert.match(lobby, /无现金下注 · 无提现/);
+  assert.doesNotMatch(lobby, /\d+\s*人在线|五星|好评率|今日热门/);
 });
 
 test('all eight games form one horizontally sliding card carousel', () => {

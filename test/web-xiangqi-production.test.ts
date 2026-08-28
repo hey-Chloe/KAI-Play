@@ -53,7 +53,7 @@ test('Xiangqi is part of the browser module graph and every production artifact'
 test('the eight-card lobby opens the local Xiangqi route', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /8 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 7 款免费训练/);
+  assert.match(lobby, /1 款竞技 · 7 款免费畅玩/);
   assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 8);
   assert.match(lobby, /class="game-world world-xiangqi"/);
   assert.match(lobby, /data-action="open-xiangqi"/);

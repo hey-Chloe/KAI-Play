@@ -63,6 +63,8 @@ const XIANGQI_DIFFICULTY_KEY = 'kai.play.xiangqi.difficulty.v1';
 const XIANGQI_TUTORIAL_KEY = 'kai.play.xiangqi.tutorial.v1';
 const MINESWEEPER_SAVE_KEY = 'kai.play.minesweeper.game.v1';
 const MINESWEEPER_DIFFICULTY_KEY = 'kai.play.minesweeper.difficulty.v1';
+const LAST_LOCAL_GAME_KEY = 'kai.play.last-local-game';
+const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper']);
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
 function safeStorageGet(key) {
@@ -80,6 +82,9 @@ function safeStorageSet(key, value) {
 function safeStorageRemove(key) {
   try { globalThis.localStorage?.removeItem(key); return true; } catch { return false; }
 }
+function rememberLastLocalGame(game) {
+  return LOCAL_GAME_IDS.has(game) && safeStorageSet(LAST_LOCAL_GAME_KEY, game);
+}
 const storedHeroGame = safeStorageGet(HERO_GAME_KEY);
 const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
@@ -92,6 +97,8 @@ let minesweeperSuppressedClick = null;
 let toastTimer = null;
 let threeRevealTimer = null;
 let slotSpinTimer = null;
+let worldCarouselStatusFramePending = false;
+let worldCarouselPendingStrip = null;
 
 const SYNC_TERMINAL_STATUSES = new Set([401, 403, 404]);
 
@@ -380,15 +387,75 @@ function lobby() {
   const p = state.profile || {games:0,wins:0,winRate:0,name:'游客'};
   const firstGame = (Number(p.games) || 0) === 0;
   const savedXiangqi = loadSavedXiangqiSession();
-  const xiangqiAction = !savedXiangqi ? '执红开局' : savedXiangqi.game.status === 'playing' ? '继续对局' : '查看战果';
   const saved1048 = loadSaved1048Game();
-  const merge1048Action = !saved1048 ? '开始合并' : saved1048.status === 'playing' ? '继续上局' : '查看上局';
   const savedSudoku6 = loadSavedSudoku6Game();
-  const sudoku6Action = !savedSudoku6 ? '开始数独' : savedSudoku6.status === 'playing' ? '继续上局' : '查看成绩';
   const savedMinesweeper = loadSavedMinesweeperGame();
-  const minesweeperAction = !savedMinesweeper ? '开始排雷' : ['ready','playing'].includes(savedMinesweeper.status) ? '继续排雷' : '查看上局';
+  const canContinueMinesweeper = savedMinesweeper?.status === 'playing' && Number(savedMinesweeper.revealedCount) > 0;
+  const canContinueSudoku6 = savedSudoku6?.status === 'playing'
+    && savedSudoku6.values.some((value, index) => savedSudoku6.puzzle[index] === 0 && value !== 0);
+  const canContinue1048 = saved1048?.status === 'playing' && Number(saved1048.moves) > 0;
+  const canContinueXiangqi = savedXiangqi?.game?.status === 'playing'
+    && (Number(savedXiangqi.game.moveCount) > 0 || savedXiangqi.game.history?.length > 0);
+  const xiangqiAction = !savedXiangqi || (savedXiangqi.game.status === 'playing' && !canContinueXiangqi) ? '执红开局' : canContinueXiangqi ? '继续对局' : '查看战果';
+  const merge1048Action = !saved1048 || (saved1048.status === 'playing' && !canContinue1048) ? '开始合并' : canContinue1048 ? '继续上局' : '查看上局';
+  const sudoku6Action = !savedSudoku6 || (savedSudoku6.status === 'playing' && !canContinueSudoku6) ? '开始数独' : canContinueSudoku6 ? '继续上局' : '查看成绩';
+  const minesweeperAction = !savedMinesweeper || !canContinueMinesweeper && ['ready','playing'].includes(savedMinesweeper.status) ? '开始排雷' : canContinueMinesweeper ? '继续排雷' : '查看上局';
   const minesweeperPreview = ['covered','covered','covered','covered','covered','covered','covered','one','one','one','covered','covered','covered','one','empty','two','flag','covered','covered','one','one','two','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered']
     .map((cell) => `<i class="${cell}">${cell === 'one' ? '1' : cell === 'two' ? '2' : cell === 'flag' ? '⚑' : ''}</i>`).join('');
+  const resumeCandidates = [];
+  if (canContinueMinesweeper) {
+    const safeCells = savedMinesweeper.rows * savedMinesweeper.columns - savedMinesweeper.mineCount;
+    const completed = Math.min(safeCells, Number(savedMinesweeper.revealedCount) || 0);
+    resumeCandidates.push({
+      id:'minesweeper',
+      accent:'minesweeper', eyebrow:'继续游玩', title:'KAI 扫雷',
+      meta:`${MINESWEEPER_DIFFICULTIES[savedMinesweeper.difficulty].label}雷区 · 已揭开 ${completed}/${safeCells}`,
+      progress:safeCells ? Math.round(completed / safeCells * 100) : 0,
+      action:'open-minesweeper', label:minesweeperAction, glyph:'⚑',
+    });
+  }
+  if (canContinueSudoku6) {
+    const blanks = savedSudoku6.puzzle.filter((value) => value === 0).length;
+    const completed = savedSudoku6.values.reduce((total, value, index) => total + Number(savedSudoku6.puzzle[index] === 0 && value !== 0), 0);
+    resumeCandidates.push({
+      id:'sudoku6',
+      accent:'sudoku6', eyebrow:'继续游玩', title:'KAI 数独',
+      meta:`${SUDOKU6_DIFFICULTIES[savedSudoku6.difficulty].label}题 · 已填 ${completed}/${blanks} 格`,
+      progress:blanks ? Math.round(completed / blanks * 100) : 100,
+      action:'open-sudoku6', label:sudoku6Action, glyph:'6',
+    });
+  }
+  if (canContinue1048) {
+    resumeCandidates.push({
+      id:'1048',
+      accent:'1048', eyebrow:'继续游玩', title:'1048',
+      meta:`最高方块 ${saved1048.bestTile} · 已移动 ${saved1048.moves} 步`,
+      progress:null, note:'本地局面已保存，可继续合并',
+      action:'open-1048', label:merge1048Action, glyph:String(saved1048.bestTile || 2),
+    });
+  }
+  if (canContinueXiangqi) {
+    resumeCandidates.push({
+      id:'xiangqi',
+      accent:'xiangqi', eyebrow:'继续游玩', title:'KAI 象棋',
+      meta:`${XIANGQI_DIFFICULTIES[savedXiangqi.game.difficulty].label} KAI · 已走 ${savedXiangqi.game.moveCount} 手`,
+      progress:null, note:'局面已保存，可从当前回合继续',
+      action:'open-xiangqi', label:xiangqiAction, glyph:'帅',
+    });
+  }
+  const recentLocalGame = safeStorageGet(LAST_LOCAL_GAME_KEY);
+  const resumeGame = resumeCandidates.find((game) => game.id === recentLocalGame) || resumeCandidates[0] || {
+    accent:'minesweeper', eyebrow:'新手推荐', title:'先来一局扫雷',
+    meta:'首击必安全 · 从 10 颗雷的入门盘开始',
+    progress:null, note:'无需规则准备，点开就能玩', action:'open-minesweeper', label:'开始排雷', glyph:'⚑',
+  };
+  const resumeButton = resumeGame.action === 'open-sudoku6'
+    ? `<button class="btn primary" data-action="open-sudoku6">${resumeGame.label} <b>→</b></button>`
+    : resumeGame.action === 'open-1048'
+      ? `<button class="btn primary" data-action="open-1048">${resumeGame.label} <b>→</b></button>`
+      : resumeGame.action === 'open-xiangqi'
+        ? `<button class="btn primary" data-action="open-xiangqi">${resumeGame.label} <b>→</b></button>`
+        : `<button class="btn primary" data-action="open-minesweeper">${resumeGame.label} <b>→</b></button>`;
   const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
   const ddzActive = heroGame === 'ddz';
   const previewWall = '<i></i>'.repeat(17);
@@ -406,50 +473,87 @@ function lobby() {
     [{rank:6,suit:'条',label:'六条'},{rank:4,suit:'筒',label:'四筒'},{rank:0,suit:'字',label:'北'}],
   ];
   const previewRivers = ['north','east','south','west'].map((position,index)=>`<div class="preview-river preview-river--${position}">${previewRiverData[index].map((tile)=>mahjongFace(tile,'preview-river-tile')).join('')}</div>`).join('');
-  return `<div class="shell lobby-shell lobby-v4">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
+  return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
-      <section class="lobby-game-carousel" data-hero-carousel tabindex="0" aria-label="主要玩法，可左右滑动或使用方向键切换" aria-roledescription="carousel" aria-keyshortcuts="ArrowLeft ArrowRight">
-        <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--ddz ${ddzActive?'is-active':''}" data-hero-stage="ddz" aria-labelledby="live-table-title" aria-hidden="${ddzActive?'false':'true'}" ${ddzActive?'':'inert'}>
-          ${tableFrame('preview')}
-          <div class="live-table-seat live-seat-left"><span>A</span><b>智能牌友 A</b><small>左侧牌友</small></div>
-          <div class="live-table-seat live-seat-right"><span>B</span><b>智能牌友 B</b><small>右侧牌友</small></div>
-          <div class="live-table-center"><small>三人斗地主 · 牌桌预览</small><h1 id="live-table-title">还差你</h1><div class="lobby-card-scene" aria-hidden="true">${cardBack(true,'live-card-back')}${previewPoker(10,'spade')}${previewPoker(11,'spade')}${previewPoker(12,'heart')}${previewPoker(13,'club')}</div></div>
-          <div class="live-table-seat live-seat-you"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>你的座位</small></div>
-          <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="${firstGame?'开始首局':'快速人机'}，创建斗地主牌局">${firstGame?'开始首局':'快速人机'} <b>→</b></button><small>游客免注册 · 智能牌友补位 · 可断线恢复</small><span class="sr-only">点击后创建真实牌局，服务端统一判定。</span></div>
-        </section>
-        <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--mahjong ${ddzActive?'':'is-active'}" data-hero-stage="mahjong" aria-labelledby="mahjong-hero-title" aria-hidden="${ddzActive?'true':'false'}" ${ddzActive?'inert':''}>
-          <div class="mahjong-preview-table" aria-hidden="true">
-            <i class="mahjong-table-shadow"></i><i class="mahjong-table-base"></i><i class="mahjong-table-felt"></i>
-            <div class="mahjong-preview-wall preview-wall-top">${previewWall}</div><div class="mahjong-preview-wall preview-wall-left">${previewWall}</div><div class="mahjong-preview-wall preview-wall-right">${previewWall}</div><div class="mahjong-preview-wall preview-wall-bottom">${previewWall}</div>
-            <div class="mahjong-preview-rivers">${previewRivers}</div>
-            <div class="mahjong-preview-center"><small>东一局</small><b>83</b><span>余牌</span></div>
-            <div class="mahjong-preview-hand">${previewTiles}</div>
-          </div>
-          <div class="mahjong-preview-seat seat-north"><span>B</span><b>智能牌友 B</b><small>西家</small></div>
-          <div class="mahjong-preview-seat seat-west"><span>C</span><b>智能牌友 C</b><small>北家</small></div>
-          <div class="mahjong-preview-seat seat-east"><span>A</span><b>智能牌友 A</b><small>南家</small></div>
-          <div class="mahjong-preview-seat seat-south"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>东家 · 你</small></div>
-          <div class="mahjong-hero-copy"><small>KAI 麻将 · 四人基础速战</small><h1 id="mahjong-hero-title">听风入局</h1><p>你与三位智能牌友，摸打至自摸、荣和或流局。</p></div>
-          <div class="mahjong-hero-action"><button class="btn primary" data-action="open-mahjong">开始麻将 <b>→</b></button><small>免费人机局 · 不影响斗地主竞技分</small></div>
-        </section>
-        <nav class="hero-switcher" aria-label="切换主玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">↔ 滑动</span></nav>
-        <p class="sr-only" data-hero-status aria-live="polite">当前展示${ddzActive?'斗地主':'麻将'}</p>
+      <section class="game-center-intro" aria-labelledby="game-center-title">
+        <div><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>8 款即开即玩的牌桌与益智游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>4 款本地自动保存</span></div>
+        <nav class="mood-rail" aria-label="按心情选择玩法">
+          <button data-action="jump-world" data-world-target="minesweeper"><i>⚑</i>短局放松</button>
+          <button data-action="jump-world" data-world-target="sudoku6"><i>6</i>动脑解谜</button>
+          <button data-action="jump-world" data-world-target="xiangqi"><i>帅</i>棋桌对战</button>
+          <button data-action="jump-world" data-world-target="ddz"><i>♠</i>牌桌对战</button>
+          <button data-action="jump-world" data-world-target="friends"><i>＋</i>和朋友玩</button>
+        </nav>
       </section>
-      <nav class="lobby-mode-rail" aria-label="大厅玩法入口"><button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><b>斗地主</b><small>三人牌桌</small></button><button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><b>麻将</b><small>四人速战</small></button><button class="mode-entry" data-action="open-1048"><b>1048 <em>新</em></b><small>数字合并</small></button><button class="mode-entry" data-action="create-room"><b>好友房</b><small>创建斗地主房间</small></button></nav>
-      <section class="lobby-shortcuts" aria-label="大厅快捷入口">
-        <article class="room-panel"><div><span>房间码</span><h2>加入好友桌</h2></div><div class="room-actions"><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入 6 位房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
-        <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
+
+      <section class="hub-discovery" aria-label="精选与快速开始">
+        <section class="lobby-game-carousel" data-hero-carousel tabindex="0" aria-label="精选玩法，可左右滑动或使用方向键切换" aria-roledescription="carousel" aria-keyshortcuts="ArrowLeft ArrowRight">
+          <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--ddz ${ddzActive?'is-active':''}" data-hero-stage="ddz" aria-labelledby="live-table-title" aria-hidden="${ddzActive?'false':'true'}" ${ddzActive?'':'inert'}>
+            ${tableFrame('preview')}
+            <div class="live-table-seat live-seat-left"><span>A</span><b>智能牌友 A</b><small>左侧牌友</small></div>
+            <div class="live-table-seat live-seat-right"><span>B</span><b>智能牌友 B</b><small>右侧牌友</small></div>
+            <div class="live-table-center"><span class="hub-hero-tag">牌桌精选</span><small>三人斗地主 · 牌桌预览 · 计入竞技战绩</small><h1 id="live-table-title">三人斗地主，马上开局</h1><p>两位智能牌友即时补位，竞叫、出牌、结算一局完成。</p></div>
+            <div class="lobby-card-scene" aria-hidden="true">${cardBack(true,'live-card-back')}${previewPoker(10,'spade')}${previewPoker(11,'spade')}${previewPoker(12,'heart')}${previewPoker(13,'club')}</div>
+            <div class="live-table-seat live-seat-you"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>你的座位</small></div>
+            <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="${firstGame?'开始首局':'快速人机'}，创建斗地主牌局">${firstGame?'开始首局':'快速人机'} <b>→</b></button><small>游客免注册 · 智能牌友补位 · 可断线恢复</small><span class="sr-only">点击后创建真实牌局，服务端统一判定。</span></div>
+          </section>
+          <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--mahjong ${ddzActive?'':'is-active'}" data-hero-stage="mahjong" aria-labelledby="mahjong-hero-title" aria-hidden="${ddzActive?'true':'false'}" ${ddzActive?'inert':''}>
+            <div class="mahjong-preview-table" aria-hidden="true">
+              <i class="mahjong-table-shadow"></i><i class="mahjong-table-base"></i><i class="mahjong-table-felt"></i>
+              <div class="mahjong-preview-wall preview-wall-top">${previewWall}</div><div class="mahjong-preview-wall preview-wall-left">${previewWall}</div><div class="mahjong-preview-wall preview-wall-right">${previewWall}</div><div class="mahjong-preview-wall preview-wall-bottom">${previewWall}</div>
+              <div class="mahjong-preview-rivers">${previewRivers}</div>
+              <div class="mahjong-preview-center"><small>东一局</small><b>83</b><span>余牌</span></div>
+              <div class="mahjong-preview-hand">${previewTiles}</div>
+            </div>
+            <div class="mahjong-preview-seat seat-north"><span>B</span><b>智能牌友 B</b><small>西家</small></div>
+            <div class="mahjong-preview-seat seat-west"><span>C</span><b>智能牌友 C</b><small>北家</small></div>
+            <div class="mahjong-preview-seat seat-east"><span>A</span><b>智能牌友 A</b><small>南家</small></div>
+            <div class="mahjong-preview-seat seat-south"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>东家 · 你</small></div>
+            <div class="mahjong-hero-copy"><span class="hub-hero-tag">轻松牌桌</span><small>KAI 麻将 · 四人基础速战</small><h1 id="mahjong-hero-title">摸一手好牌，听风入局</h1><p>和三位智能牌友摸打至自摸、荣和或流局。</p></div>
+            <div class="mahjong-hero-action"><button class="btn primary" data-action="open-mahjong">开始麻将 <b>→</b></button><small>免费人机局 · 不影响竞技分</small></div>
+          </section>
+          <nav class="hero-switcher" aria-label="切换精选玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">↔ 滑动</span></nav>
+          <p class="sr-only" data-hero-status aria-live="polite">当前展示${ddzActive?'斗地主':'麻将'}</p>
+        </section>
+
+        <aside class="hub-side">
+          <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div><span class="hub-side-count">8 款可玩</span></div>
+          <article class="resume-card resume-${resumeGame.accent}">
+            <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
+            <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
+            ${resumeButton}
+          </article>
+          <div class="quick-entry-head"><span>快速入口</span><small>换个口味</small></div>
+          <nav class="lobby-mode-rail" aria-label="大厅玩法入口">
+            <button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><i aria-hidden="true">♠</i><b>斗地主</b><small>三人牌桌</small></button>
+            <button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><i aria-hidden="true">東</i><b>麻将</b><small>四人速战</small></button>
+            <button class="mode-entry" data-action="open-1048"><i aria-hidden="true">16</i><b>1048</b><small>数字合并</small></button>
+            <button class="mode-entry" data-action="open-minesweeper"><i aria-hidden="true">⚑</i><b>扫雷</b><small>首击安全</small></button>
+          </nav>
+        </aside>
       </section>
-      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>8 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 7 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 8 款玩法</p>
+
+      <section class="section-block game-catalog" id="game-selection">
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>8 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 7 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 8</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
+        <p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，下一款游戏已经露出来了</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
-          <article class="game-world world-ddz"><div><span>服务端三人桌</span><h3>斗地主</h3><p>争分、出牌、结算，完成一局会写入战绩。</p><button class="btn primary" data-action="quick">快速开局</button></div><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div></article>
-          <article class="game-world world-xiangqi"><span class="world-badge">${savedXiangqi?'进度已保存':'新上线'}</span><div><span>红方先行 · 本地人机训练</span><h3>KAI 象棋</h3><p>点选棋子与 KAI 对弈，支持三档难度、悔棋与自动保存，不计竞技分。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction}</button></div><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div></article>
-          <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
-          <article class="game-world world-1048"><span class="world-badge">${saved1048?'进度已保存':'新上线'}</span><div><span>数字合并 · 单机益智</span><h3>1048</h3><p>普通数字逐级翻倍，最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action}</button></div><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div></article>
-          <article class="game-world world-sudoku6"><span class="world-badge">${savedSudoku6?'进度已保存':'每日一局'}</span><div><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>每行、每列和每个 2×3 宫格都填入 1–6，支持笔记与自动保存。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action}</button></div><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div></article>
-          <article class="game-world world-minesweeper"><span class="world-badge">${savedMinesweeper?'进度已保存':'新上线'}</span><div><span>首击安全 · 本地逻辑训练</span><h3>KAI 扫雷</h3><p>从数字推断雷区，支持三档棋盘、触屏插旗和自动保存。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction}</button></div><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div></article>
-          <article class="game-world world-three"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><div><span>三张定胜负</span><h3>炸金花训练</h3><p>免费单机比牌，不计竞技分。</p><button class="btn" data-action="open-three">翻开这一手</button></div></article>
-          <article class="game-world world-reels"><div><span>大厅彩蛋</span><h3>算力转轮</h3><p>免费娱乐 · 无现金下注 · 无提现。</p></div><button class="btn" data-action="open-slots" aria-label="打开算力转轮"><span aria-hidden="true">7 · KAI · ⚡</span> 试转一次</button></article>
+          <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
+          <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
+          <article class="game-world world-mahjong" data-world-card data-world-id="mahjong"><span class="world-badge">牌桌经典</span><div class="world-cover"><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div><i class="world-cover-mark" aria-hidden="true">東</i></div><div class="world-copy"><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>摸牌、理牌、听牌，和三位 KAI 牌友打到结算。</p><button class="btn" data-action="open-mahjong">开始麻将 <b>→</b></button></div></article>
+          <article class="game-world world-1048" data-world-card data-world-id="1048"><span class="world-badge">${canContinue1048?'可继续':saved1048?.status==='playing'?'等待开局':saved1048?'上局已保存':'稀有目标'}</span><div class="world-cover"><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div><i class="world-cover-mark" aria-hidden="true">＋</i></div><div class="world-copy"><span>数字合并 · 单机益智 · 冲击 1048</span><h3>1048</h3><p>逐级合并数字，让最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action} <b>→</b></button></div></article>
+          <article class="game-world world-sudoku6" data-world-card data-world-id="sudoku6"><span class="world-badge">${canContinueSudoku6?'可继续':savedSudoku6?.status==='playing'?'待你开题':savedSudoku6?'成绩已保存':'每日一局'}</span><div class="world-cover"><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">6×6</i></div><div class="world-copy"><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>填满盘面，用一局让思路重新清晰，支持随手记笔记。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action} <b>→</b></button></div></article>
+          <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
+          <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">免费比牌</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三张定胜负 · 单机训练</span><h3>炸金花训练</h3><p>一眼判断牌型强弱，翻开这一手就见分晓。</p><button class="btn" data-action="open-three">翻开这一手 <b>→</b></button></div></article>
+          <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>轻点一次，看三枚符号能否同频连线。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">试转一次 <b>→</b></button></div></article>
+        </div>
+      </section>
+
+      <section class="lobby-tools" id="lobby-tools" aria-labelledby="lobby-tools-title">
+        <div class="section-head compact"><div><span class="section-kicker">一起玩与我的记录</span><h2 id="lobby-tools-title">需要时，再打开这些工具</h2></div></div>
+        <div class="lobby-shortcuts">
+          <article class="room-panel"><div><span>好友房</span><h2>叫上朋友，同桌斗地主</h2><p>创建一个新房间，或输入朋友发来的六位房号。</p></div><div class="room-actions"><button class="btn primary" data-action="create-room">创建房间</button><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
+          <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${firstGame?'完成首局，解锁你的胜率与牌局记录':`${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%`}</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
         </div>
       </section>
     </main>${nav('lobby')}</div>`;
@@ -1374,6 +1478,7 @@ function openXiangqi() {
   const session = saved || { game: newXiangqiGame({ humanSide:'red', difficulty }), elapsedSeconds:0, undoCount:0 };
   const announcement = saved ? (session.game.status === 'playing' ? '已恢复本地进度' : '上局战果已保留') : '你执红先行';
   startXiangqiSession(session, announcement);
+  rememberLastLocalGame('xiangqi');
 }
 function settleXiangqiClock(now = Date.now()) {
   const casual = state.casual;
@@ -1562,6 +1667,7 @@ function open1048() {
   state.casual = { kind: '1048', game };
   save1048Game(game);
   state.view = '1048';
+  rememberLastLocalGame('1048');
 }
 function focus1048Interaction() {
   const target = document.querySelector('[data-1048-result]') || document.querySelector('[data-1048-board]');
@@ -1601,6 +1707,7 @@ function openSudoku6() {
   stopCasualTimers();
   const game = loadSavedSudoku6Game() || newSudoku6Game({ difficulty: 'medium' });
   startSudoku6Session(game, game.status === 'completed' ? '上次数独已完成' : '已恢复本地进度');
+  rememberLastLocalGame('sudoku6');
 }
 function focusSudoku6Interaction() {
   const result = document.querySelector('[data-sudoku6-result]');
@@ -1710,6 +1817,7 @@ function openMinesweeper() {
     : game.status === 'ready' ? '已恢复未开始的本地棋盘 · 首击安全'
       : game.status === 'playing' ? '已恢复本地排雷进度' : '上局结果已保留';
   startMinesweeperSession(game, announcement);
+  rememberLastLocalGame('minesweeper');
 }
 
 function newMinesweeperSession(difficulty = state.casual?.game?.difficulty || 'beginner') {
@@ -2016,8 +2124,65 @@ function scrollWorldCarousel(direction) {
   strip.scrollBy({left:direction*step,behavior:reduceMotion?'auto':'smooth'});
 }
 
+function updateWorldCarouselStatus(strip = document.querySelector('[data-world-strip]')) {
+  if (!strip) return;
+  const cards=[...strip.querySelectorAll('.game-world')];
+  if (!cards.length) return;
+  const stripLeft=strip.getBoundingClientRect().left;
+  const current=cards.reduce((closest,card,index)=>{
+    const distance=Math.abs(card.getBoundingClientRect().left-stripLeft);
+    return distance<closest.distance?{index,distance}:closest;
+  },{index:0,distance:Number.POSITIVE_INFINITY});
+  const status=document.querySelector('[data-world-status]');
+  const nextText=`${current.index+1} / ${cards.length}`;
+  if(status&&status.textContent!==nextText)status.textContent=nextText;
+}
+
+function scheduleWorldCarouselStatus(strip) {
+  worldCarouselPendingStrip=strip;
+  if(worldCarouselStatusFramePending)return;
+  worldCarouselStatusFramePending=true;
+  const update=()=>{
+    worldCarouselStatusFramePending=false;
+    const pendingStrip=worldCarouselPendingStrip;
+    worldCarouselPendingStrip=null;
+    updateWorldCarouselStatus(pendingStrip);
+  };
+  if(typeof globalThis.requestAnimationFrame==='function')globalThis.requestAnimationFrame(update);
+  else globalThis.setTimeout?.(update,16);
+}
+
+function jumpToLobbyTarget(target) {
+  const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if(target==='friends'){
+    const tools=document.querySelector('#lobby-tools');
+    tools?.scrollIntoView({block:'start',behavior:reduceMotion?'auto':'smooth'});
+    globalThis.setTimeout?.(()=>document.querySelector('#room-code')?.focus({preventScroll:true}),reduceMotion?0:420);
+    return;
+  }
+  const allowed=new Set(['ddz','xiangqi','mahjong','1048','sudoku6','minesweeper','three','reels']);
+  if(!allowed.has(target))return;
+  const strip=document.querySelector('[data-world-strip]');
+  const card=strip?.querySelector(`[data-world-id="${target}"]`);
+  if(!strip||!card)return;
+  const left=card.offsetLeft-strip.offsetLeft;
+  card.scrollIntoView({block:'center',inline:'nearest',behavior:reduceMotion?'auto':'smooth'});
+  strip.scrollTo({left,behavior:reduceMotion?'auto':'smooth'});
+  card.classList.add('is-highlighted');
+  globalThis.setTimeout?.(()=>{
+    card.classList.remove('is-highlighted');
+    card.querySelector('button')?.focus({preventScroll:true});
+    scheduleWorldCarouselStatus(strip);
+  },reduceMotion?0:420);
+}
+
 app.addEventListener('click', e => {
-  const el=e.target.closest('button'); if(!el)return;
+  const el=e.target.closest('button');
+  if(!el){
+    const worldCard=e.target.closest?.('[data-world-card]');
+    if(worldCard)worldCard.querySelector('button[data-action]')?.click();
+    return;
+  }
   if(state.view==='xiangqi'&&(state.casual?.showRules||state.casual?.confirmAction)&&!el.closest('[data-xiangqi-rules-dialog], [data-xiangqi-confirm-dialog]'))return;
   if(state.view==='minesweeper'&&state.casual?.confirmAction&&!el.closest('[data-minesweeper-confirm-dialog]'))return;
   if(el.dataset.xiangqiCell!==undefined){
@@ -2074,6 +2239,7 @@ app.addEventListener('click', e => {
   if(a==='hero-select'){switchHero(el.dataset.heroGame,el.dataset.heroGame==='ddz'?'previous':'next');return;}
   if(a==='world-prev'){scrollWorldCarousel(-1);return;}
   if(a==='world-next'){scrollWorldCarousel(1);return;}
+  if(a==='jump-world'){jumpToLobbyTarget(el.dataset.worldTarget);return;}
   if(a==='clear-selection'){state.selected.clear();render();return;}
   if(a==='quick') act(startQuickGame);
   if(a==='open-three'){openThreeCard();render();}
@@ -2294,6 +2460,10 @@ app.addEventListener('click', e => {
     toast(messages[a] || '该能力即将开放');
   }
 });
+
+app.addEventListener('scroll', (event) => {
+  if (event.target?.matches?.('[data-world-strip]')) scheduleWorldCarouselStatus(event.target);
+}, true);
 
 app.addEventListener('contextmenu', (event) => {
   const cell = event.target.closest?.('[data-minesweeper-cell]');

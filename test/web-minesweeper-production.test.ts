@@ -55,7 +55,7 @@ test('Minesweeper is part of the browser module graph and every production artif
 test('the eight-card lobby opens Minesweeper in the requested catalog position', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /8 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 7 款免费训练/);
+  assert.match(lobby, /1 款竞技 · 7 款免费畅玩/);
   assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 8);
   assert.match(lobby, /class="game-world world-minesweeper"/);
   assert.match(lobby, /<h3>KAI 扫雷<\/h3>/);
