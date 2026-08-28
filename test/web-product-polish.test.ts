@@ -45,7 +45,7 @@ test('the lobby promotes only playable content and makes 1048 discoverable', () 
   assert.match(stylesSource, /\.world-swipe-hint/);
 });
 
-test('all six games form one horizontally sliding card carousel', () => {
+test('all seven games form one horizontally sliding card carousel', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /data-world-strip/);
   assert.match(lobby, /全部玩法卡片轮播/);

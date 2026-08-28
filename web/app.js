@@ -25,6 +25,17 @@ import {
   sudoku6PeerIndexes,
   undoSudoku6,
 } from './sudoku6.js';
+import {
+  XIANGQI_DIFFICULTIES,
+  chooseXiangqiMove,
+  getLegalXiangqiMoves,
+  isXiangqiInCheck,
+  newXiangqiGame,
+  playXiangqiMove,
+  restoreXiangqiGame,
+  undoXiangqiToHumanTurn,
+  xiangqiPieceLabel,
+} from './xiangqi.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -37,6 +48,9 @@ const SUDOKU6_PRACTICE_SAVE_KEY = 'kai.play.sudoku6.practice.v1';
 const SUDOKU6_DAILY_SAVE_PREFIX = 'kai.play.sudoku6.daily.v1.';
 const SUDOKU6_LAST_MODE_KEY = 'kai.play.sudoku6.last-mode';
 const SUDOKU6_STATS_KEY = 'kai.play.sudoku6.stats.v1';
+const XIANGQI_SAVE_KEY = 'kai.play.xiangqi.game.v1';
+const XIANGQI_DIFFICULTY_KEY = 'kai.play.xiangqi.difficulty.v1';
+const XIANGQI_TUTORIAL_KEY = 'kai.play.xiangqi.tutorial.v1';
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
 function safeStorageGet(key) {
@@ -54,6 +68,7 @@ let heroPointer = null;
 let merge1048Pointer = null;
 let heroTransitionTimer = null;
 let mahjongBotTimer = null;
+let xiangqiAiTimer = null;
 let toastTimer = null;
 let threeRevealTimer = null;
 let slotSpinTimer = null;
@@ -91,6 +106,11 @@ const toast = msg => {
 };
 const requestId = () => globalThis.crypto?.randomUUID?.() || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+function safeLocalCounter(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+}
+
 function loadSaved1048Game() {
   try {
     const raw = safeStorageGet(MERGE_1048_SAVE_KEY);
@@ -106,6 +126,39 @@ function loadSaved1048Game() {
 
 function save1048Game(game) {
   safeStorageSet(MERGE_1048_SAVE_KEY, JSON.stringify(game));
+}
+
+function loadSavedXiangqiSession() {
+  try {
+    const raw = safeStorageGet(XIANGQI_SAVE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const game = restoreXiangqiGame(parsed?.game || parsed);
+    if (!game) {
+      safeStorageRemove(XIANGQI_SAVE_KEY);
+      return null;
+    }
+    return {
+      game,
+      elapsedSeconds: safeLocalCounter(parsed?.elapsedSeconds),
+      undoCount: safeLocalCounter(parsed?.undoCount),
+    };
+  } catch {
+    safeStorageRemove(XIANGQI_SAVE_KEY);
+    return null;
+  }
+}
+
+function saveXiangqiSession(casual = state.casual) {
+  if (!casual?.game || casual.kind !== 'xiangqi') return false;
+  const gameSaved = safeStorageSet(XIANGQI_SAVE_KEY, JSON.stringify({
+    game: casual.game,
+    elapsedSeconds: safeLocalCounter(casual.elapsedSeconds),
+    undoCount: safeLocalCounter(casual.undoCount),
+  }));
+  const difficultySaved = safeStorageSet(XIANGQI_DIFFICULTY_KEY, casual.game.difficulty || 'beginner');
+  casual.saveAvailable = gameSaved && difficultySaved;
+  return casual.saveAvailable;
 }
 
 function localDateKey(date = new Date()) {
@@ -276,6 +329,8 @@ function tierName(profile) {
 function lobby() {
   const p = state.profile || {games:0,wins:0,winRate:0,name:'游客'};
   const firstGame = (Number(p.games) || 0) === 0;
+  const savedXiangqi = loadSavedXiangqiSession();
+  const xiangqiAction = !savedXiangqi ? '执红开局' : savedXiangqi.game.status === 'playing' ? '继续对局' : '查看战果';
   const saved1048 = loadSaved1048Game();
   const merge1048Action = !saved1048 ? '开始合并' : saved1048.status === 'playing' ? '继续上局' : '查看上局';
   const savedSudoku6 = loadSavedSudoku6Game();
@@ -331,13 +386,14 @@ function lobby() {
         <article class="room-panel"><div><span>房间码</span><h2>加入好友桌</h2></div><div class="room-actions"><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入 6 位房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
         <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
       </section>
-      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>6 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 5 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 6 款玩法</p>
+      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>7 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 6 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 7 款玩法</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
           <article class="game-world world-ddz"><div><span>服务端三人桌</span><h3>斗地主</h3><p>争分、出牌、结算，完成一局会写入战绩。</p><button class="btn primary" data-action="quick">快速开局</button></div><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div></article>
+          <article class="game-world world-xiangqi"><span class="world-badge">${savedXiangqi?'进度已保存':'新上线'}</span><div><span>红方先行 · 本地人机训练</span><h3>KAI 象棋</h3><p>点选棋子与 KAI 对弈，支持三档难度、悔棋与自动保存，不计竞技分。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction}</button></div><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div></article>
+          <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
           <article class="game-world world-1048"><span class="world-badge">${saved1048?'进度已保存':'新上线'}</span><div><span>数字合并 · 单机益智</span><h3>1048</h3><p>普通数字逐级翻倍，最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action}</button></div><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div></article>
           <article class="game-world world-sudoku6"><span class="world-badge">${savedSudoku6?'进度已保存':'每日一局'}</span><div><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>每行、每列和每个 2×3 宫格都填入 1–6，支持笔记与自动保存。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action}</button></div><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div></article>
           <article class="game-world world-three"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><div><span>三张定胜负</span><h3>炸金花训练</h3><p>免费单机比牌，不计竞技分。</p><button class="btn" data-action="open-three">翻开这一手</button></div></article>
-          <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
           <article class="game-world world-reels"><div><span>大厅彩蛋</span><h3>算力转轮</h3><p>免费娱乐 · 无现金下注 · 无提现。</p></div><button class="btn" data-action="open-slots" aria-label="打开算力转轮"><span aria-hidden="true">7 · KAI · ⚡</span> 试转一次</button></article>
         </div>
       </section>
@@ -668,6 +724,163 @@ function mahjongGame() {
   </section>${mahjongConfirmDialog()}<p class="casual-disclaimer">四人东一局基础速战：136 张牌、三位智能牌友、四家牌河，支持常规和牌、七对与国士无双的自摸/荣和。当前为基础规则，吃碰杠、立直、宝牌与完整点数结算将在后续版本加入。</p></div>`;
 }
 
+const XIANGQI_DIFFICULTY_DETAILS = Object.freeze({
+  beginner: '适合熟悉走法',
+  standard: '兼顾攻守',
+  challenge: '搜索更深入',
+});
+const XIANGQI_PIECE_NAMES = Object.freeze({
+  general: '将', advisor: '士', elephant: '象', horse: '马', rook: '车', cannon: '炮', soldier: '兵',
+});
+
+function formatXiangqiTime(totalSeconds) {
+  const seconds = safeLocalCounter(totalSeconds);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function xiangqiMoveFrom(move) {
+  if (!move || typeof move !== 'object') return null;
+  const value = move.fromIndex ?? move.from;
+  return Number.isInteger(value) ? value : null;
+}
+
+function xiangqiMoveTo(move) {
+  if (Number.isInteger(move)) return move;
+  if (!move || typeof move !== 'object') return null;
+  const value = move.toIndex ?? move.to;
+  return Number.isInteger(value) ? value : null;
+}
+
+function safeLegalXiangqiMoves(game, fromIndex) {
+  if (!game || !Number.isInteger(fromIndex)) return [];
+  try {
+    const moves = getLegalXiangqiMoves(game, fromIndex);
+    return Array.isArray(moves) ? moves : [];
+  } catch { return []; }
+}
+
+function safeXiangqiCheck(game, side = game?.turn) {
+  try { return Boolean(game && isXiangqiInCheck(game, side)); }
+  catch { return Boolean(game?.inCheck && (!side || side === game.turn)); }
+}
+
+function xiangqiPieceGlyph(piece) {
+  if (!piece) return '';
+  try { return xiangqiPieceLabel(piece) || ''; }
+  catch { return piece.label || XIANGQI_PIECE_NAMES[piece.type] || '?'; }
+}
+
+function xiangqiPieceSpoken(piece) {
+  if (!piece) return '空位';
+  const side = piece.side === 'red' ? '红方' : '黑方';
+  return `${side}${xiangqiPieceGlyph(piece) || XIANGQI_PIECE_NAMES[piece.type] || '棋子'}`;
+}
+
+function xiangqiCell(game, index, context) {
+  const row = Math.floor(index / 9);
+  const column = index % 9;
+  const piece = game.board[index];
+  const legalMove = context.legalByTarget.get(index);
+  const selected = index === context.selected;
+  const focused = index === context.focused;
+  const lastFrom = index === context.lastFrom;
+  const lastTo = index === context.lastTo;
+  const checked = piece && context.checkedSide === piece.side && ['general', 'king'].includes(piece.type);
+  const classes = ['xiangqi-cell'];
+  if (piece) classes.push('has-piece', `piece-${piece.side}`);
+  if (selected) classes.push('is-selected');
+  if (legalMove) classes.push(piece ? 'is-capture' : 'is-legal');
+  if (lastFrom) classes.push('is-last-from');
+  if (lastTo) classes.push('is-last-to');
+  if (checked) classes.push('is-check');
+  const interaction = selected ? '，已选中' : legalMove ? piece ? '，可吃子' : '，可落子' : !context.locked && piece?.side === 'red' ? '，可选择' : '';
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${xiangqiPieceSpoken(piece)}${interaction}`;
+  const marker = legalMove ? `<i class="xiangqi-target-mark" aria-hidden="true">${piece ? '×' : ''}</i>` : '';
+  const content = piece ? `<span class="xiangqi-piece" aria-hidden="true">${esc(xiangqiPieceGlyph(piece))}</span>` : '';
+  return `<button type="button" class="${classes.join(' ')}" data-xiangqi-cell="${index}" role="gridcell" aria-label="${esc(label)}" aria-selected="${selected}" aria-disabled="${context.locked}" tabindex="${focused ? '0' : '-1'}">${marker}${content}</button>`;
+}
+
+function xiangqiRows(game, context) {
+  return Array.from({ length: 10 }, (_, row) => {
+    const first = row * 9;
+    const cells = Array.from({ length: 9 }, (_, column) => xiangqiCell(game, first + column, context)).join('');
+    return `<div class="xiangqi-row" role="row" aria-rowindex="${row + 1}">${cells}</div>`;
+  }).join('');
+}
+
+function xiangqiTutorial(casual) {
+  const step = Number(casual?.tutorialStep) || 0;
+  if (!step) return '';
+  const copy = step === 1
+    ? ['你执红先行', '先点一枚红方棋子。']
+    : step === 2
+      ? ['选择落点', '圆点是可走位置，环形标记表示可以吃子。']
+      : ['等待回合', '落子后 KAI 会思考，轮到你时状态栏会自动提示。'];
+  return `<aside class="xiangqi-tutorial" aria-labelledby="xiangqi-tutorial-title"><span>${step} / 3 · 首局引导</span><h2 id="xiangqi-tutorial-title">${copy[0]}</h2><p>${copy[1]}</p><div><button class="text-link" data-action="xiangqi-tutorial-skip">跳过引导</button>${step === 3 ? '<button class="btn" data-action="xiangqi-tutorial-done">知道了</button>' : ''}</div></aside>`;
+}
+
+function xiangqiResult(game, casual) {
+  if (game.status === 'playing') return '';
+  const won = game.winner === 'red';
+  const draw = !game.winner;
+  const reason = ({ checkmate:'将死', stalemate:'困毙', repetition:'三次重复', long_game:'长局未吃子', draw:'双方议和' })[game.endReason || game.reason] || (draw ? '对局结束' : '将帅决胜');
+  const title = draw ? `和棋 · ${reason}` : won ? `红方胜 · ${reason}` : `黑方胜 · ${reason}`;
+  return `<section class="xiangqi-result ${won?'is-win':draw?'is-draw':'is-loss'}" data-xiangqi-result role="status" aria-live="polite" aria-labelledby="xiangqi-result-title" tabindex="-1"><span>本地人机训练完成</span><h2 id="xiangqi-result-title">${esc(title)}</h2><p>${XIANGQI_DIFFICULTIES[game.difficulty]?.label || '标准'}难度 · ${Math.ceil((Number(game.moveCount) || 0) / 2)} 回合 · 用时 ${formatXiangqiTime(casual.elapsedSeconds)} · 悔棋 ${safeLocalCounter(casual.undoCount)} 次</p><div><button class="btn primary" data-action="xiangqi-new">同难度再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div>${game.history?.length ? '<button class="text-link" data-action="xiangqi-undo">悔一回合继续训练</button>' : ''}</section>`;
+}
+
+function xiangqiConfirmDialog(casual) {
+  if (!casual?.confirmAction) return '';
+  const changingDifficulty = casual.confirmAction === 'difficulty';
+  const nextLabel = changingDifficulty ? XIANGQI_DIFFICULTIES[casual.pendingDifficulty]?.label : '';
+  const confirmLabel = changingDifficulty ? `切换到「${nextLabel || '新'}」并重开` : '确认重开';
+  return `<div class="exit-shade"><section class="exit-dialog" data-xiangqi-confirm-dialog role="dialog" aria-modal="true" aria-labelledby="xiangqi-confirm-title" aria-describedby="xiangqi-confirm-description" tabindex="-1"><span>当前棋局进行中</span><h2 id="xiangqi-confirm-title">${changingDifficulty ? `切换到${esc(nextLabel || '新')}难度？` : '确定重新开局？'}</h2><p id="xiangqi-confirm-description">${changingDifficulty ? '切换难度会清除当前棋局，并立即以新难度执红开局。' : '重新开局会清除本局进度。确定重开吗？'}</p><div><button class="btn" data-action="xiangqi-cancel-confirm">继续对局</button><button class="btn danger" data-action="xiangqi-confirm">${esc(confirmLabel)}</button></div></section></div>`;
+}
+
+function xiangqiRulesDialog(casual) {
+  if (!casual?.showRules) return '';
+  return `<div class="exit-shade"><section class="xiangqi-rules-dialog" data-xiangqi-rules-dialog role="dialog" aria-modal="true" aria-labelledby="xiangqi-rules-title" aria-describedby="xiangqi-rules-summary" tabindex="-1"><span>基础训练规则</span><h2 id="xiangqi-rules-title">中国象棋怎么走</h2><div class="xiangqi-rule-grid"><p><b>车 / 炮</b>车走直线；炮吃子时隔一枚棋子。</p><p><b>马 / 象（相）</b>马走日且会蹩腿；象（相）走田且不过河。</p><p><b>士（仕）/ 将（帅）</b>士（仕）守九宫斜走；将（帅）在九宫内直走一步。</p><p><b>兵 / 卒</b>过河前向前一步，过河后可左右走。</p></div><p id="xiangqi-rules-summary">不能让自己的将帅受到攻击；将死或困毙对方即可获胜。同一局面连同走子方第三次出现时，本局判和。</p><button class="btn primary" data-action="xiangqi-close-rules">返回棋局</button></section></div>`;
+}
+
+function xiangqiGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || !Array.isArray(game.board) || game.board.length !== 90) return lobby();
+  const selected = Number.isInteger(casual.selectedCell) ? casual.selectedCell : null;
+  const focused = Number.isInteger(casual.focusedCell) ? casual.focusedCell : 85;
+  const legalMoves = safeLegalXiangqiMoves(game, selected);
+  const legalByTarget = new Map(legalMoves.map((move) => [xiangqiMoveTo(move), move]).filter(([index]) => Number.isInteger(index)));
+  const lastMove = game.lastMove || game.history?.at?.(-1) || game.history?.[game.history.length - 1];
+  const checkedSide = safeXiangqiCheck(game, game.turn) ? game.turn : null;
+  const playerTurn = game.status === 'playing' && game.turn === 'red';
+  const modalOpen = Boolean(casual.confirmAction || casual.showRules);
+  const saveCopy = casual.saveAvailable === false ? '本次无法自动保存' : '自动保存';
+  const status = game.status !== 'playing' ? '本局已经结束'
+    : casual.aiThinking ? (checkedSide === 'black' ? '你已将军 · KAI 正在应对…' : 'KAI 正在思考…')
+      : checkedSide === 'red' ? '将军！请先解除威胁'
+        : casual.announcement || (playerTurn ? `轮到你 · ${casual.saveAvailable === false ? '本次不保存' : '进度已保存'}` : '等待 KAI 落子');
+  const context = {
+    selected, focused, legalByTarget, checkedSide,
+    lastFrom: xiangqiMoveFrom(lastMove), lastTo: xiangqiMoveTo(lastMove),
+    locked: !playerTurn || casual.aiThinking || modalOpen || game.status !== 'playing',
+  };
+  const difficulty = game.difficulty || 'beginner';
+  const difficultyControls = ['beginner','standard','challenge'].map((key) => {
+    const entry = XIANGQI_DIFFICULTIES[key] || { label: key };
+    return `<button type="button" data-action="xiangqi-difficulty" data-xiangqi-difficulty="${key}" aria-pressed="${difficulty === key}" class="${difficulty === key ? 'active' : ''}"><b>${esc(entry.label)}</b><small>${XIANGQI_DIFFICULTY_DETAILS[key]}</small></button>`;
+  }).join('');
+  const turnLabel = game.status !== 'playing' ? '对局结束' : playerTurn ? '红方 · 你' : '黑方 · KAI';
+  return `<div class="shell casual-shell xiangqi-route"><div class="xiangqi-background"${modalOpen ? ' inert aria-hidden="true"' : ''}>${casualHeader('KAI 象棋','CHINESE CHESS',`红方先行 · ${XIANGQI_DIFFICULTIES[difficulty]?.label || '初学'}难度`)}<main class="xiangqi-stage">
+    <section class="xiangqi-copy"><div><span>本地人机训练 · ${saveCopy}</span><h1>隔河对弈<br><b>一步定势</b></h1><p>你执红先行。点选棋子，再落到高亮位置；将死或困毙对方即可获胜。</p></div><div class="xiangqi-difficulties" aria-label="选择象棋难度">${difficultyControls}</div>${xiangqiTutorial(casual)}</section>
+    <section class="xiangqi-play" aria-busy="${casual.aiThinking}"><div class="xiangqi-metrics" aria-label="本局数据"><div><small>难度</small><strong>${esc(XIANGQI_DIFFICULTIES[difficulty]?.label || '初学')}</strong></div><div><small>回合</small><strong>${Math.ceil((Number(game.moveCount) || 0) / 2)}</strong></div><div><small>用时</small><strong data-xiangqi-time>${formatXiangqiTime(casual.elapsedSeconds)}</strong></div></div>
+      <div class="xiangqi-status ${checkedSide?'is-check':''} ${casual.aiThinking?'is-thinking':''}" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${turnLabel}</b></div>
+      <div class="xiangqi-board ${casual.aiThinking?'is-thinking':''}" data-xiangqi-board role="grid" aria-label="中国象棋棋盘，红方在下；使用方向键移动焦点，回车或空格选子落子" aria-rowcount="10" aria-colcount="9" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape Control+Z" aria-busy="${casual.aiThinking}"><div class="xiangqi-board-lines" aria-hidden="true"><i class="palace palace-black"></i><i class="palace palace-red"></i><span class="xiangqi-river"><b>楚河</b><b>漢界</b></span></div>${xiangqiRows(game, context)}</div>
+      <div class="xiangqi-tools" aria-label="象棋工具"><button type="button" data-action="xiangqi-undo" ${game.history?.length && !casual.aiThinking ? '' : 'disabled'}><i aria-hidden="true">↶</i><span>悔棋</span></button><button type="button" data-action="xiangqi-new"><i aria-hidden="true">↻</i><span>重新开局</span></button><button type="button" data-action="xiangqi-rules"><i aria-hidden="true">?</i><span>规则</span></button></div>
+      <p class="xiangqi-key-hint">键盘：方向键移动 · Enter / 空格选择 · Esc 取消 · Ctrl/⌘ + Z 悔棋</p>${xiangqiResult(game, casual)}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '本局仅在当前页面运行，本次无法自动保存；' : '本局在当前浏览器运行并自动保存，'}不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>${xiangqiConfirmDialog(casual)}${xiangqiRulesDialog(casual)}</div>`;
+}
+
 function merge1048Tile(value, index) {
   const label = value ? `数字 ${value}` : '空格';
   return `<div class="merge-1048-tile value-${value || 0}" role="gridcell" aria-label="第 ${index + 1} 格，${label}">${value ? `<b>${value}</b>` : ''}</div>`;
@@ -828,10 +1041,10 @@ function history() {
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与数字生成</h3><p class="muted">斗地主开局向三位玩家各发 17 张并预留 3 张增补牌；炸金花每轮独立发三张；麻将使用 136 张基础牌墙；1048 每次有效移动后生成一个新数字；6×6 数独题在本地生成后会校验唯一解。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；炸金花、麻将、1048、数独和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；炸金花、麻将、1048 与数独按各自规则生成内容；KAI 象棋由本地规则引擎判定每一步合法走法。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、炸金花、麻将、1048、数独和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -847,8 +1060,10 @@ function stopMahjongBotSequence() {
 function stopCasualTimers() {
   if (threeRevealTimer) clearTimeout(threeRevealTimer);
   if (slotSpinTimer) clearTimeout(slotSpinTimer);
+  if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
   threeRevealTimer = null;
   slotSpinTimer = null;
+  xiangqiAiTimer = null;
 }
 
 function queueMahjongBotTurn() {
@@ -949,6 +1164,226 @@ function openMahjong() {
   safeStorageSet(HERO_GAME_KEY, 'mahjong');
   state.casual = { kind: 'mahjong', game, selectedTileId: null, confirmAction: null };
   state.view = 'mahjong';
+}
+function preferredXiangqiFocus(game, preferred = 85) {
+  if (Number.isInteger(preferred) && game?.board?.[preferred]?.side === 'red') return preferred;
+  const redGeneral = game?.board?.findIndex((piece) => piece?.side === 'red' && piece.type === 'general');
+  if (Number.isInteger(redGeneral) && redGeneral >= 0) return redGeneral;
+  const redPiece = game?.board?.findIndex((piece) => piece?.side === 'red');
+  return Number.isInteger(redPiece) && redPiece >= 0 ? redPiece : 85;
+}
+function startXiangqiSession(session, announcement = '你执红先行') {
+  const game = session.game || session;
+  const tutorialSeen = safeStorageGet(XIANGQI_TUTORIAL_KEY) === 'seen';
+  state.casual = {
+    kind: 'xiangqi',
+    game,
+    selectedCell: null,
+    focusedCell: preferredXiangqiFocus(game, xiangqiMoveTo(game.lastMove)),
+    announcement,
+    aiThinking: false,
+    confirmAction: null,
+    pendingDifficulty: null,
+    showRules: false,
+    dialogReturnFocus: null,
+    tutorialStep: tutorialSeen ? 0 : (Number(game.moveCount) > 0 ? 3 : 1),
+    elapsedSeconds: safeLocalCounter(session.elapsedSeconds),
+    undoCount: safeLocalCounter(session.undoCount),
+    saveAvailable: true,
+    xiangqiLastTick: Date.now(),
+  };
+  state.view = 'xiangqi';
+  if (!saveXiangqiSession()) state.casual.announcement = '本浏览器无法保存进度 · 可继续本局';
+}
+function openXiangqi() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const saved = loadSavedXiangqiSession();
+  const storedDifficulty = safeStorageGet(XIANGQI_DIFFICULTY_KEY);
+  const difficulty = ['beginner','standard','challenge'].includes(storedDifficulty) ? storedDifficulty : 'beginner';
+  const session = saved || { game: newXiangqiGame({ humanSide:'red', difficulty }), elapsedSeconds:0, undoCount:0 };
+  const announcement = saved ? (session.game.status === 'playing' ? '已恢复本地进度' : '上局战果已保留') : '你执红先行';
+  startXiangqiSession(session, announcement);
+}
+function settleXiangqiClock(now = Date.now()) {
+  const casual = state.casual;
+  if (state.view !== 'xiangqi' || casual?.kind !== 'xiangqi' || casual.game?.status !== 'playing' || casual.confirmAction || casual.showRules) return 0;
+  const lastTick = Number.isFinite(casual.xiangqiLastTick) ? casual.xiangqiLastTick : now;
+  const elapsed = Math.floor(Math.max(0, now - lastTick) / 1000);
+  if (elapsed <= 0) return 0;
+  casual.elapsedSeconds = Math.min(Number.MAX_SAFE_INTEGER, safeLocalCounter(casual.elapsedSeconds) + elapsed);
+  casual.xiangqiLastTick = lastTick + elapsed * 1000;
+  const clock = document.querySelector('[data-xiangqi-time]');
+  if (clock) clock.textContent = formatXiangqiTime(casual.elapsedSeconds);
+  return elapsed;
+}
+function updateXiangqiClock() {
+  const elapsed = settleXiangqiClock();
+  if (elapsed && state.casual.elapsedSeconds % 5 < elapsed) saveXiangqiSession();
+}
+function focusXiangqiInteraction(index = state.casual?.focusedCell) {
+  const result = document.querySelector('[data-xiangqi-result]');
+  if (result) { result.focus({ preventScroll:true }); return; }
+  document.querySelector(`[data-xiangqi-cell="${Number.isInteger(index) ? index : 85}"]`)?.focus({ preventScroll:true });
+}
+function focusXiangqiDialog() {
+  const dialog = document.querySelector('[data-xiangqi-confirm-dialog], [data-xiangqi-rules-dialog]');
+  const firstControl = dialog?.querySelector('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])');
+  (firstControl || dialog)?.focus({ preventScroll:true });
+}
+function focusXiangqiReturnControl(reference) {
+  let control = null;
+  if (reference === 'rules') control = document.querySelector('[data-action="xiangqi-rules"]');
+  if (reference === 'new') control = document.querySelector('[data-action="xiangqi-new"]');
+  if (reference?.startsWith('difficulty:')) {
+    const difficulty = reference.slice('difficulty:'.length);
+    if (['beginner','standard','challenge'].includes(difficulty)) {
+      control = document.querySelector(`[data-xiangqi-difficulty="${difficulty}"]`);
+    }
+  }
+  if (control) control.focus({ preventScroll:true });
+  else focusXiangqiInteraction();
+}
+function trapXiangqiDialogTab(event) {
+  const dialog = document.querySelector('[data-xiangqi-confirm-dialog], [data-xiangqi-rules-dialog]');
+  if (!dialog || event.key !== 'Tab') return false;
+  const controls = [...dialog.querySelectorAll('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])')];
+  if (!controls.length) { event.preventDefault(); dialog.focus({ preventScroll:true }); return true; }
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus({ preventScroll:true });
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();last.focus({ preventScroll:true });
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();first.focus({ preventScroll:true });
+  }
+  return true;
+}
+function finishXiangqiTutorial() {
+  if (!state.casual || state.view !== 'xiangqi') return;
+  state.casual.tutorialStep = 0;
+  safeStorageSet(XIANGQI_TUTORIAL_KEY, 'seen');
+}
+function queueXiangqiAiTurn() {
+  if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
+  xiangqiAiTimer = null;
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'xiangqi' || casual?.kind !== 'xiangqi' || game?.status !== 'playing' || game.turn === 'red' || casual.confirmAction || casual.showRules) return;
+  const playerFocus = preferredXiangqiFocus(game, casual.focusedCell);
+  casual.focusedCell = playerFocus;
+  casual.aiThinking = true;
+  casual.announcement = safeXiangqiCheck(game, 'black') ? '你已将军 · KAI 正在应对…' : 'KAI 正在思考…';
+  render();
+  focusXiangqiInteraction(playerFocus);
+  const delay = ({ beginner:320, standard:520, challenge:720 })[game.difficulty] || 520;
+  xiangqiAiTimer = setTimeout(() => {
+    xiangqiAiTimer = null;
+    const live = state.casual;
+    const current = live?.game;
+    if (state.view !== 'xiangqi' || live !== casual || current?.status !== 'playing' || current.turn === 'red') return;
+    try {
+      const move = chooseXiangqiMove(current, current.difficulty);
+      const from = xiangqiMoveFrom(move);
+      const to = xiangqiMoveTo(move);
+      if (!Number.isInteger(from) || !Number.isInteger(to)) throw new Error('KAI 暂时没有找到可行走法');
+      settleXiangqiClock();
+      const next = playXiangqiMove(current, from, to);
+      live.game = next;
+      live.focusedCell = preferredXiangqiFocus(next, playerFocus);
+      live.selectedCell = null;
+      live.aiThinking = false;
+      live.announcement = next.status === 'playing'
+        ? safeXiangqiCheck(next, 'red') ? '将军！请先解除威胁' : 'KAI 已落子 · 轮到你'
+        : '本局已经结束';
+      live.xiangqiLastTick = Date.now();
+      saveXiangqiSession(live);
+      render();
+      focusXiangqiInteraction(live.focusedCell);
+    } catch (error) {
+      live.aiThinking = false;
+      live.announcement = error?.message || 'KAI 思考失败，请悔棋或重新开局';
+      render();
+      focusXiangqiInteraction(live.focusedCell);
+      toast(live.announcement);
+    }
+  }, delay);
+}
+function performXiangqiMove(from, to) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'xiangqi' || casual?.aiThinking || casual?.confirmAction || casual?.showRules || game?.status !== 'playing' || game.turn !== 'red') return;
+  const movingPiece = game.board[from];
+  const captured = game.board[to];
+  try {
+    settleXiangqiClock();
+    const next = playXiangqiMove(game, from, to);
+    casual.game = next;
+    casual.selectedCell = null;
+    casual.focusedCell = to;
+    casual.announcement = next.status !== 'playing' ? '本局已经结束'
+      : safeXiangqiCheck(next, 'black') ? '你已将军 · KAI 正在应对'
+        : `${xiangqiPieceSpoken(movingPiece)}已落子${captured ? `并吃掉${xiangqiPieceSpoken(captured)}` : ''}`;
+    if (casual.tutorialStep && casual.tutorialStep < 3) casual.tutorialStep = 3;
+    casual.xiangqiLastTick = Date.now();
+    saveXiangqiSession(casual);
+    render();
+    if (next.status === 'playing' && next.turn !== 'red') queueXiangqiAiTurn();
+    else focusXiangqiInteraction(to);
+  } catch (error) {
+    casual.announcement = error?.message || '该位置不能落子';
+    render();
+    focusXiangqiInteraction(from);
+  }
+}
+function selectXiangqiCell(index) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'xiangqi' || casual?.aiThinking || casual?.confirmAction || casual?.showRules || game?.status !== 'playing') return;
+  casual.focusedCell = index;
+  if (game.turn !== 'red') {
+    casual.announcement = '请等待 KAI 落子';
+    render();focusXiangqiInteraction(index);return;
+  }
+  const piece = game.board[index];
+  const selected = casual.selectedCell;
+  if (!Number.isInteger(selected)) {
+    if (piece?.side !== 'red') {
+      casual.announcement = piece ? '黑方棋子不可选择' : '请先选择一枚红方棋子';
+    } else {
+      casual.selectedCell = index;
+      const moveCount = safeLegalXiangqiMoves(game, index).length;
+      casual.announcement = `已选${xiangqiPieceSpoken(piece)} · 可走 ${moveCount} 处`;
+      if (casual.tutorialStep === 1) casual.tutorialStep = 2;
+    }
+    render();focusXiangqiInteraction(index);return;
+  }
+  if (index === selected) {
+    casual.selectedCell = null;
+    casual.announcement = '已取消选择';
+    render();focusXiangqiInteraction(index);return;
+  }
+  if (piece?.side === 'red') {
+    casual.selectedCell = index;
+    casual.announcement = `已改选${xiangqiPieceSpoken(piece)} · 可走 ${safeLegalXiangqiMoves(game, index).length} 处`;
+    render();focusXiangqiInteraction(index);return;
+  }
+  const legal = safeLegalXiangqiMoves(game, selected).some((move) => xiangqiMoveTo(move) === index);
+  if (!legal) {
+    casual.announcement = safeXiangqiCheck(game, 'red') ? '将军！这一步不能解除威胁' : '该位置不能落子';
+    render();focusXiangqiInteraction(selected);return;
+  }
+  performXiangqiMove(selected, index);
+}
+function newXiangqiSession(difficulty = state.casual?.game?.difficulty || 'beginner') {
+  if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
+  xiangqiAiTimer = null;
+  const game = newXiangqiGame({ humanSide:'red', difficulty });
+  startXiangqiSession({ game, elapsedSeconds:0, undoCount:0 }, `已开始${XIANGQI_DIFFICULTIES[difficulty]?.label || '初学'}难度新局`);
 }
 function open1048() {
   stopGameSync();
@@ -1219,6 +1654,11 @@ function scrollWorldCarousel(direction) {
 
 app.addEventListener('click', e => {
   const el=e.target.closest('button'); if(!el)return;
+  if(state.view==='xiangqi'&&(state.casual?.showRules||state.casual?.confirmAction)&&!el.closest('[data-xiangqi-rules-dialog], [data-xiangqi-confirm-dialog]'))return;
+  if(el.dataset.xiangqiCell!==undefined){
+    selectXiangqiCell(Number(el.dataset.xiangqiCell));
+    return;
+  }
   if(el.dataset.sudoku6Cell!==undefined){
     if(state.view!=='sudoku6'||!state.casual?.game)return;
     state.casual.selectedCell=Number(el.dataset.sudoku6Cell);
@@ -1265,6 +1705,7 @@ app.addEventListener('click', e => {
   if(a==='quick') act(startQuickGame);
   if(a==='open-three'){openThreeCard();render();}
   if(a==='open-mahjong'){openMahjong();render();globalThis.scrollTo?.(0,0);}
+  if(a==='open-xiangqi'){openXiangqi();render();globalThis.scrollTo?.(0,0);focusXiangqiInteraction();queueXiangqiAiTurn();}
   if(a==='open-1048'){open1048();render();globalThis.scrollTo?.(0,0);focus1048Interaction();}
   if(a==='open-sudoku6'){openSudoku6();render();globalThis.scrollTo?.(0,0);focusSudoku6Interaction();}
   if(a==='open-slots'){openSlots();render();}
@@ -1272,6 +1713,7 @@ app.addEventListener('click', e => {
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
       stopMahjongBotSequence();state.casual.confirmAction='home';render();return;
     }
+    if(state.view==='xiangqi'){settleXiangqiClock();saveXiangqiSession();}
     if(state.view==='sudoku6')settleAndSaveSudoku6();
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
@@ -1300,6 +1742,52 @@ app.addEventListener('click', e => {
     const game=state.casual?.game;const tileId=state.casual?.selectedTileId;
     if(!game||!tileId||game.phase!=='playing'||game.currentSeat!==0)return;
     try{state.casual.game=playMahjongDiscard(game,tileId,{advanceBots:false});state.casual.selectedTileId=null;}catch(error){toast(error.message);}render();queueMahjongBotTurn();return;
+  }
+  if(a==='xiangqi-tutorial-skip'){
+    finishXiangqiTutorial();state.casual.announcement='首局引导已跳过';render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-tutorial-done'){
+    finishXiangqiTutorial();state.casual.announcement='首局引导完成';render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-rules'&&state.view==='xiangqi'){
+    if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;
+    state.casual.aiThinking=false;settleXiangqiClock();state.casual.xiangqiLastTick=Date.now();state.casual.dialogReturnFocus='rules';state.casual.showRules=true;render();focusXiangqiDialog();return;
+  }
+  if(a==='xiangqi-close-rules'&&state.view==='xiangqi'){
+    const returnFocus=state.casual.dialogReturnFocus;state.casual.showRules=false;state.casual.dialogReturnFocus=null;state.casual.xiangqiLastTick=Date.now();state.casual.announcement='已返回棋局';render();focusXiangqiReturnControl(returnFocus);queueXiangqiAiTurn();return;
+  }
+  if(a==='xiangqi-undo'&&state.view==='xiangqi'){
+    const casual=state.casual;const game=casual?.game;if(!game)return;
+    if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;casual.aiThinking=false;settleXiangqiClock();
+    try{
+      const next=undoXiangqiToHumanTurn(game);
+      if((next.history?.length||0)===(game.history?.length||0)){toast('还没有可以撤销的回合');render();focusXiangqiInteraction();return;}
+      casual.game=next;casual.selectedCell=null;casual.focusedCell=preferredXiangqiFocus(next, xiangqiMoveTo(next.lastMove));casual.undoCount=safeLocalCounter(casual.undoCount)+1;casual.announcement='已悔一回合 · 轮到你';casual.xiangqiLastTick=Date.now();saveXiangqiSession(casual);render();focusXiangqiInteraction();
+    }catch(error){casual.announcement=error?.message||'当前不能悔棋';render();toast(casual.announcement);}
+    return;
+  }
+  if(a==='xiangqi-new'&&state.view==='xiangqi'){
+    const game=state.casual?.game;if(!game)return;
+    if(game.status==='playing'&&(Number(game.moveCount)>0||game.history?.length)){
+      if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;state.casual.aiThinking=false;settleXiangqiClock();state.casual.xiangqiLastTick=Date.now();state.casual.dialogReturnFocus='new';state.casual.confirmAction='new';render();focusXiangqiDialog();return;
+    }
+    newXiangqiSession(game.difficulty);render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-difficulty'&&state.view==='xiangqi'){
+    const difficulty=el.dataset.xiangqiDifficulty;const game=state.casual?.game;
+    if(!game||!['beginner','standard','challenge'].includes(difficulty))return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个难度';render();document.querySelector(`[data-xiangqi-difficulty="${difficulty}"]`)?.focus({preventScroll:true});return;}
+    if(game.status==='playing'&&(Number(game.moveCount)>0||game.history?.length)){
+      if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;state.casual.aiThinking=false;settleXiangqiClock();state.casual.xiangqiLastTick=Date.now();state.casual.dialogReturnFocus=`difficulty:${difficulty}`;state.casual.confirmAction='difficulty';state.casual.pendingDifficulty=difficulty;render();focusXiangqiDialog();return;
+    }
+    newXiangqiSession(difficulty);render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-cancel-confirm'&&state.view==='xiangqi'){
+    const returnFocus=state.casual.dialogReturnFocus;state.casual.confirmAction=null;state.casual.pendingDifficulty=null;state.casual.dialogReturnFocus=null;state.casual.xiangqiLastTick=Date.now();state.casual.announcement='继续当前棋局';render();focusXiangqiReturnControl(returnFocus);queueXiangqiAiTurn();return;
+  }
+  if(a==='xiangqi-confirm'&&state.view==='xiangqi'){
+    const difficulty=state.casual.confirmAction==='difficulty'?state.casual.pendingDifficulty:state.casual.game.difficulty;
+    newXiangqiSession(difficulty||'beginner');render();focusXiangqiInteraction();return;
   }
   if(a==='1048-move'){perform1048Move(el.dataset.mergeDirection);return;}
   if(a==='1048-new'){const game=new1048Game();state.casual={kind:'1048',game};save1048Game(game);state.view='1048';render();focus1048Interaction();return;}
@@ -1395,7 +1883,6 @@ app.addEventListener('click', e => {
   if(a==='confirm-exit') act(async()=>{const current=state.game;const r=await api(`/v1/games/${current.id}/abandon`,{method:'POST',body:'{}'});stopGameSync();acceptGame(r.game,r.profile);state.exitConfirm=false;state.view='game';});
   if(a?.startsWith('preview-')) {
     const messages = {
-      'preview-xiangqi':'KAI 象棋正在设计中，当前页面只展示产品方向。',
       'preview-three':'三张竞技尚未开放，不包含现金下注或可提现筹码。',
       'preview-ai':'AI 挑战场即将开放，当前不会产生任何费用。',
       'preview-cloudpay':'该服务即将接入 CloudPay，目前没有支付或扣除卡时。'
@@ -1439,6 +1926,62 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; });
 
 app.addEventListener('keydown', (event) => {
+  const xiangqiModalOpen = state.view === 'xiangqi' && (state.casual?.showRules || state.casual?.confirmAction);
+  if (xiangqiModalOpen && event.key === 'Tab') {
+    trapXiangqiDialogTab(event);
+    return;
+  }
+  if (xiangqiModalOpen && event.key === 'Escape') {
+    event.preventDefault();
+    const returnFocus = state.casual.dialogReturnFocus;
+    if (state.casual.showRules) state.casual.showRules = false;
+    state.casual.confirmAction = null;
+    state.casual.pendingDifficulty = null;
+    state.casual.dialogReturnFocus = null;
+    state.casual.xiangqiLastTick = Date.now();
+    state.casual.announcement = '继续当前棋局';
+    render();focusXiangqiReturnControl(returnFocus);queueXiangqiAiTurn();
+    return;
+  }
+  if (xiangqiModalOpen && !event.target.closest?.('[data-xiangqi-rules-dialog], [data-xiangqi-confirm-dialog]')) {
+    event.preventDefault();
+    focusXiangqiDialog();
+    return;
+  }
+  const xiangqiCellNode = event.target.closest?.('[data-xiangqi-cell]');
+  if (state.view === 'xiangqi' && xiangqiCellNode) {
+    const index = Number(xiangqiCellNode.dataset.xiangqiCell);
+    state.casual.focusedCell = index;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      document.querySelector('[data-action="xiangqi-undo"]')?.click();
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectXiangqiCell(index);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      state.casual.selectedCell = null;
+      state.casual.announcement = '已取消选择';
+      render();focusXiangqiInteraction(index);
+      return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const row = Math.floor(index / 9);
+      const column = index % 9;
+      const nextRow = event.key === 'ArrowUp' ? Math.max(0, row - 1) : event.key === 'ArrowDown' ? Math.min(9, row + 1) : row;
+      const nextColumn = event.key === 'ArrowLeft' ? Math.max(0, column - 1) : event.key === 'ArrowRight' ? Math.min(8, column + 1) : column;
+      const nextIndex = nextRow * 9 + nextColumn;
+      state.casual.focusedCell = nextIndex;
+      state.casual.announcement = `已移到第 ${nextRow + 1} 行第 ${nextColumn + 1} 列`;
+      render();focusXiangqiInteraction(nextIndex);
+      return;
+    }
+  }
   const sudokuCell = event.target.closest?.('[data-sudoku6-cell]');
   if (state.view === 'sudoku6' && sudokuCell) {
     const index = Number(sudokuCell.dataset.sudoku6Cell);
@@ -1507,13 +2050,24 @@ bootstrap();
 setInterval(() => {
   updateTurnClock();
   updateSudoku6Clock();
+  updateXiangqiClock();
 }, 1000);
 
 document.addEventListener('visibilitychange', () => {
-  if (state.view !== 'sudoku6' || !state.casual?.game) return;
-  if (document.visibilityState === 'hidden') {
-    settleAndSaveSudoku6();
-    return;
+  if (!state.casual?.game) return;
+  if (state.view === 'xiangqi') {
+    if (document.visibilityState === 'hidden') {
+      settleXiangqiClock();
+      saveXiangqiSession();
+      return;
+    }
+    state.casual.xiangqiLastTick = Date.now();
   }
-  state.casual.sudokuLastTick = Date.now();
+  if (state.view === 'sudoku6') {
+    if (document.visibilityState === 'hidden') {
+      settleAndSaveSudoku6();
+      return;
+    }
+    state.casual.sudokuLastTick = Date.now();
+  }
 });

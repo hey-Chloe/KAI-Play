@@ -5398,3 +5398,413 @@ body:has(.lobby-v4) {
   .game-world:hover,
   .world-carousel-controls button:hover { transform: none; }
 }
+
+/* KAI Xiangqi: an original local training board with red at the bottom. */
+.world-xiangqi {
+  --world-accent: #a33c32;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 15px;
+  background: #f6eee2;
+}
+
+.world-xiangqi-board {
+  width: 112px;
+  aspect-ratio: 1;
+  align-self: center;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  padding: 8px;
+  border: 5px solid #49392b;
+  border-radius: 11px;
+  background:
+    linear-gradient(rgba(91,61,39,.38) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91,61,39,.38) 1px, transparent 1px),
+    #d9b779;
+  background-size: 33.333% 33.333%;
+  box-shadow: 0 12px 24px rgba(65, 42, 27, .2);
+}
+
+.world-xiangqi-board i {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: #f4dfb3;
+  color: #273736;
+  font: 900 .62rem/1 serif;
+  box-shadow: 0 2px 4px rgba(45,31,20,.18);
+}
+.world-xiangqi-board i:empty { visibility: hidden; }
+.world-xiangqi-board i.red { color: #a73830; }
+
+.xiangqi-route {
+  --xiangqi-red: #84251f;
+  --xiangqi-black: #203f3e;
+  --xiangqi-gold: #d8a640;
+  --xiangqi-wood: #bc8750;
+  padding-bottom: 34px;
+}
+.xiangqi-background { min-width: 0; }
+.xiangqi-route .casual-top > b { background: #f3e5db; color: #803b30; }
+
+.xiangqi-stage {
+  min-height: min(780px, calc(100dvh - 108px));
+  display: grid;
+  grid-template-columns: minmax(270px, .68fr) minmax(500px, 1.32fr);
+  overflow: hidden;
+  border: 1px solid #503a2d;
+  border-radius: 30px;
+  background: #efe5d5;
+  box-shadow: 0 27px 64px rgba(54, 36, 26, .18);
+}
+
+.xiangqi-copy {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 23px;
+  padding: clamp(30px, 4.5vw, 58px);
+  background:
+    radial-gradient(circle at 15% 14%, rgba(208,143,91,.25), transparent 34%),
+    linear-gradient(150deg, #4a2924, #241b1b 72%);
+  color: #fff;
+}
+.xiangqi-copy > div:first-child > span { color: #e2bca1; font-size: .68rem; font-weight: 850; letter-spacing: .12em; }
+.xiangqi-copy h1 { margin: 15px 0 20px; color: #fff; font-size: clamp(2.6rem, 5.6vw, 5rem); line-height: .96; letter-spacing: -.075em; }
+.xiangqi-copy h1 b { color: #e7ba62; }
+.xiangqi-copy p { margin: 0; color: #d9c8bd; font-size: .81rem; line-height: 1.75; }
+
+.xiangqi-difficulties { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.xiangqi-difficulties button {
+  min-width: 0;
+  min-height: 61px;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 12px;
+  background: rgba(255,255,255,.055);
+  color: #f1e7df;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.xiangqi-difficulties button b { font-size: .72rem; }
+.xiangqi-difficulties button small { color: #bfa99a; font-size: .52rem; }
+.xiangqi-difficulties button.active { border-color: #e0b353; background: rgba(224,179,83,.16); color: #ffe4a0; box-shadow: inset 0 0 0 1px rgba(224,179,83,.28); }
+
+.xiangqi-tutorial {
+  width: 100%;
+  margin-top: auto;
+  padding: 17px;
+  border: 1px solid rgba(235,199,130,.3);
+  border-radius: 15px;
+  background: rgba(255,255,255,.075);
+}
+.xiangqi-tutorial > span { color: #e2b65f; font-size: .59rem; font-weight: 850; letter-spacing: .11em; }
+.xiangqi-tutorial h2 { margin: 7px 0 5px; color: #fff; font-size: 1.08rem; }
+.xiangqi-tutorial p { color: #d8c7bd; font-size: .7rem; }
+.xiangqi-tutorial > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.xiangqi-tutorial .text-link { color: #e7cfae; }
+.xiangqi-tutorial .btn { min-height: 38px; border-color: rgba(255,255,255,.23); background: #f5e7d7; color: #5d3329; }
+
+.xiangqi-play {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 11px;
+  padding: clamp(20px, 3vw, 38px);
+  background:
+    linear-gradient(rgba(255,252,245,.83), rgba(255,252,245,.83)),
+    repeating-radial-gradient(circle at 25% 20%, rgba(76,49,31,.13) 0 1px, transparent 1px 5px);
+}
+
+.xiangqi-metrics {
+  width: min(100%, 560px);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(78,51,34,.15);
+  border-radius: 13px;
+  background: rgba(255,255,255,.78);
+}
+.xiangqi-metrics > div { padding: 9px 7px; border-right: 1px solid rgba(78,51,34,.11); text-align: center; }
+.xiangqi-metrics > div:last-child { border-right: 0; }
+.xiangqi-metrics small { display: block; margin-bottom: 2px; color: #8b7a6c; font-size: .58rem; }
+.xiangqi-metrics strong { color: #382d27; font-size: .93rem; font-variant-numeric: tabular-nums; }
+
+.xiangqi-status {
+  width: min(100%, 560px);
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #67594f;
+  font-size: .67rem;
+}
+.xiangqi-status i { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #3a8d6c; box-shadow: 0 0 0 4px rgba(58,141,108,.12); }
+.xiangqi-status span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xiangqi-status b { margin-left: auto; color: #75382f; white-space: nowrap; }
+.xiangqi-status.is-thinking i { animation: xiangqi-think 1s ease-in-out infinite alternate; }
+.xiangqi-status.is-check i { border-radius: 2px; background: #b83830; box-shadow: 0 0 0 4px rgba(184,56,48,.14); }
+@keyframes xiangqi-think { to { opacity: .35; transform: scale(.72); } }
+
+.xiangqi-board {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 560px);
+  aspect-ratio: 9 / 10;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(10, minmax(0, 1fr));
+  overflow: hidden;
+  padding: 0;
+  border: 7px solid #513a29;
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.22), transparent 28%),
+    linear-gradient(145deg, #dfbe7e, #c89456);
+  box-shadow: inset 0 0 0 3px #8e613b, 0 18px 35px rgba(64,42,27,.23);
+  user-select: none;
+  touch-action: manipulation;
+}
+.xiangqi-row {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+}
+.xiangqi-board::after { content: ""; position: absolute; z-index: 0; inset: 4px; border: 1px solid rgba(74,46,29,.38); pointer-events: none; }
+.xiangqi-board-lines {
+  position: absolute;
+  z-index: 0;
+  inset: 5% 5.5556%;
+  border: 1.5px solid rgba(73,42,24,.76);
+  background: repeating-linear-gradient(to bottom, rgba(73,42,24,.65) 0 1px, transparent 1px calc(100% / 9));
+  pointer-events: none;
+}
+.xiangqi-board-lines::before,
+.xiangqi-board-lines::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 44.444%;
+  background: repeating-linear-gradient(to right, rgba(73,42,24,.65) 0 1px, transparent 1px calc(100% / 8));
+}
+.xiangqi-board-lines::before { top: 0; }
+.xiangqi-board-lines::after { bottom: 0; }
+.xiangqi-board-lines .palace {
+  position: absolute;
+  z-index: 1;
+  left: 37.5%;
+  width: 25%;
+  height: 22.222%;
+  background:
+    linear-gradient(to bottom right, transparent calc(50% - .75px), rgba(73,42,24,.68) calc(50% - .75px) calc(50% + .75px), transparent calc(50% + .75px)),
+    linear-gradient(to top right, transparent calc(50% - .75px), rgba(73,42,24,.68) calc(50% - .75px) calc(50% + .75px), transparent calc(50% + .75px));
+}
+.xiangqi-board-lines .palace-black { top: 0; }
+.xiangqi-board-lines .palace-red { bottom: 0; }
+.xiangqi-river {
+  position: absolute;
+  z-index: 2;
+  top: 44.444%;
+  left: 0;
+  width: 100%;
+  height: 11.111%;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: #d2a665;
+  color: rgba(77,43,25,.84);
+  font-family: serif;
+  font-size: clamp(.72rem, 2vw, 1.15rem);
+  letter-spacing: .32em;
+}
+
+.xiangqi-cell {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.xiangqi-piece {
+  width: 82%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: clamp(2px, .42vw, 4px) double currentColor;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #f8e5b9, #dcb577);
+  font: 900 clamp(1rem, 3.2vw, 1.85rem)/1 serif;
+  box-shadow: 0 3px 7px rgba(62,38,23,.26), inset 0 0 0 2px rgba(255,255,255,.34);
+  transition: transform .13s ease, box-shadow .13s ease;
+}
+.xiangqi-cell.piece-red { color: var(--xiangqi-red); }
+.xiangqi-cell.piece-black { color: var(--xiangqi-black); }
+.xiangqi-cell.has-piece:hover .xiangqi-piece { transform: translateY(-2px); }
+.xiangqi-cell.is-selected .xiangqi-piece { transform: translateY(-2px); box-shadow: 0 0 0 3px #ffe7a1, 0 0 0 6px #b57b23, 0 6px 13px rgba(66,40,22,.3); }
+.xiangqi-cell.is-last-from::before,
+.xiangqi-cell.is-last-to::before { content: ""; position: absolute; inset: 13%; border: 3px solid rgba(228,184,86,.78); border-radius: 7px; }
+.xiangqi-cell.is-last-from::before { border-style: dashed; }
+.xiangqi-target-mark {
+  position: absolute;
+  z-index: 4;
+  width: 18%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #287257;
+  color: transparent;
+  font-size: 0;
+  box-shadow: 0 0 0 3px rgba(255,247,220,.78);
+}
+.xiangqi-cell.is-capture .xiangqi-target-mark { width: 74%; background: transparent; border: 4px solid #a52f29; box-shadow: inset 0 0 0 2px rgba(255,246,221,.76), 0 0 0 2px rgba(255,246,221,.72); }
+.xiangqi-cell.is-check .xiangqi-piece { box-shadow: 0 0 0 4px #fff0c6, 0 0 0 8px #b52e28, 0 5px 14px rgba(88,25,20,.4); }
+.xiangqi-cell.is-check::after { content: "将军"; position: absolute; z-index: 6; right: -3px; top: -2px; padding: 2px 4px; border-radius: 6px; background: #a82924; color: #fff; font: 900 .46rem/1 var(--font-body); }
+.xiangqi-cell:focus-visible { z-index: 8; outline: 4px solid #fff2be; outline-offset: -5px; box-shadow: inset 0 0 0 4px #7a501f; }
+.xiangqi-board.is-thinking .xiangqi-cell { cursor: wait; }
+
+.xiangqi-tools { width: min(100%, 560px); display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.xiangqi-tools button {
+  min-width: 0;
+  min-height: 49px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(84,53,34,.17);
+  border-radius: 12px;
+  background: rgba(255,255,255,.78);
+  color: #644739;
+  cursor: pointer;
+  font: 770 .67rem/1 var(--font-body);
+}
+.xiangqi-tools button i { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; background: #f1dfc6; color: #843b31; font-style: normal; font-weight: 900; }
+.xiangqi-tools button:disabled { cursor: not-allowed; opacity: .42; }
+.xiangqi-tools button:focus-visible,
+.xiangqi-difficulties button:focus-visible { outline: 3px solid rgba(216,166,64,.9); outline-offset: 2px; }
+.xiangqi-key-hint { margin: 0; color: #8b7c71; font-size: .6rem; text-align: center; }
+
+.xiangqi-result {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 50%;
+  width: min(88%, 430px);
+  padding: 29px;
+  border: 1px solid rgba(77,49,31,.2);
+  border-radius: 22px;
+  background: rgba(255,250,239,.97);
+  color: #3c2d25;
+  box-shadow: 0 28px 74px rgba(52,31,20,.36);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(12px);
+}
+.xiangqi-result > span { color: #98453a; font-size: .63rem; font-weight: 850; letter-spacing: .12em; }
+.xiangqi-result h2 { margin: 8px 0; font-size: clamp(1.75rem, 5vw, 2.7rem); }
+.xiangqi-result p { margin: 0 0 20px; color: #7c6b5f; line-height: 1.65; }
+.xiangqi-result > div { display: flex; justify-content: center; gap: 8px; }
+.xiangqi-result > .text-link { margin-top: 15px; color: #824238; }
+.xiangqi-result:focus-visible { outline: 4px solid rgba(216,166,64,.9); outline-offset: 4px; }
+
+.xiangqi-rules-dialog {
+  width: min(560px, calc(100% - 28px));
+  max-height: min(720px, calc(100dvh - 32px));
+  overflow-y: auto;
+  padding: 30px;
+  border: 1px solid #d6ba91;
+  border-radius: 23px;
+  background: #fffaf0;
+  color: #44342b;
+  box-shadow: 0 28px 76px rgba(35,22,15,.38);
+}
+.xiangqi-rules-dialog > span { color: #9a4438; font-size: .64rem; font-weight: 850; letter-spacing: .12em; }
+.xiangqi-rules-dialog h2 { margin: 8px 0 18px; font-size: 1.8rem; }
+.xiangqi-rules-dialog > p { color: #746359; font-size: .78rem; line-height: 1.65; }
+.xiangqi-rule-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.xiangqi-rule-grid p { margin: 0; padding: 13px; border: 1px solid #e2d2bc; border-radius: 12px; color: #746359; font-size: .71rem; line-height: 1.55; }
+.xiangqi-rule-grid b { display: block; margin-bottom: 3px; color: #73362f; font-size: .78rem; }
+.xiangqi-rules-dialog > .btn { width: 100%; margin-top: 17px; }
+
+@media (max-width: 980px) {
+  .xiangqi-stage { grid-template-columns: minmax(230px, .56fr) minmax(460px, 1.44fr); }
+  .xiangqi-copy { padding: 30px 24px; }
+}
+
+@media (max-width: 800px) {
+  .xiangqi-stage { grid-template-columns: 1fr; }
+  .xiangqi-copy { min-height: 255px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .9fr); align-items: start; }
+  .xiangqi-copy > div:first-child { grid-row: span 2; }
+  .xiangqi-copy h1 { margin-block: 10px 14px; font-size: clamp(2.3rem, 9vw, 4rem); }
+  .xiangqi-tutorial { margin-top: 0; }
+}
+
+@media (max-width: 560px) {
+  .world-xiangqi { grid-template-columns: minmax(0, 1fr) 96px; }
+  .world-xiangqi-board { width: 96px; }
+  .xiangqi-route { padding-inline: 7px; }
+  .xiangqi-route .casual-top { margin-inline: 4px; }
+  .xiangqi-stage { min-height: 0; border-radius: 21px; }
+  .xiangqi-copy { order: 2; min-height: 0; grid-template-columns: 1fr; gap: 16px; padding: 23px 18px; }
+  .xiangqi-copy > div:first-child { grid-row: auto; }
+  .xiangqi-copy h1 { font-size: clamp(2.2rem, 13vw, 3.45rem); }
+  .xiangqi-copy p { font-size: .74rem; }
+  .xiangqi-tutorial { padding: 14px; }
+  .xiangqi-play { order: 1; gap: 9px; padding: 19px 7px 25px; }
+  .xiangqi-metrics > div { padding-inline: 3px; }
+  .xiangqi-metrics small { font-size: .52rem; }
+  .xiangqi-metrics strong { font-size: .82rem; }
+  .xiangqi-status { font-size: .59rem; }
+  .xiangqi-board { border-width: 5px; border-radius: 13px; }
+  .xiangqi-piece { width: 84%; border-width: 2px; font-size: clamp(.9rem, 6.2vw, 1.42rem); }
+  .xiangqi-cell.is-capture .xiangqi-target-mark { border-width: 3px; }
+  .xiangqi-cell.is-check::after { right: -6px; top: -3px; padding: 2px; font-size: .55rem; }
+  .xiangqi-key-hint { font-size: .53rem; }
+  .xiangqi-result { padding: 24px 17px; }
+  .xiangqi-result > div { flex-direction: column; }
+}
+
+@media (max-width: 360px) {
+  .xiangqi-route { padding-inline: 5px; }
+  .xiangqi-copy { padding: 19px 14px; }
+  .xiangqi-difficulties button { min-height: 58px; }
+  .xiangqi-play { padding-inline: 5px; }
+  .xiangqi-board { width: 100%; }
+  .xiangqi-piece { width: 82%; font-size: 1rem; }
+  .xiangqi-tools button { min-height: 46px; flex-direction: column; gap: 2px; }
+  .xiangqi-tools button i { width: 20px; height: 20px; }
+  .xiangqi-status span { max-width: 176px; }
+  .xiangqi-rule-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xiangqi-status i,
+  .xiangqi-piece,
+  .xiangqi-cell,
+  .xiangqi-result,
+  .xiangqi-tools button,
+  .xiangqi-difficulties button { animation: none !important; transition: none !important; }
+  .xiangqi-cell.has-piece:hover .xiangqi-piece,
+  .xiangqi-cell.is-selected .xiangqi-piece { transform: none; }
+}
