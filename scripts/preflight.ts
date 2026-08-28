@@ -31,7 +31,7 @@ for (const required of [
   'docs/DEPLOYMENT.md', 'docs/ENGINEERING_QUALITY.md', '.github/workflows/ci.yml',
   'mobile/package-lock.json', 'server/data/.gitignore', 'Dockerfile', 'docker-compose.yml', '.env.example',
   'scripts/benchmark-web.mjs',
-  'web/index.html', 'web/app.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
+  'web/index.html', 'web/app.js', 'web/sudoku6.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
 ]) assert.equal((await stat(resolve(root, required))).isFile(), true, `Required artifact missing: ${required}`);
 
 const engine = await read('core/engine.ts');
@@ -56,6 +56,7 @@ assert.match(compose, /DOUJOY_WEB_UPSTREAM_TIMEOUT_MS:\s*"\$\{DOUJOY_WEB_UPSTREA
 assert.match(compose, /DOUJOY_WEB_TRUST_PROXY:\s*"\$\{DOUJOY_WEB_TRUST_PROXY:-false\}"/, 'Web upstream trust must remain explicit and fail closed');
 const webDocker = await read('web/Dockerfile');
 assert.match(webDocker, /COPY web\/assets \.\/assets/, 'The Web production image must include all local visual assets');
+assert.match(webDocker, /web\/sudoku6\.js/, 'The Web production image must include the standalone Sudoku engine');
 const webServer = await read('web/serve.mjs');
 assert.match(webServer, /\.jpg':'image\/jpeg'/, 'JPEG table materials need the correct MIME type');
 assert.match(webServer, /createBrotliCompress/, 'Text assets must support Brotli transfer compression');

@@ -13,6 +13,18 @@ import {
   sortMahjong,
   spinSlots,
 } from './casual-games.js';
+import {
+  SUDOKU6_DIFFICULTIES,
+  SUDOKU6_MAX_HINTS,
+  enterSudoku6Value,
+  getSudoku6Conflicts,
+  hintSudoku6,
+  newSudoku6Game,
+  restoreSudoku6Game,
+  sudoku6NoteValues,
+  sudoku6PeerIndexes,
+  undoSudoku6,
+} from './sudoku6.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -21,10 +33,23 @@ const LEGACY_TOKEN_KEY = 'doujoy.web.token';
 const TOKEN_KEY = 'kai.play.token';
 const HERO_GAME_KEY = 'kai.play.hero-game';
 const MERGE_1048_SAVE_KEY = 'kai.play.1048.game';
+const SUDOKU6_PRACTICE_SAVE_KEY = 'kai.play.sudoku6.practice.v1';
+const SUDOKU6_DAILY_SAVE_PREFIX = 'kai.play.sudoku6.daily.v1.';
+const SUDOKU6_LAST_MODE_KEY = 'kai.play.sudoku6.last-mode';
+const SUDOKU6_STATS_KEY = 'kai.play.sudoku6.stats.v1';
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
-const storedHeroGame = localStorage.getItem(HERO_GAME_KEY);
-const state = { token: localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
+function safeStorageGet(key) {
+  try { return globalThis.localStorage?.getItem(key) ?? null; } catch { return null; }
+}
+function safeStorageSet(key, value) {
+  try { globalThis.localStorage?.setItem(key, String(value)); return true; } catch { return false; }
+}
+function safeStorageRemove(key) {
+  try { globalThis.localStorage?.removeItem(key); return true; } catch { return false; }
+}
+const storedHeroGame = safeStorageGet(HERO_GAME_KEY);
+const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
 let merge1048Pointer = null;
 let heroTransitionTimer = null;
@@ -68,19 +93,87 @@ const requestId = () => globalThis.crypto?.randomUUID?.() || `web-${Date.now()}-
 
 function loadSaved1048Game() {
   try {
-    const raw = localStorage.getItem(MERGE_1048_SAVE_KEY);
+    const raw = safeStorageGet(MERGE_1048_SAVE_KEY);
     if (!raw) return null;
     const game = restore1048Game(JSON.parse(raw));
-    if (!game) localStorage.removeItem(MERGE_1048_SAVE_KEY);
+    if (!game) safeStorageRemove(MERGE_1048_SAVE_KEY);
     return game;
   } catch {
-    try { localStorage.removeItem(MERGE_1048_SAVE_KEY); } catch { /* Storage can be unavailable in hardened browsers. */ }
+    safeStorageRemove(MERGE_1048_SAVE_KEY);
     return null;
   }
 }
 
 function save1048Game(game) {
-  try { localStorage.setItem(MERGE_1048_SAVE_KEY, JSON.stringify(game)); } catch { /* The game remains playable without persistence. */ }
+  safeStorageSet(MERGE_1048_SAVE_KEY, JSON.stringify(game));
+}
+
+function localDateKey(date = new Date()) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function sudoku6SaveKey(mode, date = localDateKey()) {
+  return mode === 'daily' ? `${SUDOKU6_DAILY_SAVE_PREFIX}${date}` : SUDOKU6_PRACTICE_SAVE_KEY;
+}
+
+function loadSavedSudoku6Game(mode = null) {
+  try {
+    const lastMode = safeStorageGet(SUDOKU6_LAST_MODE_KEY) === 'daily' ? 'daily' : 'practice';
+    const modes = mode ? [mode] : [lastMode, lastMode === 'daily' ? 'practice' : 'daily'];
+    for (const candidate of modes) {
+      const key = sudoku6SaveKey(candidate);
+      const raw = safeStorageGet(key);
+      if (!raw) continue;
+      let game = null;
+      try { game = restoreSudoku6Game(JSON.parse(raw)); }
+      catch { /* Damaged JSON is removed below. */ }
+      if (game && game.mode === candidate && (candidate !== 'daily' || game.date === localDateKey())) return game;
+      safeStorageRemove(key);
+    }
+  } catch {
+    /* Storage can be unavailable or contain damaged JSON; a fresh puzzle remains playable. */
+  }
+  return null;
+}
+
+function saveSudoku6Game(game) {
+  try {
+    safeStorageSet(sudoku6SaveKey(game.mode, game.date || localDateKey()), JSON.stringify(game));
+    safeStorageSet(SUDOKU6_LAST_MODE_KEY, game.mode);
+  } catch { /* The game remains playable without persistence. */ }
+}
+
+function loadSudoku6Stats() {
+  try {
+    const value = JSON.parse(safeStorageGet(SUDOKU6_STATS_KEY) || '{}');
+    if (!value || typeof value !== 'object') return {};
+    return Object.fromEntries(Object.entries(value).filter(([, seconds]) => Number.isSafeInteger(seconds) && seconds > 0));
+  } catch { return {}; }
+}
+
+function sudoku6StatKey(game) {
+  return game.mode === 'daily' ? `daily:${game.puzzleId}` : game.difficulty;
+}
+
+function recordSudoku6Best(game) {
+  if (game.status !== 'completed' || game.hintsUsed !== 0 || !Number.isSafeInteger(game.elapsedSeconds) || game.elapsedSeconds <= 0) return;
+  try {
+    const stats = loadSudoku6Stats();
+    const key = sudoku6StatKey(game);
+    const previous = stats[key];
+    if (!Number.isSafeInteger(previous) || game.elapsedSeconds < previous) {
+      stats[key] = game.elapsedSeconds;
+      safeStorageSet(SUDOKU6_STATS_KEY, JSON.stringify(stats));
+    }
+  } catch { /* Best times are optional; completion remains valid. */ }
+}
+
+function formatSudoku6Time(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 function syncFailureNotice() {
@@ -144,14 +237,14 @@ async function bootstrap() {
       catch (error) {
         if (error.status !== 401) throw error;
         state.token = null;
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(LEGACY_TOKEN_KEY);
+        safeStorageRemove(TOKEN_KEY);
+        safeStorageRemove(LEGACY_TOKEN_KEY);
       }
     }
     if (!state.token) {
       const session = await api('/v1/sessions/guest', {method:'POST', body:'{}'});
       state.token = session.token; state.profile = session.profile;
-      localStorage.setItem(TOKEN_KEY, state.token);
+      safeStorageSet(TOKEN_KEY, state.token);
     }
     const resumed = await api('/v1/resume');
     if (resumed.game) enterGame(resumed.game);
@@ -185,6 +278,8 @@ function lobby() {
   const firstGame = (Number(p.games) || 0) === 0;
   const saved1048 = loadSaved1048Game();
   const merge1048Action = !saved1048 ? '开始合并' : saved1048.status === 'playing' ? '继续上局' : '查看上局';
+  const savedSudoku6 = loadSavedSudoku6Game();
+  const sudoku6Action = !savedSudoku6 ? '开始数独' : savedSudoku6.status === 'playing' ? '继续上局' : '查看成绩';
   const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
   const ddzActive = heroGame === 'ddz';
   const previewWall = '<i></i>'.repeat(17);
@@ -236,10 +331,11 @@ function lobby() {
         <article class="room-panel"><div><span>房间码</span><h2>加入好友桌</h2></div><div class="room-actions"><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入 6 位房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
         <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
       </section>
-      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>5 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 4 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 5 款玩法</p>
+      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>6 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 5 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 6 款玩法</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
           <article class="game-world world-ddz"><div><span>服务端三人桌</span><h3>斗地主</h3><p>争分、出牌、结算，完成一局会写入战绩。</p><button class="btn primary" data-action="quick">快速开局</button></div><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div></article>
           <article class="game-world world-1048"><span class="world-badge">${saved1048?'进度已保存':'新上线'}</span><div><span>数字合并 · 单机益智</span><h3>1048</h3><p>普通数字逐级翻倍，最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action}</button></div><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div></article>
+          <article class="game-world world-sudoku6"><span class="world-badge">${savedSudoku6?'进度已保存':'每日一局'}</span><div><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>每行、每列和每个 2×3 宫格都填入 1–6，支持笔记与自动保存。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action}</button></div><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div></article>
           <article class="game-world world-three"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><div><span>三张定胜负</span><h3>炸金花训练</h3><p>免费单机比牌，不计竞技分。</p><button class="btn" data-action="open-three">翻开这一手</button></div></article>
           <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
           <article class="game-world world-reels"><div><span>大厅彩蛋</span><h3>算力转轮</h3><p>免费娱乐 · 无现金下注 · 无提现。</p></div><button class="btn" data-action="open-slots" aria-label="打开算力转轮"><span aria-hidden="true">7 · KAI · ⚡</span> 试转一次</button></article>
@@ -611,6 +707,67 @@ function slotsGame() {
   return `<div class="shell casual-shell">${casualHeader('算力转轮','COMPUTE REELS',`已旋转 ${casual.spins} 次`)}<section class="casual-stage slots-stage"><div class="slot-guide"><b>怎么玩？</b><span><i>1</i>点击免费旋转</span><span><i>2</i>三个转轮停止</span><span><i>3</i>查看图标组合</span></div><div class="slot-machine"><div class="slot-crown"><span>KAI PLAY</span><b>算力转轮</b><small>免费娱乐 · 零消耗</small></div><div class="slot-reels ${casual.spinning?'spinning':''}">${casual.reels.map((symbol,index)=>`<div class="slot-reel" style="--reel:${index}"><small>◆</small><span class="slot-symbol symbol-${symbol==='7'?'seven':'kai'}">${esc(symbol)}</span><small>★</small></div>`).join('')}</div><div class="slot-paytable"><span><b>三枚相同</b><small>三连共振</small></span><span><b>两枚相同</b><small>双核同频</small></span><span><b>各不相同</b><small>继续挑战</small></span></div><div class="slot-result ${result?.tier||''}"><b>${casual.spinning?'转轮依次停止中…':result?.label||'准备好了吗？'}</b><small>${resultCopy}</small></div><button class="slot-lever" data-action="slots-spin" ${casual.spinning?'disabled':''}><i></i><span>${casual.spinning?'正在旋转…':'免费旋转一次'}</span></button></div></section><p class="casual-disclaimer">纯视觉娱乐，不支付、不下注、不发放可兑换奖励，不会扣除竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
+function sudoku6Cell(game, index, context) {
+  const row = Math.floor(index / 6);
+  const column = index % 6;
+  const value = game.values[index];
+  const given = game.puzzle[index] !== 0;
+  const notes = sudoku6NoteValues(game.notes[index]);
+  const conflict = context.conflicts.has(index);
+  const wrong = !given && value > 0 && value !== game.solution[index];
+  const selected = index === context.selected;
+  const related = context.related.has(index);
+  const matched = context.selectedValue > 0 && value === context.selectedValue;
+  const classes = ['sudoku6-cell', given ? 'is-given' : 'is-editable'];
+  if (selected) classes.push('is-selected');
+  else if (matched) classes.push('is-matched');
+  else if (related) classes.push('is-related');
+  if (conflict) classes.push('is-conflict');
+  if (wrong) classes.push('is-wrong');
+  if (game.hinted[index]) classes.push('is-hinted');
+  const content = value
+    ? `<b>${value}</b>`
+    : notes.length
+      ? `<span class="sudoku6-notes">${Array.from({ length: 6 }, (_, offset) => `<i>${notes.includes(offset + 1) ? offset + 1 : ''}</i>`).join('')}</span>`
+      : '<span class="sudoku6-empty" aria-hidden="true"></span>';
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${value ? `数字 ${value}` : notes.length ? `候选 ${notes.join('、')}` : '空白'}，${given ? '题目给定，只读' : '可填写'}${conflict || wrong ? '，当前有误' : ''}`;
+  return `<button type="button" class="${classes.join(' ')}" data-sudoku6-cell="${index}" role="gridcell" aria-label="${label}" aria-selected="${selected}" aria-readonly="${given}" aria-invalid="${conflict || wrong}" tabindex="${selected ? '0' : '-1'}">${content}</button>`;
+}
+
+function sudoku6Result(game) {
+  if (game.status !== 'completed') return '';
+  const modeCopy = game.mode === 'daily' ? '今日挑战完成' : `${SUDOKU6_DIFFICULTIES[game.difficulty].label}练习完成`;
+  return `<section class="sudoku6-result" data-sudoku6-result role="dialog" aria-labelledby="sudoku6-result-title" tabindex="-1"><span>${modeCopy}</span><h2 id="sudoku6-result-title">逻辑归位</h2><p>用时 ${formatSudoku6Time(game.elapsedSeconds)} · 误填 ${game.mistakes} 次 · 提示 ${game.hintsUsed} 次</p><div><button class="btn primary" data-action="sudoku6-new">${game.mode === 'daily' ? '重做今日题' : '再来一题'}</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function sudoku6Game() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game) return lobby();
+  const selected = Number.isInteger(casual.selectedCell) ? casual.selectedCell : game.values.findIndex((value, index) => game.puzzle[index] === 0 && value === 0);
+  const conflicts = getSudoku6Conflicts(game.values);
+  const related = new Set(sudoku6PeerIndexes(selected));
+  const selectedValue = game.values[selected] || 0;
+  const best = loadSudoku6Stats()[sudoku6StatKey(game)];
+  const difficulty = SUDOKU6_DIFFICULTIES[game.difficulty];
+  const modeLabel = game.mode === 'daily' ? `每日一局 · ${game.date.slice(5).replace('-', '.')}` : `${difficulty.label}练习 · ${difficulty.clues} 个提示数`;
+  const status = game.status === 'completed' ? '已完成' : casual.announcement || (conflicts.size ? '存在重复数字，请检查行、列或宫格' : '进度已自动保存');
+  const difficultyControls = game.mode === 'practice'
+    ? `<div class="sudoku6-difficulties" aria-label="选择数独难度">${Object.values(SUDOKU6_DIFFICULTIES).map((entry) => `<button type="button" data-action="sudoku6-difficulty" data-sudoku6-difficulty="${entry.key}" aria-pressed="${entry.key === game.difficulty}" class="${entry.key === game.difficulty ? 'active' : ''}">${entry.label}<small>${entry.clues} 提示</small></button>`).join('')}</div>`
+    : '<p class="sudoku6-daily-note">每日题固定为标准难度，当天题目对所有本地挑战一致。</p>';
+  const context = { selected, selectedValue, related, conflicts };
+  return `<div class="shell casual-shell sudoku6-route">${casualHeader('KAI 数独','6×6 LOGIC',modeLabel)}<main class="sudoku6-stage">
+    <section class="sudoku6-copy"><div><span>短时逻辑挑战 · 自动保存</span><h1>让每个数字<br><b>各得其所</b></h1><p>用 1–6 填满棋盘，每行、每列、每个 2×3 宫格中的数字都不能重复。</p></div><div class="sudoku6-mode-switch" aria-label="选择数独模式"><button type="button" data-action="sudoku6-practice" aria-pressed="${game.mode === 'practice'}" class="${game.mode === 'practice' ? 'active' : ''}">自由练习</button><button type="button" data-action="sudoku6-daily" aria-pressed="${game.mode === 'daily'}" class="${game.mode === 'daily' ? 'active' : ''}">每日一局</button></div>${difficultyControls}<button class="btn sudoku6-new" data-action="sudoku6-new">重新开题</button></section>
+    <section class="sudoku6-play"><div class="sudoku6-metrics" aria-label="本局数据"><div><small>用时</small><strong data-sudoku6-time>${formatSudoku6Time(game.elapsedSeconds)}</strong></div><div><small>误填</small><strong>${game.mistakes}</strong></div><div><small>提示</small><strong>${game.hintsUsed}/${SUDOKU6_MAX_HINTS}</strong></div><div><small>无提示最佳</small><strong>${Number.isSafeInteger(best) ? formatSudoku6Time(best) : '--:--'}</strong></div></div>
+      <div class="sudoku6-status ${conflicts.size ? 'is-warning' : ''}" role="status" aria-live="polite" aria-atomic="true"><i></i><span>${esc(status)}</span><b>${casual.noteMode ? '笔记模式' : '填数模式'}</b></div>
+      <div class="sudoku6-board" data-sudoku6-board role="grid" aria-label="6 乘 6 数独棋盘，使用数字键填写，方向键移动" aria-rowcount="6" aria-colcount="6" aria-keyshortcuts="1 2 3 4 5 6 Backspace Delete N Control+Z">${game.values.map((_, index) => sudoku6Cell(game, index, context)).join('')}</div>
+      <div class="sudoku6-number-pad" aria-label="数字键盘">${[1,2,3,4,5,6].map((value) => `<button type="button" data-action="sudoku6-value" data-sudoku6-value="${value}" ${game.status === 'playing' ? '' : 'disabled'}>${value}</button>`).join('')}</div>
+      <div class="sudoku6-tools" aria-label="数独工具"><button type="button" data-action="sudoku6-notes" aria-pressed="${casual.noteMode}" class="${casual.noteMode ? 'active' : ''}" ${game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">N</i><span>笔记</span></button><button type="button" data-action="sudoku6-undo" ${game.undoStack.length && game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">↶</i><span>撤销</span></button><button type="button" data-action="sudoku6-clear" ${game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">×</i><span>擦除</span></button><button type="button" data-action="sudoku6-hint" ${game.hintsUsed < SUDOKU6_MAX_HINTS && game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">?</i><span>提示</span></button></div>
+      <p class="sudoku6-key-hint">键盘：1–6 填写 · N 笔记 · Delete 擦除 · Ctrl/⌘ + Z 撤销</p>${sudoku6Result(game)}
+    </section>
+  </main><p class="casual-disclaimer">数独题目在本地生成并验证唯一解。进度仅保存在当前浏览器，不请求服务端结算，不改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
 function historyMatchWon(match) {
   if (match.role === 'landlord') return match.winner === 'landlord';
   if (match.role === 'farmer') return match.winner === 'farmers';
@@ -671,10 +828,10 @@ function history() {
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与数字生成</h3><p class="muted">斗地主开局向三位玩家各发 17 张并预留 3 张增补牌；炸金花每轮独立发三张；麻将使用 136 张基础牌墙；1048 每次有效移动后生成一个新数字。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；炸金花、麻将、1048 和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与数字生成</h3><p class="muted">斗地主开局向三位玩家各发 17 张并预留 3 张增补牌；炸金花每轮独立发三张；麻将使用 136 张基础牌墙；1048 每次有效移动后生成一个新数字；6×6 数独题在本地生成后会校验唯一解。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；炸金花、麻将、1048、数独和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='1048'?merge1048Game():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -735,7 +892,7 @@ function switchHero(nextGame, direction = 'next') {
   const current = carousel?.querySelector(`[data-hero-stage="${previous}"]`);
   const next = carousel?.querySelector(`[data-hero-stage="${normalized}"]`);
   state.heroGame = normalized;
-  localStorage.setItem(HERO_GAME_KEY, normalized);
+  safeStorageSet(HERO_GAME_KEY, normalized);
   updateHeroControls(normalized);
   if (!current || !next) { render(); return; }
   if (heroTransitionTimer) {
@@ -789,7 +946,7 @@ function openMahjong() {
   stopCasualTimers();
   const game = newMahjongGame();
   state.heroGame = 'mahjong';
-  localStorage.setItem(HERO_GAME_KEY, 'mahjong');
+  safeStorageSet(HERO_GAME_KEY, 'mahjong');
   state.casual = { kind: 'mahjong', game, selectedTileId: null, confirmAction: null };
   state.view = 'mahjong';
 }
@@ -815,6 +972,101 @@ function perform1048Move(direction) {
   save1048Game(next);
   render();
   focus1048Interaction();
+}
+function firstSudoku6Cell(game) {
+  const unfinished = game.values.findIndex((value, index) => game.puzzle[index] === 0 && value !== game.solution[index]);
+  if (unfinished >= 0) return unfinished;
+  const editable = game.puzzle.findIndex((value) => value === 0);
+  return editable >= 0 ? editable : 0;
+}
+function startSudoku6Session(game, announcement = '选择一个空格，填入 1 到 6') {
+  state.casual = {
+    kind: 'sudoku6',
+    game,
+    selectedCell: firstSudoku6Cell(game),
+    noteMode: false,
+    announcement,
+    sudokuLastTick: Date.now(),
+  };
+  saveSudoku6Game(game);
+  state.view = 'sudoku6';
+}
+function openSudoku6() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const game = loadSavedSudoku6Game() || newSudoku6Game({ difficulty: 'medium' });
+  startSudoku6Session(game, game.status === 'completed' ? '上次数独已完成' : '已恢复本地进度');
+}
+function focusSudoku6Interaction() {
+  const result = document.querySelector('[data-sudoku6-result]');
+  if (result) { result.focus({ preventScroll: true }); return; }
+  const target = document.querySelector(`[data-sudoku6-cell="${state.casual?.selectedCell}"]`);
+  target?.focus({ preventScroll: true });
+}
+function settleSudoku6Clock(now = Date.now()) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'sudoku6' || !game || game.status !== 'playing') return 0;
+  const lastTick = Number.isFinite(casual.sudokuLastTick) ? casual.sudokuLastTick : now;
+  const elapsed = Math.floor(Math.max(0, now - lastTick) / 1000);
+  if (elapsed <= 0) { casual.sudokuLastTick = lastTick; return 0; }
+  game.elapsedSeconds += elapsed;
+  casual.sudokuLastTick = lastTick + elapsed * 1000;
+  const clock = document.querySelector('[data-sudoku6-time]');
+  if (clock) clock.textContent = formatSudoku6Time(game.elapsedSeconds);
+  return elapsed;
+}
+function settleAndSaveSudoku6() {
+  settleSudoku6Clock();
+  const game = state.casual?.game;
+  if (state.view === 'sudoku6' && game) saveSudoku6Game(game);
+}
+function sudoku6HasProgress(game) {
+  return game?.status === 'playing' && (game.elapsedSeconds > 0 || game.undoStack.length > 0);
+}
+function confirmSudoku6Replacement(game, message) {
+  if (!sudoku6HasProgress(game)) return true;
+  return typeof globalThis.confirm === 'function' ? globalThis.confirm(message) : false;
+}
+function commitSudoku6Game(next, announcement) {
+  const previous = state.casual?.game;
+  if (!previous || state.view !== 'sudoku6') return;
+  state.casual.game = next;
+  state.casual.announcement = announcement;
+  saveSudoku6Game(next);
+  if (previous.status !== 'completed' && next.status === 'completed') recordSudoku6Best(next);
+  render();
+  focusSudoku6Interaction();
+}
+function performSudoku6Value(value) {
+  const game = state.casual?.game;
+  const index = state.casual?.selectedCell;
+  if (state.view !== 'sudoku6' || !game || game.status !== 'playing' || !Number.isInteger(index)) return;
+  settleSudoku6Clock();
+  const next = enterSudoku6Value(game, index, value, { noteMode: value > 0 && state.casual.noteMode });
+  if (next.undoStack.length === game.undoStack.length) {
+    state.casual.announcement = game.puzzle[index] ? '题目给定数字不可修改' : '当前操作没有改变棋盘';
+    render();
+    focusSudoku6Interaction();
+    return;
+  }
+  const announcement = next.status === 'completed' ? '数独完成，所有数字都已归位'
+    : next.lastAction === 'mistake' ? '这个数字不符合本格答案，可以擦除或撤销'
+      : next.lastAction === 'note' ? '候选笔记已更新'
+        : next.lastAction === 'clear' ? '已擦除当前格' : '数字正确';
+  commitSudoku6Game(next, announcement);
+}
+function updateSudoku6Clock() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'sudoku6' || !game || game.status !== 'playing') return;
+  const now = Date.now();
+  if (document.visibilityState === 'hidden') { casual.sudokuLastTick = now; return; }
+  const elapsed = settleSudoku6Clock(now);
+  if (elapsed <= 0) return;
+  if (game.elapsedSeconds % 5 < elapsed) saveSudoku6Game(game);
 }
 function openSlots() {
   stopGameSync();
@@ -967,6 +1219,12 @@ function scrollWorldCarousel(direction) {
 
 app.addEventListener('click', e => {
   const el=e.target.closest('button'); if(!el)return;
+  if(el.dataset.sudoku6Cell!==undefined){
+    if(state.view!=='sudoku6'||!state.casual?.game)return;
+    state.casual.selectedCell=Number(el.dataset.sudoku6Cell);
+    state.casual.announcement=state.casual.game.puzzle[state.casual.selectedCell]?'已选中题目给定数字':'已选中可填写格';
+    render();focusSudoku6Interaction();return;
+  }
   if(el.dataset.card){
     const id=el.dataset.card;
     const previousScroll=el.closest('.hand')?.scrollLeft || 0;
@@ -1008,11 +1266,13 @@ app.addEventListener('click', e => {
   if(a==='open-three'){openThreeCard();render();}
   if(a==='open-mahjong'){openMahjong();render();globalThis.scrollTo?.(0,0);}
   if(a==='open-1048'){open1048();render();globalThis.scrollTo?.(0,0);focus1048Interaction();}
+  if(a==='open-sudoku6'){openSudoku6();render();globalThis.scrollTo?.(0,0);focusSudoku6Interaction();}
   if(a==='open-slots'){openSlots();render();}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
       stopMahjongBotSequence();state.casual.confirmAction='home';render();return;
     }
+    if(state.view==='sudoku6')settleAndSaveSudoku6();
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
   if(a==='three-new'){stopCasualTimers();state.casual={kind:'three',round:newThreeCardRound(),revealed:false,thinking:false};render();}
@@ -1049,6 +1309,56 @@ app.addEventListener('click', e => {
       state.casual.game={...game,status:canMove1048(game.board)?'playing':'over',continued:true};save1048Game(state.casual.game);render();focus1048Interaction();
     }
     return;
+  }
+  if(a==='sudoku6-value'){performSudoku6Value(Number(el.dataset.sudoku6Value));return;}
+  if(a==='sudoku6-clear'){performSudoku6Value(0);return;}
+  if(a==='sudoku6-notes'&&state.view==='sudoku6'){
+    state.casual.noteMode=!state.casual.noteMode;
+    state.casual.announcement=state.casual.noteMode?'已开启笔记模式':'已返回填数模式';
+    render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-undo'&&state.view==='sudoku6'){
+    const game=state.casual?.game;if(!game)return;
+    settleSudoku6Clock();
+    const next=undoSudoku6(game);
+    if(next.undoStack.length===game.undoStack.length)return;
+    commitSudoku6Game(next,'已撤销上一步');return;
+  }
+  if(a==='sudoku6-hint'&&state.view==='sudoku6'){
+    const game=state.casual?.game;if(!game)return;
+    settleSudoku6Clock();
+    const next=hintSudoku6(game,state.casual.selectedCell);
+    if(next.hintsUsed===game.hintsUsed){toast('本局的 3 次提示已用完');return;}
+    const hintedIndex=next.values.findIndex((value,index)=>value!==game.values[index]);
+    if(hintedIndex>=0)state.casual.selectedCell=hintedIndex;
+    commitSudoku6Game(next,next.status==='completed'?'数独完成':'已为当前格填入一个提示');return;
+  }
+  if(a==='sudoku6-new'&&state.view==='sudoku6'){
+    const current=state.casual?.game;if(!current)return;
+    settleAndSaveSudoku6();
+    if(!confirmSudoku6Replacement(current,'当前进度尚未完成，确定重新开题吗？'))return;
+    const game=newSudoku6Game({mode:current.mode,difficulty:current.mode==='daily'?'medium':current.difficulty,date:current.date||localDateKey()});
+    startSudoku6Session(game,'新题已准备好');render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-difficulty'&&state.view==='sudoku6'){
+    const difficulty=el.dataset.sudoku6Difficulty;
+    const current=state.casual?.game;if(!current)return;
+    settleAndSaveSudoku6();
+    if(current.mode==='practice'&&difficulty===current.difficulty){state.casual.announcement='当前已是这个难度';render();focusSudoku6Interaction();return;}
+    if(!confirmSudoku6Replacement(current,'切换难度会开始新题，确定继续吗？'))return;
+    const game=newSudoku6Game({mode:'practice',difficulty});
+    startSudoku6Session(game,`已切换为${SUDOKU6_DIFFICULTIES[game.difficulty].label}难度`);render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-daily'&&state.view==='sudoku6'){
+    settleAndSaveSudoku6();
+    const game=loadSavedSudoku6Game('daily')||newSudoku6Game({mode:'daily',difficulty:'medium',date:localDateKey()});
+    startSudoku6Session(game,'已进入今日挑战');render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-practice'&&state.view==='sudoku6'){
+    settleAndSaveSudoku6();
+    const fallbackDifficulty=state.casual?.game?.difficulty||'medium';
+    const game=loadSavedSudoku6Game('practice')||newSudoku6Game({mode:'practice',difficulty:fallbackDifficulty});
+    startSudoku6Session(game,'已进入自由练习');render();focusSudoku6Interaction();return;
   }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     const casual=state.casual;
@@ -1129,6 +1439,49 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; });
 
 app.addEventListener('keydown', (event) => {
+  const sudokuCell = event.target.closest?.('[data-sudoku6-cell]');
+  if (state.view === 'sudoku6' && sudokuCell) {
+    const index = Number(sudokuCell.dataset.sudoku6Cell);
+    state.casual.selectedCell = index;
+    if (/^[1-6]$/.test(event.key)) {
+      event.preventDefault();
+      performSudoku6Value(Number(event.key));
+      return;
+    }
+    if (['0', 'Backspace', 'Delete'].includes(event.key)) {
+      event.preventDefault();
+      performSudoku6Value(0);
+      return;
+    }
+    if (event.key === 'n' || event.key === 'N') {
+      event.preventDefault();
+      state.casual.noteMode = !state.casual.noteMode;
+      state.casual.announcement = state.casual.noteMode ? '已开启笔记模式' : '已返回填数模式';
+      render();
+      focusSudoku6Interaction();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      const game = state.casual.game;
+      settleSudoku6Clock();
+      const next = undoSudoku6(game);
+      if (next.undoStack.length !== game.undoStack.length) commitSudoku6Game(next, '已撤销上一步');
+      return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const row = Math.floor(index / 6);
+      const column = index % 6;
+      const nextRow = event.key === 'ArrowUp' ? Math.max(0, row - 1) : event.key === 'ArrowDown' ? Math.min(5, row + 1) : row;
+      const nextColumn = event.key === 'ArrowLeft' ? Math.max(0, column - 1) : event.key === 'ArrowRight' ? Math.min(5, column + 1) : column;
+      state.casual.selectedCell = nextRow * 6 + nextColumn;
+      state.casual.announcement = `已移到第 ${nextRow + 1} 行第 ${nextColumn + 1} 列`;
+      render();
+      focusSudoku6Interaction();
+      return;
+    }
+  }
   if (state.view === '1048' && event.target.closest?.('[data-1048-board]')) {
     const direction = ({ ArrowLeft:'left', a:'left', A:'left', ArrowRight:'right', d:'right', D:'right', ArrowUp:'up', w:'up', W:'up', ArrowDown:'down', s:'down', S:'down' })[event.key];
     if (direction) {
@@ -1153,4 +1506,14 @@ app.addEventListener('keydown', (event) => {
 bootstrap();
 setInterval(() => {
   updateTurnClock();
+  updateSudoku6Clock();
 }, 1000);
+
+document.addEventListener('visibilitychange', () => {
+  if (state.view !== 'sudoku6' || !state.casual?.game) return;
+  if (document.visibilityState === 'hidden') {
+    settleAndSaveSudoku6();
+    return;
+  }
+  state.casual.sudokuLastTick = Date.now();
+});
