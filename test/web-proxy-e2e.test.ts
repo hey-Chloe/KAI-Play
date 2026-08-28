@@ -66,6 +66,17 @@ test('web preview serves cache-aware local assets and proxies a complete authent
     assert.equal(cached.status, 304);
     assert.equal(await cached.text(), '');
 
+    const cardStock = await fetch(`${webOrigin}/assets/kai-card-stock-1b727d8e.jpg`);
+    assert.equal(cardStock.status, 200);
+    assert.match(cardStock.headers.get('content-type') ?? '', /^image\/jpeg/);
+    assert.match(cardStock.headers.get('cache-control') ?? '', /public/);
+    const cardStockEtag = cardStock.headers.get('etag');
+    assert.ok(cardStockEtag, 'generated card stock must expose a validator');
+    assert.ok((await cardStock.arrayBuffer()).byteLength > 40_000, 'card stock texture must not be an empty placeholder');
+    const cachedCardStock = await fetch(`${webOrigin}/assets/kai-card-stock-1b727d8e.jpg`, { headers: { 'if-none-match': cardStockEtag } });
+    assert.equal(cachedCardStock.status, 304);
+    assert.equal((await cachedCardStock.arrayBuffer()).byteLength, 0);
+
     for (const path of ['/styles.css', '/app.js', '/sudoku6.js']) {
       const compressed = await fetch(`${webOrigin}${path}`, { headers: { 'accept-encoding': 'br' } });
       assert.equal(compressed.status, 200);

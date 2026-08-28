@@ -89,6 +89,7 @@ assert.match(rootPackage.scripts.verify ?? '', /test:coverage/, 'The complete qu
 for (const asset of [
   'web/assets/kai-card-back.svg', 'web/assets/kai-court-j.svg', 'web/assets/kai-court-q.svg',
   'web/assets/kai-court-k.svg', 'web/assets/kai-joker-court.svg', 'web/assets/kai-bamboo-bird.svg',
+  'web/assets/kai-card-stock-1b727d8e.jpg',
   'web/assets/kai-felt-v5.jpg', 'web/assets/kai-leather-v5.jpg',
 ]) assert.equal((await stat(resolve(root, asset))).isFile(), true, `Production Web asset missing: ${asset}`);
 

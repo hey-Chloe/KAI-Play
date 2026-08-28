@@ -7087,3 +7087,295 @@ body:has(.lobby-game-center) {
   .lobby-game-center .game-world:hover { transform: none; }
   .lobby-game-center .game-world.is-highlighted { animation: none !important; }
 }
+
+/* V11: tactile KAI playing-card material system ------------------------
+   One physical deck now serves the lobby, match table, deal sequence and
+   Three Card. Existing card widths and interaction transforms stay intact. */
+:root {
+  --card-warm-white: #faf7ef;
+  --card-paper-light: #fffdf8;
+  --card-edge: #ded5c5;
+  --card-edge-light: rgba(255, 255, 255, .88);
+  --card-shadow-rest:
+    0 1px 1px rgba(3, 10, 8, .3),
+    0 3px 5px rgba(3, 10, 8, .18);
+  --card-shadow-lift:
+    0 1px 1px rgba(3, 10, 8, .3),
+    0 12px 20px rgba(3, 10, 8, .26);
+}
+
+/* Shared stock, silhouette and ink treatment. */
+.poker.poker-face,
+.kai-card-back {
+  aspect-ratio: 9 / 13;
+  border: 1px solid var(--card-edge);
+  border-top-color: var(--card-edge-light);
+  border-radius: max(3px, 4.8%) / max(3px, 3.32%);
+  box-shadow:
+    0 1px 1px rgba(3, 10, 8, .3),
+    0 3px 5px rgba(3, 10, 8, .18),
+    inset .5px .5px rgba(255, 255, 255, .62),
+    inset -.5px -.5px rgba(121, 104, 78, .08);
+}
+
+.poker.poker-face {
+  background-color: var(--card-warm-white);
+  background-image:
+    linear-gradient(112deg, rgba(255, 255, 255, .16), transparent 18%, transparent 82%, rgba(104, 82, 54, .045)),
+    url("./assets/kai-card-stock-1b727d8e.jpg");
+  background-position: center, center;
+  background-repeat: no-repeat, repeat;
+  background-size: 100% 100%, 256px 256px;
+  background-blend-mode: soft-light, multiply;
+  color: #222624;
+}
+
+.poker.poker-face.red { color: #b5443e; }
+
+.poker.poker-face::before {
+  inset: 1px;
+  border: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset .5px .5px rgba(255, 255, 255, .48),
+    inset -.5px -.5px rgba(92, 74, 48, .055);
+}
+
+.poker.poker-face::after {
+  background: linear-gradient(112deg, rgba(255, 255, 255, .11), transparent 15%, transparent 86%, rgba(94, 72, 43, .035));
+}
+
+/* The branded back receives the same linen stock without changing its art. */
+.kai-card-back,
+.ddz-table .deal-deck .kai-card-back,
+.ddz-table .deal-target .kai-card-back,
+.ddz-table .deal-card.kai-card-back {
+  background-color: var(--card-back-base);
+  background-image:
+    linear-gradient(145deg, rgba(9, 45, 44, .72), rgba(3, 24, 31, .78)),
+    url("./assets/kai-card-stock-1b727d8e.jpg"),
+    url("./assets/kai-card-back.svg");
+  background-position: center, center, center;
+  background-repeat: no-repeat, repeat, no-repeat;
+  background-size: 100% 100%, 220px 220px, 100% 100%;
+  background-blend-mode: multiply, soft-light, normal;
+}
+
+/* Every visible face and back uses the same 9:13 house proportion. */
+.lobby-card-scene > .poker.poker-face,
+.lobby-game-center .world-ddz-hand > .poker.poker-face,
+.ddz-table .hand-dock .poker.poker-face,
+.ddz-table .play-zone .poker.poker-face,
+.ddz-table .bottom-reveal .poker.poker-face,
+.three-hand .poker.poker-face,
+.training-card-back.kai-card-back,
+.lobby-game-center .world-three-cards > .training-card-back.kai-card-back,
+.pod-card-stack > .kai-card-back,
+.ddz-table .deal-target .kai-card-back,
+.ddz-table .deal-card.kai-card-back {
+  height: auto;
+  aspect-ratio: 9 / 13;
+  border-radius: max(3px, 4.8%) / max(3px, 3.32%);
+}
+
+.ddz-table .deal-deck {
+  height: auto;
+  aspect-ratio: 9 / 13;
+}
+
+.ddz-table .deal-deck .kai-card-back,
+.ddz-table .deal-target .kai-card-back,
+.ddz-table .deal-card.kai-card-back {
+  box-shadow:
+    0 1px 1px rgba(3, 10, 8, .32),
+    0 2px 3px rgba(3, 10, 8, .2),
+    inset .5px .5px rgba(255, 255, 255, .42),
+    inset -.5px -.5px rgba(121, 104, 78, .08);
+}
+
+/* Symmetric pip field and flat, paper-bound court printing. */
+.poker.poker-face .card-pips {
+  inset: 13% 14% 12%;
+}
+
+.poker.poker-face .card-pips .pip {
+  text-shadow: none;
+}
+
+.poker.poker-face .card-court,
+.poker.poker-face .joker-face {
+  left: 23%;
+  right: auto;
+  top: 10%;
+  bottom: auto;
+  width: auto;
+  height: 80%;
+  aspect-ratio: 2 / 3;
+  border: 0;
+  border-radius: max(2px, 2%);
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  box-shadow: none;
+  filter: saturate(.88) contrast(.98);
+  mix-blend-mode: multiply;
+  opacity: .94;
+}
+
+.poker.poker-face .card-signature {
+  right: 4px;
+  top: 5px;
+  bottom: auto;
+  font-size: .25em;
+  letter-spacing: .08em;
+  opacity: .28;
+}
+
+/* Contextual light: contact first, cast shadow only when the card is raised. */
+.lobby-card-scene > .poker.poker-face,
+.lobby-card-scene > .kai-card-back {
+  box-shadow:
+    0 1px 1px rgba(3, 10, 8, .32),
+    0 11px 18px rgba(3, 10, 8, .24),
+    inset .5px .5px rgba(255, 255, 255, .62),
+    inset -.5px -.5px rgba(121, 104, 78, .08);
+}
+
+.lobby-game-center .world-ddz-hand > .poker.poker-face,
+.lobby-game-center .world-three-cards > .kai-card-back {
+  box-shadow:
+    0 1px 1px rgba(3, 10, 8, .32),
+    0 7px 12px rgba(3, 10, 8, .22),
+    inset .5px .5px rgba(255, 255, 255, .58),
+    inset -.5px -.5px rgba(121, 104, 78, .08);
+}
+
+.ddz-table .hand-dock .poker.hand-card,
+.ddz-table .play-zone .poker.poker-face,
+.ddz-table .bottom-reveal .poker.poker-face,
+.three-hand .poker.poker-face,
+.three-hand .kai-card-back {
+  box-shadow:
+    0 1px 1px rgba(3, 10, 8, .32),
+    0 3px 5px rgba(3, 10, 8, .18),
+    inset .5px .5px rgba(255, 255, 255, .6),
+    inset -.5px -.5px rgba(121, 104, 78, .08);
+}
+
+.ddz-table .hand-dock .poker.hand-card:hover:not(:disabled) {
+  box-shadow:
+    0 1px 1px rgba(3, 10, 8, .32),
+    0 8px 14px rgba(3, 10, 8, .25),
+    inset .5px .5px rgba(255, 255, 255, .64),
+    inset -.5px -.5px rgba(121, 104, 78, .08);
+}
+
+.poker.poker-face.selected,
+.ddz-table .hand-dock .poker.hand-card.selected {
+  box-shadow:
+    0 0 0 2px rgba(227, 185, 94, .38),
+    0 1px 1px rgba(3, 10, 8, .32),
+    0 11px 18px rgba(3, 10, 8, .27);
+}
+
+/* Compact previews keep rank and suit clear instead of carrying tiny branding. */
+.lobby-game-center .world-ddz-hand .card-signature,
+.lobby-game-center .world-ddz-hand .card-index-bottom,
+.ddz-table .hand-dock .card-signature,
+.ddz-table .hand-dock .card-index-bottom,
+.ddz-table .play-zone .card-signature,
+.ddz-table .bottom-reveal .card-signature {
+  display: none;
+}
+
+/* Mobile LOD: flat paper, one calm centre pip and an untouched top-left index. */
+@media (max-width: 560px) {
+  .poker.poker-face {
+    background-color: var(--card-warm-white);
+    background-image: linear-gradient(145deg, #fffdf8, #f5efe4);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    background-blend-mode: normal;
+  }
+
+  .kai-card-back,
+  .ddz-table .deal-deck .kai-card-back,
+  .ddz-table .deal-target .kai-card-back,
+  .ddz-table .deal-card.kai-card-back {
+    background-image:
+      linear-gradient(145deg, rgba(9, 45, 44, .18), rgba(3, 24, 31, .28)),
+      url("./assets/kai-card-back.svg");
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
+    background-size: 100% 100%, 100% 100%;
+    background-blend-mode: multiply, normal;
+  }
+
+  .poker.poker-face .card-signature,
+  .poker.poker-face .card-index-bottom {
+    display: none;
+  }
+
+  .poker.poker-face .card-index:not(.card-index-bottom) {
+    display: flex;
+  }
+
+  .poker.poker-face .joker-index {
+    display: block;
+  }
+
+  .poker.poker-face .card-pips {
+    inset: 0;
+  }
+
+  .poker.poker-face .card-pips .pip {
+    display: none;
+  }
+
+  .poker.poker-face .card-pips .pip:first-child {
+    left: 58%;
+    top: 57%;
+    display: block;
+    font-size: 1.8em;
+    opacity: .24;
+    transform: translate(-50%, -50%);
+  }
+
+  .ddz-table .hand-dock :is(.card-court, .joker-face),
+  .ddz-table .play-zone :is(.card-court, .joker-face),
+  .ddz-table .bottom-reveal :is(.card-court, .joker-face) {
+    display: none;
+  }
+
+  .poker.poker-face .card-court,
+  .poker.poker-face .joker-face {
+    filter: saturate(.78) contrast(.96);
+    opacity: .82;
+  }
+}
+
+@media (max-width: 340px) {
+  .ddz-table .poker.poker-face .card-index:not(.card-index-bottom) b {
+    font-size: 1.32em;
+    letter-spacing: -.12em;
+  }
+
+  .ddz-table .poker.poker-face .card-index:not(.card-index-bottom) small {
+    margin-top: 2px;
+    font-size: 1.05em;
+  }
+
+  .lobby-game-center .world-ddz-hand :is(.card-court, .joker-face) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poker.poker-face,
+  .kai-card-back {
+    animation: none !important;
+    transition: none !important;
+  }
+}
