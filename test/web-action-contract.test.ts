@@ -122,8 +122,10 @@ test('the one-second countdown tick updates only turn-clock nodes instead of rer
   assert.match(appSource, /function updateTurnClock\(\)/);
 
   const intervalIndex = appSource.lastIndexOf('setInterval(');
+  const visibilityIndex = appSource.indexOf("document.addEventListener('visibilitychange'", intervalIndex);
   assert.notEqual(intervalIndex, -1);
-  const intervalSource = appSource.slice(intervalIndex);
+  assert.notEqual(visibilityIndex, -1);
+  const intervalSource = appSource.slice(intervalIndex, visibilityIndex);
   assert.match(intervalSource, /updateTurnClock\(\)/);
   assert.doesNotMatch(intervalSource, /\brender\(\)/, 'a clock tick must not rebuild the full hand and table DOM');
 });

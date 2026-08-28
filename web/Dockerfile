@@ -1,7 +1,7 @@
 FROM node:22.18.0-alpine
 
 WORKDIR /app/web
-COPY web/index.html web/styles.css web/app.js web/casual-games.js web/sudoku6.js web/xiangqi.js web/serve.mjs ./
+COPY web/index.html web/styles.css web/app.js web/casual-games.js web/sudoku6.js web/xiangqi.js web/minesweeper.js web/serve.mjs ./
 COPY web/assets ./assets
 
 RUN addgroup -S doujoy && adduser -S doujoy -G doujoy \

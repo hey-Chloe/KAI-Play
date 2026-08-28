@@ -36,6 +36,16 @@ import {
   undoXiangqiToHumanTurn,
   xiangqiPieceLabel,
 } from './xiangqi.js';
+import {
+  MINESWEEPER_DIFFICULTIES,
+  chordMinesweeperCell,
+  getMinesweeperCell,
+  getMinesweeperRemainingMines,
+  newMinesweeperGame,
+  restoreMinesweeperGame,
+  revealMinesweeperCell,
+  toggleMinesweeperFlag,
+} from './minesweeper.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -51,13 +61,21 @@ const SUDOKU6_STATS_KEY = 'kai.play.sudoku6.stats.v1';
 const XIANGQI_SAVE_KEY = 'kai.play.xiangqi.game.v1';
 const XIANGQI_DIFFICULTY_KEY = 'kai.play.xiangqi.difficulty.v1';
 const XIANGQI_TUTORIAL_KEY = 'kai.play.xiangqi.tutorial.v1';
+const MINESWEEPER_SAVE_KEY = 'kai.play.minesweeper.game.v1';
+const MINESWEEPER_DIFFICULTY_KEY = 'kai.play.minesweeper.difficulty.v1';
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
 function safeStorageGet(key) {
   try { return globalThis.localStorage?.getItem(key) ?? null; } catch { return null; }
 }
 function safeStorageSet(key, value) {
-  try { globalThis.localStorage?.setItem(key, String(value)); return true; } catch { return false; }
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    const serialized = String(value);
+    storage.setItem(key, serialized);
+    return storage.getItem(key) === serialized;
+  } catch { return false; }
 }
 function safeStorageRemove(key) {
   try { globalThis.localStorage?.removeItem(key); return true; } catch { return false; }
@@ -69,6 +87,8 @@ let merge1048Pointer = null;
 let heroTransitionTimer = null;
 let mahjongBotTimer = null;
 let xiangqiAiTimer = null;
+let minesweeperLongPress = null;
+let minesweeperSuppressedClick = null;
 let toastTimer = null;
 let threeRevealTimer = null;
 let slotSpinTimer = null;
@@ -158,6 +178,36 @@ function saveXiangqiSession(casual = state.casual) {
   }));
   const difficultySaved = safeStorageSet(XIANGQI_DIFFICULTY_KEY, casual.game.difficulty || 'beginner');
   casual.saveAvailable = gameSaved && difficultySaved;
+  return casual.saveAvailable;
+}
+
+function loadSavedMinesweeperGame() {
+  try {
+    const raw = safeStorageGet(MINESWEEPER_SAVE_KEY);
+    if (!raw) return null;
+    const game = restoreMinesweeperGame(JSON.parse(raw));
+    if (!game) safeStorageRemove(MINESWEEPER_SAVE_KEY);
+    return game;
+  } catch {
+    safeStorageRemove(MINESWEEPER_SAVE_KEY);
+    return null;
+  }
+}
+
+function saveMinesweeperGame(game, casual = state.casual, { force = false } = {}) {
+  if (!game || casual?.kind !== 'minesweeper') return false;
+  const serialized = JSON.stringify(game);
+  const stored = safeStorageGet(MINESWEEPER_SAVE_KEY);
+  if (!force && typeof casual.minesweeperPersistedSnapshot === 'string' && stored !== casual.minesweeperPersistedSnapshot) {
+    casual.saveAvailable = false;
+    casual.saveConflict = true;
+    return false;
+  }
+  const gameSaved = safeStorageSet(MINESWEEPER_SAVE_KEY, serialized);
+  const difficultySaved = safeStorageSet(MINESWEEPER_DIFFICULTY_KEY, game.difficulty || 'beginner');
+  casual.saveAvailable = gameSaved && difficultySaved;
+  casual.saveConflict = false;
+  if (gameSaved) casual.minesweeperPersistedSnapshot = serialized;
   return casual.saveAvailable;
 }
 
@@ -335,6 +385,10 @@ function lobby() {
   const merge1048Action = !saved1048 ? '开始合并' : saved1048.status === 'playing' ? '继续上局' : '查看上局';
   const savedSudoku6 = loadSavedSudoku6Game();
   const sudoku6Action = !savedSudoku6 ? '开始数独' : savedSudoku6.status === 'playing' ? '继续上局' : '查看成绩';
+  const savedMinesweeper = loadSavedMinesweeperGame();
+  const minesweeperAction = !savedMinesweeper ? '开始排雷' : ['ready','playing'].includes(savedMinesweeper.status) ? '继续排雷' : '查看上局';
+  const minesweeperPreview = ['covered','covered','covered','covered','covered','covered','covered','one','one','one','covered','covered','covered','one','empty','two','flag','covered','covered','one','one','two','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered']
+    .map((cell) => `<i class="${cell}">${cell === 'one' ? '1' : cell === 'two' ? '2' : cell === 'flag' ? '⚑' : ''}</i>`).join('');
   const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
   const ddzActive = heroGame === 'ddz';
   const previewWall = '<i></i>'.repeat(17);
@@ -386,13 +440,14 @@ function lobby() {
         <article class="room-panel"><div><span>房间码</span><h2>加入好友桌</h2></div><div class="room-actions"><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入 6 位房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
         <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
       </section>
-      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>7 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 6 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 7 款玩法</p>
+      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>8 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 7 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 8 款玩法</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
           <article class="game-world world-ddz"><div><span>服务端三人桌</span><h3>斗地主</h3><p>争分、出牌、结算，完成一局会写入战绩。</p><button class="btn primary" data-action="quick">快速开局</button></div><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div></article>
           <article class="game-world world-xiangqi"><span class="world-badge">${savedXiangqi?'进度已保存':'新上线'}</span><div><span>红方先行 · 本地人机训练</span><h3>KAI 象棋</h3><p>点选棋子与 KAI 对弈，支持三档难度、悔棋与自动保存，不计竞技分。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction}</button></div><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div></article>
           <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
           <article class="game-world world-1048"><span class="world-badge">${saved1048?'进度已保存':'新上线'}</span><div><span>数字合并 · 单机益智</span><h3>1048</h3><p>普通数字逐级翻倍，最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action}</button></div><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div></article>
           <article class="game-world world-sudoku6"><span class="world-badge">${savedSudoku6?'进度已保存':'每日一局'}</span><div><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>每行、每列和每个 2×3 宫格都填入 1–6，支持笔记与自动保存。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action}</button></div><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div></article>
+          <article class="game-world world-minesweeper"><span class="world-badge">${savedMinesweeper?'进度已保存':'新上线'}</span><div><span>首击安全 · 本地逻辑训练</span><h3>KAI 扫雷</h3><p>从数字推断雷区，支持三档棋盘、触屏插旗和自动保存。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction}</button></div><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div></article>
           <article class="game-world world-three"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><div><span>三张定胜负</span><h3>炸金花训练</h3><p>免费单机比牌，不计竞技分。</p><button class="btn" data-action="open-three">翻开这一手</button></div></article>
           <article class="game-world world-reels"><div><span>大厅彩蛋</span><h3>算力转轮</h3><p>免费娱乐 · 无现金下注 · 无提现。</p></div><button class="btn" data-action="open-slots" aria-label="打开算力转轮"><span aria-hidden="true">7 · KAI · ⚡</span> 试转一次</button></article>
         </div>
@@ -981,6 +1036,117 @@ function sudoku6Game() {
   </main><p class="casual-disclaimer">数独题目在本地生成并验证唯一解。进度仅保存在当前浏览器，不请求服务端结算，不改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
+function formatMinesweeperTime(totalSeconds) {
+  const seconds = safeLocalCounter(totalSeconds);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function minesweeperCell(game, index, context) {
+  const row = Math.floor(index / game.columns);
+  const column = index % game.columns;
+  const cell = getMinesweeperCell(game, index);
+  const focused = index === context.focused;
+  const lost = game.status === 'lost';
+  const won = game.status === 'won';
+  const exposedMine = cell.exploded || (lost && cell.mine);
+  const wrongFlag = lost && cell.flagged && !cell.mine;
+  const winningFlag = won && cell.mine;
+  const classes = ['minesweeper-cell'];
+  if (cell.revealed) classes.push('is-revealed');
+  else classes.push('is-covered');
+  if (cell.flagged || winningFlag) classes.push('is-flagged');
+  if (exposedMine) classes.push('is-mine');
+  if (cell.exploded) classes.push('is-exploded');
+  if (wrongFlag) classes.push('is-wrong-flag');
+  if (cell.revealed && cell.adjacentMines > 0) classes.push(`number-${cell.adjacentMines}`);
+
+  let content = '';
+  let description = '未揭开';
+  if (wrongFlag) {
+    content = '<span class="minesweeper-wrong-flag" aria-hidden="true"><b>⚑</b><i>×</i></span>';
+    description = '错误插旗，这里没有雷';
+  } else if (cell.exploded) {
+    content = '<span class="minesweeper-mine" aria-hidden="true">✹</span>';
+    description = '已引爆的地雷';
+  } else if (exposedMine) {
+    content = cell.flagged ? '<span class="minesweeper-flag" aria-hidden="true">⚑</span>' : '<span class="minesweeper-mine" aria-hidden="true">✹</span>';
+    description = cell.flagged ? '地雷，已正确插旗' : '地雷';
+  } else if (cell.flagged || winningFlag) {
+    content = '<span class="minesweeper-flag" aria-hidden="true">⚑</span>';
+    description = won ? '地雷，已标记' : '已插旗';
+  } else if (cell.revealed && cell.adjacentMines > 0) {
+    content = `<b aria-hidden="true">${cell.adjacentMines}</b>`;
+    description = `数字 ${cell.adjacentMines}，周围有 ${cell.adjacentMines} 颗雷`;
+  } else if (cell.revealed) {
+    content = '<span class="minesweeper-empty" aria-hidden="true"></span>';
+    description = '已揭开的空白格';
+  }
+
+  let actionHint = '';
+  if (game.status === 'ready' || game.status === 'playing') {
+    if (cell.revealed) actionHint = cell.adjacentMines > 0 ? '，按回车可尝试和弦展开' : '，已展开';
+    else if (cell.flagged) actionHint = context.inputMode === 'flag' ? '，按 F 或点击取消旗帜' : '，按 F 取消旗帜';
+    else actionHint = `，${context.inputMode === 'flag' ? '当前点击会插旗' : '当前点击会揭开'}`;
+  }
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${description}${actionHint}`;
+  return `<button type="button" class="${classes.join(' ')}" data-minesweeper-cell="${index}" role="gridcell" aria-rowindex="${row + 1}" aria-colindex="${column + 1}" aria-label="${esc(label)}" aria-selected="${focused}" aria-disabled="${context.locked}" tabindex="${focused ? '0' : '-1'}">${content}</button>`;
+}
+
+function minesweeperRows(game, context) {
+  return Array.from({ length: game.rows }, (_, row) => {
+    const cells = Array.from({ length: game.columns }, (_, column) => minesweeperCell(game, row * game.columns + column, context)).join('');
+    return `<div class="minesweeper-row" role="row" aria-rowindex="${row + 1}">${cells}</div>`;
+  }).join('');
+}
+
+function minesweeperResult(game) {
+  if (!['won','lost'].includes(game.status)) return '';
+  const won = game.status === 'won';
+  return `<section class="minesweeper-result ${won ? 'is-win' : 'is-loss'}" data-minesweeper-result role="status" aria-live="polite" aria-labelledby="minesweeper-result-title" tabindex="-1"><span>${won ? '本地排雷完成' : '本局结束'}</span><h2 id="minesweeper-result-title">${won ? '雷区已清理' : '这一步踩到雷了'}</h2><p>${MINESWEEPER_DIFFICULTIES[game.difficulty]?.label || '初级'} · 用时 ${formatMinesweeperTime(game.elapsedSeconds)} · 揭开 ${safeLocalCounter(game.revealedCount)} 格 · 和弦 ${safeLocalCounter(game.chordCount)} 次</p><div><button class="btn primary" data-action="minesweeper-new">同难度再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function minesweeperConfirmDialog(casual) {
+  if (!casual?.confirmAction) return '';
+  const changingDifficulty = casual.confirmAction === 'difficulty';
+  const nextDifficulty = MINESWEEPER_DIFFICULTIES[casual.pendingDifficulty];
+  return `<div class="exit-shade"><section class="exit-dialog minesweeper-confirm-dialog" data-minesweeper-confirm-dialog role="dialog" aria-modal="true" aria-labelledby="minesweeper-confirm-title" aria-describedby="minesweeper-confirm-description" tabindex="-1"><span>当前雷区尚未完成</span><h2 id="minesweeper-confirm-title">${changingDifficulty ? `切换到${esc(nextDifficulty?.label || '新')}难度？` : '确定重新布置雷区？'}</h2><p id="minesweeper-confirm-description">${changingDifficulty ? `切换后会清除本局进度，并生成 ${nextDifficulty?.rows || ''}×${nextDifficulty?.columns || ''} 的新棋盘。` : '重新开局会清除当前揭格、旗帜和计时。确定继续吗？'}</p><div><button class="btn" data-action="minesweeper-cancel-confirm">继续本局</button><button class="btn danger" data-action="minesweeper-confirm">${changingDifficulty ? '切换难度' : '重新开局'}</button></div></section></div>`;
+}
+
+function minesweeperGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game) return lobby();
+  const difficulty = MINESWEEPER_DIFFICULTIES[game.difficulty] || MINESWEEPER_DIFFICULTIES.beginner;
+  const focused = Number.isInteger(casual.focusedCell) && casual.focusedCell >= 0 && casual.focusedCell < game.rows * game.columns ? casual.focusedCell : 0;
+  const inputMode = casual.inputMode === 'flag' ? 'flag' : 'reveal';
+  const modalOpen = Boolean(casual.confirmAction);
+  const remaining = getMinesweeperRemainingMines(game);
+  const safeCellCount = game.rows * game.columns - game.mineCount;
+  const progress = Math.round((safeLocalCounter(game.revealedCount) / Math.max(1, safeCellCount)) * 100);
+  const saveConflict = casual.saveConflict === true;
+  const saveUnavailable = casual.saveAvailable === false && !saveConflict;
+  const status = saveConflict ? '另一个标签页已有更新 · 本页不会覆盖最新存档'
+    : saveUnavailable ? '本浏览器无法保存进度 · 本局仍可继续'
+      : game.status === 'ready' ? casual.announcement || '第一步不会踩雷 · 请选择一格开始'
+    : game.status === 'won' ? '全部安全格已经揭开'
+      : game.status === 'lost' ? '雷区已展开 · 错误旗帜以红色标出'
+        : casual.announcement || '进度已自动保存';
+  const context = { focused, inputMode, locked: modalOpen || ['won','lost'].includes(game.status) };
+  const difficultyControls = Object.values(MINESWEEPER_DIFFICULTIES).map((entry) => `<button type="button" data-action="minesweeper-difficulty" data-minesweeper-difficulty="${entry.key}" aria-pressed="${entry.key === game.difficulty}" class="${entry.key === game.difficulty ? 'active' : ''}"><b>${esc(entry.label)}</b><small>${entry.rows}×${entry.columns} · ${entry.mines} 雷</small></button>`).join('');
+  const scrollHint = game.columns >= 12 ? '<p class="minesweeper-scroll-hint" id="minesweeper-scroll-hint">棋盘较宽，小屏可左右滑动查看完整雷区。</p>' : '';
+  const boardDescription = `minesweeper-key-hint${game.columns >= 12 ? ' minesweeper-scroll-hint' : ''}`;
+  return `<div class="shell casual-shell minesweeper-route difficulty-${game.difficulty}"><div class="minesweeper-background"${modalOpen ? ' inert aria-hidden="true"' : ''}>${casualHeader('KAI 扫雷','MINESWEEPER',`${difficulty.label} · ${game.rows}×${game.columns} · ${game.mineCount} 雷`)}<main class="minesweeper-stage">
+    <section class="minesweeper-copy"><div><span>首击安全 · ${saveConflict ? '多标签冲突保护' : saveUnavailable ? '当前存档不可用' : '本地自动保存'}</span><h1>读懂数字<br><b>排除雷区</b></h1><p>数字表示周围八格的地雷数量。先从确定安全的位置展开，再把推断出的地雷插上旗帜。</p></div><div class="minesweeper-difficulties" aria-label="选择扫雷难度">${difficultyControls}</div><ol class="minesweeper-guide"><li><i>1</i><span><b>放心首击</b><small>第一格及附近区域不会布雷</small></span></li><li><i>2</i><span><b>数字推理</b><small>数字等于周围八格的雷数</small></span></li><li><i>3</i><span><b>快速展开</b><small>旗数吻合时点击数字格可和弦</small></span></li></ol><button class="btn minesweeper-new" data-action="minesweeper-new">重新布雷</button></section>
+    <section class="minesweeper-play"><div class="minesweeper-metrics" aria-label="本局数据"><div><small>剩余雷数</small><strong>${remaining}</strong></div><div><small>已插旗</small><strong>${safeLocalCounter(game.flagCount)}/${game.mineCount}</strong></div><div><small>用时</small><strong data-minesweeper-time>${formatMinesweeperTime(game.elapsedSeconds)}</strong></div><div><small>已展开</small><strong>${Math.min(100, progress)}%</strong></div></div>
+      <div class="minesweeper-status ${game.status === 'lost' ? 'is-danger' : game.status === 'won' ? 'is-success' : ''}" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${inputMode === 'flag' ? '插旗模式' : '揭开模式'}</b></div>
+      <div class="minesweeper-input-modes" role="group" aria-label="触屏操作模式"><button type="button" data-action="minesweeper-mode" data-minesweeper-mode="reveal" class="${inputMode === 'reveal' ? 'active' : ''}" aria-pressed="${inputMode === 'reveal'}"><i aria-hidden="true">⌁</i><span>揭开格子</span></button><button type="button" data-action="minesweeper-mode" data-minesweeper-mode="flag" class="${inputMode === 'flag' ? 'active' : ''}" aria-pressed="${inputMode === 'flag'}"><i aria-hidden="true">⚑</i><span>插旗标记</span></button></div>
+      ${scrollHint}<div class="minesweeper-board-scroll" data-minesweeper-scroll tabindex="-1"><div class="minesweeper-board" data-minesweeper-board role="grid" aria-label="${game.rows} 行 ${game.columns} 列扫雷棋盘，首击安全；使用方向键移动，回车或空格揭开，F 插旗" aria-describedby="${boardDescription}" aria-rowcount="${game.rows}" aria-colcount="${game.columns}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space F Escape" aria-disabled="${context.locked}" style="--minesweeper-columns:${game.columns}">${minesweeperRows(game, context)}</div></div>
+      <p class="minesweeper-key-hint" id="minesweeper-key-hint">键盘：方向键移动 · Enter / 空格揭开或和弦 · F 插旗 · Esc 返回揭开模式</p>${minesweeperResult(game)}
+    </section>
+  </main><p class="casual-disclaimer">${saveConflict ? '检测到其他标签页的更新，本页已停止写入以保护最新存档；返回大厅后重新进入即可载入。' : saveUnavailable ? '本浏览器当前无法写入本地存档；本局仍可继续，但刷新后可能无法恢复。' : '本局完全在当前浏览器运行并自动保存；'}不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>${minesweeperConfirmDialog(casual)}</div>`;
+}
+
 function historyMatchWon(match) {
   if (match.role === 'landlord') return match.winner === 'landlord';
   if (match.role === 'farmer') return match.winner === 'farmers';
@@ -1041,10 +1207,10 @@ function history() {
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；炸金花、麻将、1048 与数独按各自规则生成内容；KAI 象棋由本地规则引擎判定每一步合法走法。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、炸金花、麻将、1048、数独和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；炸金花、麻将、1048、数独与扫雷按各自规则生成内容；KAI 象棋由本地规则引擎判定每一步合法走法。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、炸金花、麻将、1048、数独、扫雷和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -1064,6 +1230,8 @@ function stopCasualTimers() {
   threeRevealTimer = null;
   slotSpinTimer = null;
   xiangqiAiTimer = null;
+  cancelMinesweeperLongPress();
+  minesweeperSuppressedClick = null;
 }
 
 function queueMahjongBotTurn() {
@@ -1503,6 +1671,202 @@ function updateSudoku6Clock() {
   if (elapsed <= 0) return;
   if (game.elapsedSeconds % 5 < elapsed) saveSudoku6Game(game);
 }
+
+function firstMinesweeperCell(game) {
+  const covered = game.revealed?.findIndex((revealed, index) => !revealed && !game.flagged?.[index]);
+  return Number.isInteger(covered) && covered >= 0 ? covered : 0;
+}
+
+function startMinesweeperSession(game, announcement = '第一步安全，选择一格开始排雷') {
+  state.casual = {
+    kind: 'minesweeper',
+    game,
+    focusedCell: firstMinesweeperCell(game),
+    inputMode: 'reveal',
+    announcement,
+    confirmAction: null,
+    pendingDifficulty: null,
+    dialogReturnFocus: null,
+    saveAvailable: true,
+    saveConflict: false,
+    minesweeperPersistedSnapshot: null,
+    minesweeperLastTick: Date.now(),
+    minesweeperPausedAt: null,
+  };
+  state.view = 'minesweeper';
+  if (!saveMinesweeperGame(game, state.casual, { force:true })) state.casual.announcement = '本浏览器无法保存进度 · 可继续排雷';
+}
+
+function openMinesweeper() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const saved = loadSavedMinesweeperGame();
+  const storedDifficulty = safeStorageGet(MINESWEEPER_DIFFICULTY_KEY);
+  const difficulty = Object.hasOwn(MINESWEEPER_DIFFICULTIES, storedDifficulty) ? storedDifficulty : 'beginner';
+  const game = saved || newMinesweeperGame({ difficulty });
+  const announcement = !saved ? '第一步安全，选择一格开始排雷'
+    : game.status === 'ready' ? '已恢复未开始的本地棋盘 · 首击安全'
+      : game.status === 'playing' ? '已恢复本地排雷进度' : '上局结果已保留';
+  startMinesweeperSession(game, announcement);
+}
+
+function newMinesweeperSession(difficulty = state.casual?.game?.difficulty || 'beginner') {
+  cancelMinesweeperLongPress();
+  const normalized = Object.hasOwn(MINESWEEPER_DIFFICULTIES, difficulty) ? difficulty : 'beginner';
+  startMinesweeperSession(newMinesweeperGame({ difficulty: normalized }), `已生成${MINESWEEPER_DIFFICULTIES[normalized].label}雷区 · 首击安全`);
+}
+
+function settleMinesweeperClock(now = Date.now()) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'minesweeper' || casual?.kind !== 'minesweeper' || game?.status !== 'playing' || casual.confirmAction || Number.isFinite(casual.minesweeperPausedAt)) return 0;
+  const lastTick = Number.isFinite(casual.minesweeperLastTick) ? casual.minesweeperLastTick : now;
+  const elapsed = Math.floor(Math.max(0, now - lastTick) / 1000);
+  if (elapsed <= 0) return 0;
+  const elapsedSeconds = Math.min(Number.MAX_SAFE_INTEGER, safeLocalCounter(game.elapsedSeconds) + elapsed);
+  casual.game = { ...game, elapsedSeconds };
+  casual.minesweeperLastTick = lastTick + elapsed * 1000;
+  const clock = document.querySelector('[data-minesweeper-time]');
+  if (clock) clock.textContent = formatMinesweeperTime(elapsedSeconds);
+  return elapsed;
+}
+
+function pauseMinesweeperClock(now = Date.now()) {
+  const casual = state.casual;
+  if (state.view !== 'minesweeper' || casual?.kind !== 'minesweeper' || Number.isFinite(casual.minesweeperPausedAt)) return;
+  settleMinesweeperClock(now);
+  casual.minesweeperPausedAt = now;
+}
+
+function resumeMinesweeperClock(now = Date.now()) {
+  const casual = state.casual;
+  if (state.view !== 'minesweeper' || casual?.kind !== 'minesweeper') return;
+  const pausedAt = casual.minesweeperPausedAt;
+  if (!Number.isFinite(pausedAt)) { casual.minesweeperLastTick = now; return; }
+  const lastTick = Number.isFinite(casual.minesweeperLastTick) ? casual.minesweeperLastTick : pausedAt;
+  casual.minesweeperLastTick = lastTick + Math.max(0, now - pausedAt);
+  casual.minesweeperPausedAt = null;
+}
+
+function updateMinesweeperClock() {
+  const elapsed = settleMinesweeperClock();
+  if (elapsed && state.casual.game.elapsedSeconds % 5 < elapsed) saveMinesweeperGame(state.casual.game);
+}
+
+function settleAndSaveMinesweeper() {
+  settleMinesweeperClock();
+  if (state.view === 'minesweeper' && state.casual?.game) saveMinesweeperGame(state.casual.game);
+}
+
+function focusMinesweeperInteraction(index = state.casual?.focusedCell) {
+  const result = document.querySelector('[data-minesweeper-result]');
+  if (result) { result.focus({ preventScroll:true }); return; }
+  const target = document.querySelector(`[data-minesweeper-cell="${Number.isInteger(index) ? index : 0}"]`);
+  target?.focus({ preventScroll:true });
+  target?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function focusMinesweeperDialog() {
+  const dialog = document.querySelector('[data-minesweeper-confirm-dialog]');
+  const firstControl = dialog?.querySelector('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])');
+  (firstControl || dialog)?.focus({ preventScroll:true });
+}
+
+function focusMinesweeperReturnControl(reference) {
+  let control = null;
+  if (reference === 'new') control = document.querySelector('[data-action="minesweeper-new"]');
+  if (reference?.startsWith('difficulty:')) {
+    const difficulty = reference.slice('difficulty:'.length);
+    control = document.querySelector(`[data-minesweeper-difficulty="${difficulty}"]`);
+  }
+  if (control) control.focus({ preventScroll:true });
+  else focusMinesweeperInteraction();
+}
+
+function trapMinesweeperDialogTab(event) {
+  const dialog = document.querySelector('[data-minesweeper-confirm-dialog]');
+  if (!dialog || event.key !== 'Tab') return false;
+  const controls = [...dialog.querySelectorAll('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])')];
+  if (!controls.length) { event.preventDefault();dialog.focus({ preventScroll:true });return true; }
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();(event.shiftKey ? last : first).focus({ preventScroll:true });
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();last.focus({ preventScroll:true });
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();first.focus({ preventScroll:true });
+  }
+  return true;
+}
+
+function commitMinesweeperGame(next, announcement, focusIndex = state.casual?.focusedCell) {
+  if (state.view !== 'minesweeper' || state.casual?.kind !== 'minesweeper' || !next) return;
+  state.casual.game = next;
+  state.casual.focusedCell = Number.isInteger(focusIndex) ? focusIndex : firstMinesweeperCell(next);
+  state.casual.announcement = announcement;
+  saveMinesweeperGame(next);
+  render();
+  focusMinesweeperInteraction(state.casual.focusedCell);
+}
+
+function performMinesweeperReveal(index) {
+  if (state.view !== 'minesweeper' || state.casual?.confirmAction) return;
+  settleMinesweeperClock();
+  const game = state.casual?.game;
+  if (!game || !['ready','playing'].includes(game.status) || !Number.isInteger(index)) return;
+  state.casual.focusedCell = index;
+  try {
+    const cell = getMinesweeperCell(game, index);
+    const wasReady = game.status === 'ready';
+    const chord = cell.revealed && cell.adjacentMines > 0;
+    const next = chord ? chordMinesweeperCell(game, index) : revealMinesweeperCell(game, index);
+    if (wasReady && next !== game && next.status === 'playing') state.casual.minesweeperLastTick = Date.now();
+    let announcement = '';
+    if (next === game) {
+      announcement = cell.flagged ? '已插旗的格子不能揭开，请先取消旗帜'
+        : cell.revealed ? (cell.adjacentMines ? '周围旗帜数量还未与数字吻合' : '这片空白区域已经展开') : '当前操作没有改变棋盘';
+    } else if (next.status === 'won') announcement = '排雷成功，全部安全格已经揭开';
+    else if (next.status === 'lost') announcement = '踩到地雷，本局结束';
+    else if (wasReady) announcement = '首击安全，已展开起始区域';
+    else if (chord) announcement = `和弦展开了 ${Math.max(0, next.revealedCount - game.revealedCount)} 个安全格`;
+    else announcement = next.revealedCount - game.revealedCount > 1 ? '空白区域已连续展开' : '已揭开这个格子';
+    commitMinesweeperGame(next, announcement, index);
+  } catch (error) {
+    state.casual.announcement = error?.message || '这个格子暂时无法揭开';
+    render();focusMinesweeperInteraction(index);
+  }
+}
+
+function performMinesweeperFlag(index) {
+  if (state.view !== 'minesweeper' || state.casual?.confirmAction) return;
+  settleMinesweeperClock();
+  const game = state.casual?.game;
+  if (!game || !['ready','playing'].includes(game.status) || !Number.isInteger(index)) return;
+  state.casual.focusedCell = index;
+  try {
+    const cell = getMinesweeperCell(game, index);
+    const next = toggleMinesweeperFlag(game, index);
+    const announcement = next === game ? (cell.revealed ? '已经揭开的格子不能插旗' : '当前操作没有改变旗帜')
+      : next.flagCount > game.flagCount ? `已插旗 · 还可标记 ${getMinesweeperRemainingMines(next)} 处` : '已取消旗帜';
+    commitMinesweeperGame(next, announcement, index);
+  } catch (error) {
+    state.casual.announcement = error?.message || '这个格子暂时无法标记';
+    render();focusMinesweeperInteraction(index);
+  }
+}
+
+function minesweeperHasProgress(game) {
+  return ['ready','playing'].includes(game?.status) && (safeLocalCounter(game.moveCount) > 0 || safeLocalCounter(game.flagCount) > 0 || safeLocalCounter(game.elapsedSeconds) > 0);
+}
+
+function cancelMinesweeperLongPress() {
+  if (minesweeperLongPress?.timer) clearTimeout(minesweeperLongPress.timer);
+  minesweeperLongPress = null;
+}
+
 function openSlots() {
   stopGameSync();
   stopRoomSync();
@@ -1655,8 +2019,17 @@ function scrollWorldCarousel(direction) {
 app.addEventListener('click', e => {
   const el=e.target.closest('button'); if(!el)return;
   if(state.view==='xiangqi'&&(state.casual?.showRules||state.casual?.confirmAction)&&!el.closest('[data-xiangqi-rules-dialog], [data-xiangqi-confirm-dialog]'))return;
+  if(state.view==='minesweeper'&&state.casual?.confirmAction&&!el.closest('[data-minesweeper-confirm-dialog]'))return;
   if(el.dataset.xiangqiCell!==undefined){
     selectXiangqiCell(Number(el.dataset.xiangqiCell));
+    return;
+  }
+  if(el.dataset.minesweeperCell!==undefined){
+    const index=Number(el.dataset.minesweeperCell);
+    if(minesweeperSuppressedClick?.index===index&&Date.now()<minesweeperSuppressedClick.until){minesweeperSuppressedClick=null;return;}
+    minesweeperSuppressedClick=null;
+    if(state.view!=='minesweeper'||!state.casual?.game)return;
+    if(state.casual.inputMode==='flag')performMinesweeperFlag(index);else performMinesweeperReveal(index);
     return;
   }
   if(el.dataset.sudoku6Cell!==undefined){
@@ -1708,6 +2081,7 @@ app.addEventListener('click', e => {
   if(a==='open-xiangqi'){openXiangqi();render();globalThis.scrollTo?.(0,0);focusXiangqiInteraction();queueXiangqiAiTurn();}
   if(a==='open-1048'){open1048();render();globalThis.scrollTo?.(0,0);focus1048Interaction();}
   if(a==='open-sudoku6'){openSudoku6();render();globalThis.scrollTo?.(0,0);focusSudoku6Interaction();}
+  if(a==='open-minesweeper'){openMinesweeper();render();globalThis.scrollTo?.(0,0);focusMinesweeperInteraction();}
   if(a==='open-slots'){openSlots();render();}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
@@ -1715,6 +2089,7 @@ app.addEventListener('click', e => {
     }
     if(state.view==='xiangqi'){settleXiangqiClock();saveXiangqiSession();}
     if(state.view==='sudoku6')settleAndSaveSudoku6();
+    if(state.view==='minesweeper')settleAndSaveMinesweeper();
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
   if(a==='three-new'){stopCasualTimers();state.casual={kind:'three',round:newThreeCardRound(),revealed:false,thinking:false};render();}
@@ -1848,6 +2223,35 @@ app.addEventListener('click', e => {
     const game=loadSavedSudoku6Game('practice')||newSudoku6Game({mode:'practice',difficulty:fallbackDifficulty});
     startSudoku6Session(game,'已进入自由练习');render();focusSudoku6Interaction();return;
   }
+  if(a==='minesweeper-mode'&&state.view==='minesweeper'){
+    const mode=el.dataset.minesweeperMode==='flag'?'flag':'reveal';
+    state.casual.inputMode=mode;state.casual.announcement=mode==='flag'?'已切换到插旗模式 · 点击未揭格标记':'已切换到揭开模式';render();focusMinesweeperInteraction();return;
+  }
+  if(a==='minesweeper-new'&&state.view==='minesweeper'){
+    const game=state.casual?.game;if(!game)return;
+    settleMinesweeperClock();
+    if(minesweeperHasProgress(state.casual.game)){
+      pauseMinesweeperClock();state.casual.confirmAction='new';state.casual.dialogReturnFocus='new';render();focusMinesweeperDialog();return;
+    }
+    newMinesweeperSession(game.difficulty);render();focusMinesweeperInteraction();return;
+  }
+  if(a==='minesweeper-difficulty'&&state.view==='minesweeper'){
+    const difficulty=el.dataset.minesweeperDifficulty;const game=state.casual?.game;
+    if(!game||!Object.hasOwn(MINESWEEPER_DIFFICULTIES,difficulty))return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个难度';render();document.querySelector(`[data-minesweeper-difficulty="${difficulty}"]`)?.focus({preventScroll:true});return;}
+    settleMinesweeperClock();
+    if(minesweeperHasProgress(state.casual.game)){
+      pauseMinesweeperClock();state.casual.confirmAction='difficulty';state.casual.pendingDifficulty=difficulty;state.casual.dialogReturnFocus=`difficulty:${difficulty}`;render();focusMinesweeperDialog();return;
+    }
+    newMinesweeperSession(difficulty);render();focusMinesweeperInteraction();return;
+  }
+  if(a==='minesweeper-cancel-confirm'&&state.view==='minesweeper'){
+    const returnFocus=state.casual.dialogReturnFocus;state.casual.confirmAction=null;state.casual.pendingDifficulty=null;state.casual.dialogReturnFocus=null;resumeMinesweeperClock();state.casual.announcement='继续当前雷区';render();focusMinesweeperReturnControl(returnFocus);return;
+  }
+  if(a==='minesweeper-confirm'&&state.view==='minesweeper'){
+    const difficulty=state.casual.confirmAction==='difficulty'?state.casual.pendingDifficulty:state.casual.game.difficulty;
+    newMinesweeperSession(difficulty);render();focusMinesweeperInteraction();return;
+  }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     const casual=state.casual;
     casual.spinning=true;casual.last=null;render();
@@ -1891,7 +2295,29 @@ app.addEventListener('click', e => {
   }
 });
 
+app.addEventListener('contextmenu', (event) => {
+  const cell = event.target.closest?.('[data-minesweeper-cell]');
+  if (!cell || state.view !== 'minesweeper') return;
+  event.preventDefault();
+  const index = Number(cell.dataset.minesweeperCell);
+  if (minesweeperSuppressedClick?.index === index && Date.now() < minesweeperSuppressedClick.until) return;
+  performMinesweeperFlag(index);
+});
+
 app.addEventListener('pointerdown', (event) => {
+  const minesweeperCellNode = event.target.closest?.('[data-minesweeper-cell]');
+  if (minesweeperCellNode && state.view === 'minesweeper' && ['touch','pen'].includes(event.pointerType) && event.isPrimary) {
+    cancelMinesweeperLongPress();
+    const index = Number(minesweeperCellNode.dataset.minesweeperCell);
+    const casual = state.casual;
+    const timer = setTimeout(() => {
+      if (state.view !== 'minesweeper' || state.casual !== casual || state.casual?.confirmAction) return;
+      minesweeperSuppressedClick = { index, until:Date.now() + 900 };
+      minesweeperLongPress = null;
+      performMinesweeperFlag(index);
+    }, 520);
+    minesweeperLongPress = { pointerId:event.pointerId, index, x:event.clientX, y:event.clientY, timer };
+  }
   const mergeBoard = event.target.closest?.('[data-1048-board]');
   if (mergeBoard && state.view === '1048') {
     merge1048Pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -1904,7 +2330,15 @@ app.addEventListener('pointerdown', (event) => {
   carousel.setPointerCapture?.(event.pointerId);
 });
 
+app.addEventListener('pointermove', (event) => {
+  if (!minesweeperLongPress || minesweeperLongPress.pointerId !== event.pointerId) return;
+  const deltaX = event.clientX - minesweeperLongPress.x;
+  const deltaY = event.clientY - minesweeperLongPress.y;
+  if (Math.hypot(deltaX, deltaY) > 10) cancelMinesweeperLongPress();
+});
+
 app.addEventListener('pointerup', (event) => {
+  if (minesweeperLongPress?.pointerId === event.pointerId) cancelMinesweeperLongPress();
   if (merge1048Pointer && merge1048Pointer.id === event.pointerId) {
     const deltaX = event.clientX - merge1048Pointer.x;
     const deltaY = event.clientY - merge1048Pointer.y;
@@ -1923,9 +2357,28 @@ app.addEventListener('pointerup', (event) => {
   switchHero(nextGame, deltaX < 0 ? 'next' : 'previous');
 });
 
-app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; });
+app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
+  const minesweeperModalOpen = state.view === 'minesweeper' && state.casual?.confirmAction;
+  if (minesweeperModalOpen && event.key === 'Tab') {
+    trapMinesweeperDialogTab(event);
+    return;
+  }
+  if (minesweeperModalOpen && event.key === 'Escape') {
+    event.preventDefault();
+    const returnFocus = state.casual.dialogReturnFocus;
+    state.casual.confirmAction = null;
+    state.casual.pendingDifficulty = null;
+    state.casual.dialogReturnFocus = null;
+    resumeMinesweeperClock();
+    state.casual.announcement = '继续当前雷区';
+    render();focusMinesweeperReturnControl(returnFocus);
+    return;
+  }
+  if (minesweeperModalOpen && !event.target.closest?.('[data-minesweeper-confirm-dialog]')) {
+    event.preventDefault();focusMinesweeperDialog();return;
+  }
   const xiangqiModalOpen = state.view === 'xiangqi' && (state.casual?.showRules || state.casual?.confirmAction);
   if (xiangqiModalOpen && event.key === 'Tab') {
     trapXiangqiDialogTab(event);
@@ -1980,6 +2433,28 @@ app.addEventListener('keydown', (event) => {
       state.casual.announcement = `已移到第 ${nextRow + 1} 行第 ${nextColumn + 1} 列`;
       render();focusXiangqiInteraction(nextIndex);
       return;
+    }
+  }
+  const minesweeperCellNode = event.target.closest?.('[data-minesweeper-cell]');
+  if (state.view === 'minesweeper' && minesweeperCellNode) {
+    const index = Number(minesweeperCellNode.dataset.minesweeperCell);
+    state.casual.focusedCell = index;
+    if (event.key === 'f' || event.key === 'F') {
+      event.preventDefault();performMinesweeperFlag(index);return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();performMinesweeperReveal(index);return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();state.casual.inputMode='reveal';state.casual.announcement='已返回揭开模式';render();focusMinesweeperInteraction(index);return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const game=state.casual.game;const row=Math.floor(index/game.columns);const column=index%game.columns;
+      const nextRow=event.key==='ArrowUp'?Math.max(0,row-1):event.key==='ArrowDown'?Math.min(game.rows-1,row+1):row;
+      const nextColumn=event.key==='ArrowLeft'?Math.max(0,column-1):event.key==='ArrowRight'?Math.min(game.columns-1,column+1):column;
+      const nextIndex=nextRow*game.columns+nextColumn;
+      state.casual.focusedCell=nextIndex;state.casual.announcement=`已移到第 ${nextRow+1} 行第 ${nextColumn+1} 列`;render();focusMinesweeperInteraction(nextIndex);return;
     }
   }
   const sudokuCell = event.target.closest?.('[data-sudoku6-cell]');
@@ -2051,6 +2526,7 @@ setInterval(() => {
   updateTurnClock();
   updateSudoku6Clock();
   updateXiangqiClock();
+  updateMinesweeperClock();
 }, 1000);
 
 document.addEventListener('visibilitychange', () => {
@@ -2070,4 +2546,26 @@ document.addEventListener('visibilitychange', () => {
     }
     state.casual.sudokuLastTick = Date.now();
   }
+  if (state.view === 'minesweeper') {
+    if (document.visibilityState === 'hidden') {
+      pauseMinesweeperClock();
+      if (state.casual?.game) saveMinesweeperGame(state.casual.game);
+      return;
+    }
+    if (!state.casual.confirmAction) resumeMinesweeperClock();
+  }
+});
+
+globalThis.addEventListener?.('storage', (event) => {
+  if ((event.key !== MINESWEEPER_SAVE_KEY && event.key !== null)
+    || state.view !== 'minesweeper'
+    || state.casual?.kind !== 'minesweeper'
+    || typeof state.casual.minesweeperPersistedSnapshot !== 'string'
+    || event.newValue === state.casual.minesweeperPersistedSnapshot) return;
+  state.casual.saveAvailable = false;
+  state.casual.saveConflict = true;
+  state.casual.announcement = '另一个标签页已更新这局，本页已停止写入';
+  render();
+  if (state.casual.confirmAction) focusMinesweeperDialog();
+  else focusMinesweeperInteraction();
 });

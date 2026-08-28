@@ -21,15 +21,15 @@ function sourceBetween(source: string, start: string, end: string) {
   return source.slice(startIndex, endIndex);
 }
 
-test('the seven-card catalog keeps KAI Sudoku playable immediately after 1048', () => {
+test('the eight-card catalog keeps KAI Sudoku playable immediately after 1048', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /7 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 6 款免费训练/);
+  assert.match(lobby, /8 款玩法，即刻开局/);
+  assert.match(lobby, /1 款竞技 · 7 款免费训练/);
   assert.match(lobby, /class="game-world world-sudoku6"/);
   assert.match(lobby, /<h3>KAI 数独<\/h3>/);
   assert.match(lobby, /data-action="open-sudoku6"/);
   assert.match(lobby, /6×6 逻辑填数 · 单机益智/);
-  const orderedCards = ['world-ddz', 'world-xiangqi', 'world-mahjong', 'world-1048', 'world-sudoku6', 'world-three', 'world-reels'];
+  const orderedCards = ['world-ddz', 'world-xiangqi', 'world-mahjong', 'world-1048', 'world-sudoku6', 'world-minesweeper', 'world-three', 'world-reels'];
   for (let index = 1; index < orderedCards.length; index += 1) {
     assert.ok(lobby.indexOf(orderedCards[index - 1]) < lobby.indexOf(orderedCards[index]), `${orderedCards[index]} must follow ${orderedCards[index - 1]}`);
   }
