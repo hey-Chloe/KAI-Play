@@ -91,6 +91,20 @@ for (const asset of [
   'web/assets/kai-court-k.svg', 'web/assets/kai-joker-court.svg', 'web/assets/kai-bamboo-bird.svg',
   'web/assets/kai-card-stock-6912c163.jpg',
   'web/assets/kai-felt-v5.jpg', 'web/assets/kai-leather-v5.jpg',
+  'web/assets/cards/kai-court-j-club-3152a7a5.svg',
+  'web/assets/cards/kai-court-j-diamond-1227624f.svg',
+  'web/assets/cards/kai-court-j-heart-59743a5f.svg',
+  'web/assets/cards/kai-court-j-spade-ef29a894.svg',
+  'web/assets/cards/kai-court-q-club-023d6c89.svg',
+  'web/assets/cards/kai-court-q-diamond-ff4c35ab.svg',
+  'web/assets/cards/kai-court-q-heart-b9086e1d.svg',
+  'web/assets/cards/kai-court-q-spade-6b8434bc.svg',
+  'web/assets/cards/kai-court-k-club-d3bbb664.svg',
+  'web/assets/cards/kai-court-k-diamond-d17bb7e9.svg',
+  'web/assets/cards/kai-court-k-heart-5cece963.svg',
+  'web/assets/cards/kai-court-k-spade-18b4c6ab.svg',
+  'web/assets/cards/kai-joker-big-65f2baa2.svg',
+  'web/assets/cards/kai-joker-small-3761b22b.svg',
 ]) assert.equal((await stat(resolve(root, asset))).isFile(), true, `Production Web asset missing: ${asset}`);
 
 console.log('KAI Play release preflight passed: SDK 57, package identity, play-only boundary, fairness, assets, proxy, and required docs.');

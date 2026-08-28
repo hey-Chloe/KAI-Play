@@ -7644,3 +7644,86 @@ button.poker.poker-face:disabled { cursor: default; }
     transition: none !important;
   }
 }
+
+/* V13: suit-authentic English courts and distinct Atlas Jokers. */
+.poker.poker-face[data-rank="j"][data-suit="spade"] .card-court {
+  background-image: url("./assets/cards/kai-court-j-spade-ef29a894.svg");
+}
+.poker.poker-face[data-rank="j"][data-suit="heart"] .card-court {
+  background-image: url("./assets/cards/kai-court-j-heart-59743a5f.svg");
+}
+.poker.poker-face[data-rank="j"][data-suit="club"] .card-court {
+  background-image: url("./assets/cards/kai-court-j-club-3152a7a5.svg");
+}
+.poker.poker-face[data-rank="j"][data-suit="diamond"] .card-court {
+  background-image: url("./assets/cards/kai-court-j-diamond-1227624f.svg");
+}
+
+.poker.poker-face[data-rank="q"][data-suit="spade"] .card-court {
+  background-image: url("./assets/cards/kai-court-q-spade-6b8434bc.svg");
+}
+.poker.poker-face[data-rank="q"][data-suit="heart"] .card-court {
+  background-image: url("./assets/cards/kai-court-q-heart-b9086e1d.svg");
+}
+.poker.poker-face[data-rank="q"][data-suit="club"] .card-court {
+  background-image: url("./assets/cards/kai-court-q-club-023d6c89.svg");
+}
+.poker.poker-face[data-rank="q"][data-suit="diamond"] .card-court {
+  background-image: url("./assets/cards/kai-court-q-diamond-ff4c35ab.svg");
+}
+
+.poker.poker-face[data-rank="k"][data-suit="spade"] .card-court {
+  background-image: url("./assets/cards/kai-court-k-spade-18b4c6ab.svg");
+}
+.poker.poker-face[data-rank="k"][data-suit="heart"] .card-court {
+  background-image: url("./assets/cards/kai-court-k-heart-5cece963.svg");
+}
+.poker.poker-face[data-rank="k"][data-suit="club"] .card-court {
+  background-image: url("./assets/cards/kai-court-k-club-d3bbb664.svg");
+}
+.poker.poker-face[data-rank="k"][data-suit="diamond"] .card-court {
+  background-image: url("./assets/cards/kai-court-k-diamond-d17bb7e9.svg");
+}
+
+.poker.poker-face[data-rank="small-joker"][data-suit="joker"] .joker-face {
+  background-image: url("./assets/cards/kai-joker-small-3761b22b.svg");
+}
+.poker.poker-face[data-rank="big-joker"][data-suit="joker"] .joker-face {
+  background-image: url("./assets/cards/kai-joker-big-65f2baa2.svg");
+}
+
+/* Attribute specificity intentionally outranks the legacy red-court shorthand. */
+.poker.poker-face[data-rank="j"][data-suit] .card-court,
+.poker.poker-face[data-rank="q"][data-suit] .card-court,
+.poker.poker-face[data-rank="k"][data-suit] .card-court,
+.poker.poker-face[data-rank="small-joker"][data-suit="joker"] .joker-face,
+.poker.poker-face[data-rank="big-joker"][data-suit="joker"] .joker-face {
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: saturate(.94) contrast(1.04);
+  mix-blend-mode: multiply;
+  opacity: .98;
+}
+
+@container kai-card (max-width: 55px) {
+  .poker.poker-face[data-rank="j"][data-suit] .card-court,
+  .poker.poker-face[data-rank="q"][data-suit] .card-court,
+  .poker.poker-face[data-rank="k"][data-suit] .card-court,
+  .poker.poker-face[data-rank="small-joker"][data-suit="joker"] .joker-face,
+  .poker.poker-face[data-rank="big-joker"][data-suit="joker"] .joker-face {
+    filter: saturate(.88) contrast(1.08);
+    opacity: 1;
+  }
+}
+
+@container kai-card (max-width: 39px) {
+  .poker.poker-face[data-rank="j"][data-suit] .card-court,
+  .poker.poker-face[data-rank="q"][data-suit] .card-court,
+  .poker.poker-face[data-rank="k"][data-suit] .card-court,
+  .poker.poker-face[data-rank="small-joker"][data-suit="joker"] .joker-face,
+  .poker.poker-face[data-rank="big-joker"][data-suit="joker"] .joker-face {
+    display: none;
+  }
+}

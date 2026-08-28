@@ -77,5 +77,6 @@ npm run test:coverage
 - [安全与公平](docs/SECURITY.md)
 - [单机部署与数据恢复](docs/DEPLOYMENT.md)
 - [工程质量与容量边界](docs/ENGINEERING_QUALITY.md)
+- [第三方素材与许可声明](THIRD_PARTY_NOTICES.md)
 - [隐私说明](docs/PRIVACY.md)
 - [用户规则](docs/TERMS.md)

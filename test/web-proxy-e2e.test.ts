@@ -85,6 +85,20 @@ test('web preview serves cache-aware local assets and proxies a complete authent
     assert.equal(cachedCardStock.headers.get('cache-control'), 'public, max-age=31536000, immutable');
     assert.equal((await cachedCardStock.arrayBuffer()).byteLength, 0);
 
+    const court = await fetch(`${webOrigin}/assets/cards/kai-court-j-spade-ef29a894.svg`);
+    assert.equal(court.status, 200);
+    assert.match(court.headers.get('content-type') ?? '', /^image\/svg\+xml/);
+    assert.equal(court.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    const courtEtag = court.headers.get('etag');
+    assert.ok(courtEtag, 'fingerprinted court art must expose a validator');
+    assert.match(await court.text(), /^<svg\b/);
+    const cachedCourt = await fetch(`${webOrigin}/assets/cards/kai-court-j-spade-ef29a894.svg`, {
+      headers: { 'if-none-match': courtEtag },
+    });
+    assert.equal(cachedCourt.status, 304);
+    assert.equal(cachedCourt.headers.get('etag'), courtEtag);
+    assert.equal(cachedCourt.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+
     for (const path of ['/styles.css', '/app.js', '/sudoku6.js']) {
       const compressed = await fetch(`${webOrigin}${path}`, { headers: { 'accept-encoding': 'br' } });
       assert.equal(compressed.status, 200);

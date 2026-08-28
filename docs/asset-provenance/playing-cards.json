@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "assetFamily": "KAI Play V13 playing-card court and Joker artwork",
+  "scope": "web/assets/cards/*.svg",
+  "verifiedAt": "2026-08-28",
+  "assetCount": 14,
+  "totalBytes": 453009,
+  "licenseText": "LICENSES/CC0-1.0.txt",
+  "licenseTextSha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+  "notice": "THIRD_PARTY_NOTICES.md",
+  "sources": {
+    "revk-standard-deck": {
+      "title": "SVG playing cards — Standard deck",
+      "author": "Adrian Kennard (RevK)",
+      "sourcePage": "https://www.me.uk/cards/",
+      "downloadPage": "https://www.me.uk/cards/makeadeck.cgi?view=",
+      "downloadedAt": "2026-08-28",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "rightsEvidence": "The official source page states that the designs are released under the CC0 Public Domain licence, that attribution is not required, and that the court cards are based on 19th-century Goodall & Son designs.",
+      "attributionRequired": false,
+      "courtesyCredit": "Playing-card court artwork adapted from Adrian Kennard (RevK), SVG playing cards, CC0 1.0.",
+      "versionNote": "Standard deck export downloaded on the recorded date; the generator does not expose an immutable release identifier for the exported files.",
+      "excluded": [
+        "Aces",
+        "card backs",
+        "Alteran characters",
+        "Duplimate variants",
+        "all non-J/Q/K generated cards"
+      ]
+    },
+    "fomin-atlas-red-joker": {
+      "title": "Atlas deck joker red.svg",
+      "author": "Дмитрий Фомин (Dmitry Fomin)",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Atlas_deck_joker_red.svg",
+      "downloadUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Atlas_deck_joker_red.svg",
+      "sourceDate": "2017-02-25",
+      "downloadedAt": "2026-08-28",
+      "upstreamSha256": "e6f044a37683e332344eaad07a4f3c00d4a14b735acb1a8c740da9e993ceae75",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "rightsEvidence": "The Wikimedia Commons file page identifies Dmitry Fomin as the author and the file as CC0 1.0 Universal.",
+      "attributionRequired": false,
+      "courtesyCredit": "Joker artwork adapted from Dmitry Fomin, Atlas deck joker red.svg, CC0 1.0."
+    }
+  },
+  "assets": [
+    {
+      "path": "web/assets/cards/kai-court-j-club-3152a7a5.svg",
+      "sha256": "3152a7a5b8bd5db434d5e3a1057d6a8c0ae961cfc7155d5201ff0383e0f87084",
+      "bytes": 26441,
+      "source": "revk-standard-deck",
+      "upstreamFile": "JC.svg",
+      "upstreamSha256": "a6edc9766748d6fad6761f2a88b70895b9c9ecc751ff5825af371f1c7fd8993c",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-j-diamond-1227624f.svg",
+      "sha256": "1227624ffdf1b771c1d3de379b761095fbb7157a96b7cb675622e23942074016",
+      "bytes": 22487,
+      "source": "revk-standard-deck",
+      "upstreamFile": "JD.svg",
+      "upstreamSha256": "504308b8adaa752a685abf53b8dfd3ff4707b1a540abd543d32be6514dd9683b",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-j-heart-59743a5f.svg",
+      "sha256": "59743a5f25c81d01c805bb55be250290871269f5ed31e1fc2bcea596d154a92e",
+      "bytes": 27695,
+      "source": "revk-standard-deck",
+      "upstreamFile": "JH.svg",
+      "upstreamSha256": "7cc061ad708a831abde5603d3adf35e5101847376e9b728a8409172fdfee4b51",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-j-spade-ef29a894.svg",
+      "sha256": "ef29a89430e3dad023cd07787632b78d66f0206ca77937c93b612b7595061c87",
+      "bytes": 30587,
+      "source": "revk-standard-deck",
+      "upstreamFile": "JS.svg",
+      "upstreamSha256": "16453a65b8c4f0e661e289c17117cac8942ba2447f9627edc218f30e3ab5d436",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-k-club-d3bbb664.svg",
+      "sha256": "d3bbb66402fc69abeaea6429aa1f5124583356d6358c58dc1d8ed45d7cdbe198",
+      "bytes": 27698,
+      "source": "revk-standard-deck",
+      "upstreamFile": "KC.svg",
+      "upstreamSha256": "feacf36db651e04641debbbe742b4616fdb597b9f08a2f99eec5743073294cb9",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-k-diamond-d17bb7e9.svg",
+      "sha256": "d17bb7e95fdf96af698146f1850fdd86db9c4ec5bbde4fb82d51c90bd80cd9e4",
+      "bytes": 24936,
+      "source": "revk-standard-deck",
+      "upstreamFile": "KD.svg",
+      "upstreamSha256": "2f6de442343a695e5972eae0e11cf0312e0448e483fbb862b5110c8bc17e3074",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-k-heart-5cece963.svg",
+      "sha256": "5cece96384c8b45e5b23c56131aab989809fa6873d31123a3294fea80c027528",
+      "bytes": 37407,
+      "source": "revk-standard-deck",
+      "upstreamFile": "KH.svg",
+      "upstreamSha256": "f4c59c854cc29a51b0f0b1ec1807eb8daee9619f6b63c875cbf958a6360d0847",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-k-spade-18b4c6ab.svg",
+      "sha256": "18b4c6abb2e4d399ad99a2a40e332fc45c937e2867408d0a2103535dbd99806a",
+      "bytes": 42560,
+      "source": "revk-standard-deck",
+      "upstreamFile": "KS.svg",
+      "upstreamSha256": "08cac14e74d6590937c55ce5993619f3264a3e042de5e90b5779b767f55c3bfb",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-q-club-023d6c89.svg",
+      "sha256": "023d6c89fd7a29ec6178f44f9c17ff0b2cb8653381fcdf836414d59cb921c866",
+      "bytes": 29248,
+      "source": "revk-standard-deck",
+      "upstreamFile": "QC.svg",
+      "upstreamSha256": "de060a70e7ea022231b3981fe6ee0056a9c8c8563b4b444675c4521662fa39c9",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-q-diamond-ff4c35ab.svg",
+      "sha256": "ff4c35abca7989c5c4df2f26bd2dfbc79877d4b0549336eb5e6dbd02668645a5",
+      "bytes": 30170,
+      "source": "revk-standard-deck",
+      "upstreamFile": "QD.svg",
+      "upstreamSha256": "1409b7344dbefa8aee703b7e141667fd31f96d6067d44f684b185a20ce717583",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-q-heart-b9086e1d.svg",
+      "sha256": "b9086e1de21427197cad00a20ab424a6121bf1f37489ee9e01c1bd0b8c21eee5",
+      "bytes": 34059,
+      "source": "revk-standard-deck",
+      "upstreamFile": "QH.svg",
+      "upstreamSha256": "77281e00c00eb41cf31b52b53425af07f9251e45753e8d2ab02fec01e6f68049",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-court-q-spade-6b8434bc.svg",
+      "sha256": "6b8434bc1cb6147c2321435f09975d8a01e6770d30b0809bdb38ee4ba0e73ed2",
+      "bytes": 27516,
+      "source": "revk-standard-deck",
+      "upstreamFile": "QS.svg",
+      "upstreamSha256": "f9e217543bd49b71e2f266a2e92e935165d5ed4b45901a6c15981e00a94e7d10",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped viewBox from -120 -168 240 336 to -82.4 -130.4 164.8 260.8", "Removed the card frame, background, indices and outer pips", "Removed unused metadata/elements and minified the SVG; retained the source court geometry and colours"]
+    },
+    {
+      "path": "web/assets/cards/kai-joker-big-65f2baa2.svg",
+      "sha256": "65f2baa238545a672be1f891ff5971a0dd65ca0e33158cb888e0361aef028f7c",
+      "bytes": 46038,
+      "source": "fomin-atlas-red-joker",
+      "upstreamFile": "Atlas_deck_joker_red.svg",
+      "upstreamSha256": "e6f044a37683e332344eaad07a4f3c00d4a14b735acb1a8c740da9e993ceae75",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped the 360 x 540 source horizontally to viewBox 58 0 244 540", "Removed peripheral card markings and unused metadata/elements", "Minified the SVG; retained the red source palette"]
+    },
+    {
+      "path": "web/assets/cards/kai-joker-small-3761b22b.svg",
+      "sha256": "3761b22b51423d6ef981a94aec3f4e20c5ff26eada0d4a01e1123f8dfb0ad454",
+      "bytes": 46167,
+      "source": "fomin-atlas-red-joker",
+      "upstreamFile": "Atlas_deck_joker_red.svg",
+      "upstreamSha256": "e6f044a37683e332344eaad07a4f3c00d4a14b735acb1a8c740da9e993ceae75",
+      "license": "CC0-1.0",
+      "modifications": ["Cropped the 360 x 540 source horizontally to viewBox 58 0 244 540", "Removed peripheral card markings and unused metadata/elements", "Minified the SVG", "Remapped selected red/orange/yellow/pink fills to KAI graphite, sand and grey tones; geometry is unchanged from the big-Joker derivative"]
+    }
+  ]
+}
