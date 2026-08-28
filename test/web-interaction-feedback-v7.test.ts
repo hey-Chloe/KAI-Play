@@ -8,7 +8,7 @@ const indexSource = readFileSync(new URL('../web/index.html', import.meta.url), 
 
 test('the main game carousel remembers its mode and supports keyboard discovery', () => {
   assert.match(appSource, /HERO_GAME_KEY\s*=\s*['"]kai\.play\.hero-game['"]/);
-  assert.match(appSource, /localStorage\.setItem\(HERO_GAME_KEY,\s*normalized\)/);
+  assert.match(appSource, /safeStorageSet\(HERO_GAME_KEY,\s*normalized\)/);
   assert.match(appSource, /data-hero-carousel[^>]+tabindex="0"/);
   assert.match(appSource, /aria-keyshortcuts="ArrowLeft ArrowRight"/);
   assert.match(appSource, /app\.addEventListener\(['"]keydown['"]/);

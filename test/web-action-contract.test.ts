@@ -78,8 +78,8 @@ test('web bootstrap deletes a stored session only for an explicit unauthorized r
   assert.match(tokenValidation, /catch\s*\(error\)/);
   assert.match(tokenValidation, /error\.status\s*===?\s*401|error\.status\s*!==?\s*401/);
   assert.match(tokenValidation, /throw error/, 'network and 5xx failures must reach the outer error state');
-  assert.match(tokenValidation, /localStorage\.removeItem\(TOKEN_KEY\)/);
-  assert.match(tokenValidation, /localStorage\.removeItem\(LEGACY_TOKEN_KEY\)/);
+  assert.match(tokenValidation, /safeStorageRemove\(TOKEN_KEY\)/);
+  assert.match(tokenValidation, /safeStorageRemove\(LEGACY_TOKEN_KEY\)/);
   assert.match(bootstrapSource, /catch\s*\([A-Za-z_$][\w$]*\)\s*\{\s*state\.error\s*=/, 'non-auth failures need a visible outer error state');
 });
 
@@ -122,8 +122,10 @@ test('the one-second countdown tick updates only turn-clock nodes instead of rer
   assert.match(appSource, /function updateTurnClock\(\)/);
 
   const intervalIndex = appSource.lastIndexOf('setInterval(');
+  const visibilityIndex = appSource.indexOf("document.addEventListener('visibilitychange'", intervalIndex);
   assert.notEqual(intervalIndex, -1);
-  const intervalSource = appSource.slice(intervalIndex);
+  assert.notEqual(visibilityIndex, -1);
+  const intervalSource = appSource.slice(intervalIndex, visibilityIndex);
   assert.match(intervalSource, /updateTurnClock\(\)/);
   assert.doesNotMatch(intervalSource, /\brender\(\)/, 'a clock tick must not rebuild the full hand and table DOM');
 });

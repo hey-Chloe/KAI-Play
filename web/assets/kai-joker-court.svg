@@ -12,7 +12,6 @@
       <circle cx="46" cy="85" r="4" fill="#b94f45"/><circle cx="74" cy="85" r="4" fill="#315f78"/>
     </g>
   </defs>
-  <rect width="120" height="180" rx="8" fill="#f1ead8"/>
   <use href="#joker-half"/>
   <use href="#joker-half" transform="rotate(180 60 90)"/>
   <path d="M3 86h114v8H3Z" fill="#d4ad54"/>

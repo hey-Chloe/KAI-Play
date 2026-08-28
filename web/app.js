@@ -13,6 +13,39 @@ import {
   sortMahjong,
   spinSlots,
 } from './casual-games.js';
+import {
+  SUDOKU6_DIFFICULTIES,
+  SUDOKU6_MAX_HINTS,
+  enterSudoku6Value,
+  getSudoku6Conflicts,
+  hintSudoku6,
+  newSudoku6Game,
+  restoreSudoku6Game,
+  sudoku6NoteValues,
+  sudoku6PeerIndexes,
+  undoSudoku6,
+} from './sudoku6.js';
+import {
+  XIANGQI_DIFFICULTIES,
+  chooseXiangqiMove,
+  getLegalXiangqiMoves,
+  isXiangqiInCheck,
+  newXiangqiGame,
+  playXiangqiMove,
+  restoreXiangqiGame,
+  undoXiangqiToHumanTurn,
+  xiangqiPieceLabel,
+} from './xiangqi.js';
+import {
+  MINESWEEPER_DIFFICULTIES,
+  chordMinesweeperCell,
+  getMinesweeperCell,
+  getMinesweeperRemainingMines,
+  newMinesweeperGame,
+  restoreMinesweeperGame,
+  revealMinesweeperCell,
+  toggleMinesweeperFlag,
+} from './minesweeper.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -21,17 +54,51 @@ const LEGACY_TOKEN_KEY = 'doujoy.web.token';
 const TOKEN_KEY = 'kai.play.token';
 const HERO_GAME_KEY = 'kai.play.hero-game';
 const MERGE_1048_SAVE_KEY = 'kai.play.1048.game';
+const SUDOKU6_PRACTICE_SAVE_KEY = 'kai.play.sudoku6.practice.v1';
+const SUDOKU6_DAILY_SAVE_PREFIX = 'kai.play.sudoku6.daily.v1.';
+const SUDOKU6_LAST_MODE_KEY = 'kai.play.sudoku6.last-mode';
+const SUDOKU6_STATS_KEY = 'kai.play.sudoku6.stats.v1';
+const XIANGQI_SAVE_KEY = 'kai.play.xiangqi.game.v1';
+const XIANGQI_DIFFICULTY_KEY = 'kai.play.xiangqi.difficulty.v1';
+const XIANGQI_TUTORIAL_KEY = 'kai.play.xiangqi.tutorial.v1';
+const MINESWEEPER_SAVE_KEY = 'kai.play.minesweeper.game.v1';
+const MINESWEEPER_DIFFICULTY_KEY = 'kai.play.minesweeper.difficulty.v1';
+const LAST_LOCAL_GAME_KEY = 'kai.play.last-local-game';
+const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper']);
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
-const storedHeroGame = localStorage.getItem(HERO_GAME_KEY);
-const state = { token: localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
+function safeStorageGet(key) {
+  try { return globalThis.localStorage?.getItem(key) ?? null; } catch { return null; }
+}
+function safeStorageSet(key, value) {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    const serialized = String(value);
+    storage.setItem(key, serialized);
+    return storage.getItem(key) === serialized;
+  } catch { return false; }
+}
+function safeStorageRemove(key) {
+  try { globalThis.localStorage?.removeItem(key); return true; } catch { return false; }
+}
+function rememberLastLocalGame(game) {
+  return LOCAL_GAME_IDS.has(game) && safeStorageSet(LAST_LOCAL_GAME_KEY, game);
+}
+const storedHeroGame = safeStorageGet(HERO_GAME_KEY);
+const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
 let merge1048Pointer = null;
 let heroTransitionTimer = null;
 let mahjongBotTimer = null;
+let xiangqiAiTimer = null;
+let minesweeperLongPress = null;
+let minesweeperSuppressedClick = null;
 let toastTimer = null;
 let threeRevealTimer = null;
 let slotSpinTimer = null;
+let worldCarouselStatusFramePending = false;
+let worldCarouselPendingStrip = null;
 
 const SYNC_TERMINAL_STATUSES = new Set([401, 403, 404]);
 
@@ -66,21 +133,157 @@ const toast = msg => {
 };
 const requestId = () => globalThis.crypto?.randomUUID?.() || `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+function safeLocalCounter(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+}
+
 function loadSaved1048Game() {
   try {
-    const raw = localStorage.getItem(MERGE_1048_SAVE_KEY);
+    const raw = safeStorageGet(MERGE_1048_SAVE_KEY);
     if (!raw) return null;
     const game = restore1048Game(JSON.parse(raw));
-    if (!game) localStorage.removeItem(MERGE_1048_SAVE_KEY);
+    if (!game) safeStorageRemove(MERGE_1048_SAVE_KEY);
     return game;
   } catch {
-    try { localStorage.removeItem(MERGE_1048_SAVE_KEY); } catch { /* Storage can be unavailable in hardened browsers. */ }
+    safeStorageRemove(MERGE_1048_SAVE_KEY);
     return null;
   }
 }
 
 function save1048Game(game) {
-  try { localStorage.setItem(MERGE_1048_SAVE_KEY, JSON.stringify(game)); } catch { /* The game remains playable without persistence. */ }
+  safeStorageSet(MERGE_1048_SAVE_KEY, JSON.stringify(game));
+}
+
+function loadSavedXiangqiSession() {
+  try {
+    const raw = safeStorageGet(XIANGQI_SAVE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const game = restoreXiangqiGame(parsed?.game || parsed);
+    if (!game) {
+      safeStorageRemove(XIANGQI_SAVE_KEY);
+      return null;
+    }
+    return {
+      game,
+      elapsedSeconds: safeLocalCounter(parsed?.elapsedSeconds),
+      undoCount: safeLocalCounter(parsed?.undoCount),
+    };
+  } catch {
+    safeStorageRemove(XIANGQI_SAVE_KEY);
+    return null;
+  }
+}
+
+function saveXiangqiSession(casual = state.casual) {
+  if (!casual?.game || casual.kind !== 'xiangqi') return false;
+  const gameSaved = safeStorageSet(XIANGQI_SAVE_KEY, JSON.stringify({
+    game: casual.game,
+    elapsedSeconds: safeLocalCounter(casual.elapsedSeconds),
+    undoCount: safeLocalCounter(casual.undoCount),
+  }));
+  const difficultySaved = safeStorageSet(XIANGQI_DIFFICULTY_KEY, casual.game.difficulty || 'beginner');
+  casual.saveAvailable = gameSaved && difficultySaved;
+  return casual.saveAvailable;
+}
+
+function loadSavedMinesweeperGame() {
+  try {
+    const raw = safeStorageGet(MINESWEEPER_SAVE_KEY);
+    if (!raw) return null;
+    const game = restoreMinesweeperGame(JSON.parse(raw));
+    if (!game) safeStorageRemove(MINESWEEPER_SAVE_KEY);
+    return game;
+  } catch {
+    safeStorageRemove(MINESWEEPER_SAVE_KEY);
+    return null;
+  }
+}
+
+function saveMinesweeperGame(game, casual = state.casual, { force = false } = {}) {
+  if (!game || casual?.kind !== 'minesweeper') return false;
+  const serialized = JSON.stringify(game);
+  const stored = safeStorageGet(MINESWEEPER_SAVE_KEY);
+  if (!force && typeof casual.minesweeperPersistedSnapshot === 'string' && stored !== casual.minesweeperPersistedSnapshot) {
+    casual.saveAvailable = false;
+    casual.saveConflict = true;
+    return false;
+  }
+  const gameSaved = safeStorageSet(MINESWEEPER_SAVE_KEY, serialized);
+  const difficultySaved = safeStorageSet(MINESWEEPER_DIFFICULTY_KEY, game.difficulty || 'beginner');
+  casual.saveAvailable = gameSaved && difficultySaved;
+  casual.saveConflict = false;
+  if (gameSaved) casual.minesweeperPersistedSnapshot = serialized;
+  return casual.saveAvailable;
+}
+
+function localDateKey(date = new Date()) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function sudoku6SaveKey(mode, date = localDateKey()) {
+  return mode === 'daily' ? `${SUDOKU6_DAILY_SAVE_PREFIX}${date}` : SUDOKU6_PRACTICE_SAVE_KEY;
+}
+
+function loadSavedSudoku6Game(mode = null) {
+  try {
+    const lastMode = safeStorageGet(SUDOKU6_LAST_MODE_KEY) === 'daily' ? 'daily' : 'practice';
+    const modes = mode ? [mode] : [lastMode, lastMode === 'daily' ? 'practice' : 'daily'];
+    for (const candidate of modes) {
+      const key = sudoku6SaveKey(candidate);
+      const raw = safeStorageGet(key);
+      if (!raw) continue;
+      let game = null;
+      try { game = restoreSudoku6Game(JSON.parse(raw)); }
+      catch { /* Damaged JSON is removed below. */ }
+      if (game && game.mode === candidate && (candidate !== 'daily' || game.date === localDateKey())) return game;
+      safeStorageRemove(key);
+    }
+  } catch {
+    /* Storage can be unavailable or contain damaged JSON; a fresh puzzle remains playable. */
+  }
+  return null;
+}
+
+function saveSudoku6Game(game) {
+  try {
+    safeStorageSet(sudoku6SaveKey(game.mode, game.date || localDateKey()), JSON.stringify(game));
+    safeStorageSet(SUDOKU6_LAST_MODE_KEY, game.mode);
+  } catch { /* The game remains playable without persistence. */ }
+}
+
+function loadSudoku6Stats() {
+  try {
+    const value = JSON.parse(safeStorageGet(SUDOKU6_STATS_KEY) || '{}');
+    if (!value || typeof value !== 'object') return {};
+    return Object.fromEntries(Object.entries(value).filter(([, seconds]) => Number.isSafeInteger(seconds) && seconds > 0));
+  } catch { return {}; }
+}
+
+function sudoku6StatKey(game) {
+  return game.mode === 'daily' ? `daily:${game.puzzleId}` : game.difficulty;
+}
+
+function recordSudoku6Best(game) {
+  if (game.status !== 'completed' || game.hintsUsed !== 0 || !Number.isSafeInteger(game.elapsedSeconds) || game.elapsedSeconds <= 0) return;
+  try {
+    const stats = loadSudoku6Stats();
+    const key = sudoku6StatKey(game);
+    const previous = stats[key];
+    if (!Number.isSafeInteger(previous) || game.elapsedSeconds < previous) {
+      stats[key] = game.elapsedSeconds;
+      safeStorageSet(SUDOKU6_STATS_KEY, JSON.stringify(stats));
+    }
+  } catch { /* Best times are optional; completion remains valid. */ }
+}
+
+function formatSudoku6Time(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 function syncFailureNotice() {
@@ -144,14 +347,14 @@ async function bootstrap() {
       catch (error) {
         if (error.status !== 401) throw error;
         state.token = null;
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(LEGACY_TOKEN_KEY);
+        safeStorageRemove(TOKEN_KEY);
+        safeStorageRemove(LEGACY_TOKEN_KEY);
       }
     }
     if (!state.token) {
       const session = await api('/v1/sessions/guest', {method:'POST', body:'{}'});
       state.token = session.token; state.profile = session.profile;
-      localStorage.setItem(TOKEN_KEY, state.token);
+      safeStorageSet(TOKEN_KEY, state.token);
     }
     const resumed = await api('/v1/resume');
     if (resumed.game) enterGame(resumed.game);
@@ -183,8 +386,76 @@ function tierName(profile) {
 function lobby() {
   const p = state.profile || {games:0,wins:0,winRate:0,name:'游客'};
   const firstGame = (Number(p.games) || 0) === 0;
+  const savedXiangqi = loadSavedXiangqiSession();
   const saved1048 = loadSaved1048Game();
-  const merge1048Action = !saved1048 ? '开始合并' : saved1048.status === 'playing' ? '继续上局' : '查看上局';
+  const savedSudoku6 = loadSavedSudoku6Game();
+  const savedMinesweeper = loadSavedMinesweeperGame();
+  const canContinueMinesweeper = savedMinesweeper?.status === 'playing' && Number(savedMinesweeper.revealedCount) > 0;
+  const canContinueSudoku6 = savedSudoku6?.status === 'playing'
+    && savedSudoku6.values.some((value, index) => savedSudoku6.puzzle[index] === 0 && value !== 0);
+  const canContinue1048 = saved1048?.status === 'playing' && Number(saved1048.moves) > 0;
+  const canContinueXiangqi = savedXiangqi?.game?.status === 'playing'
+    && (Number(savedXiangqi.game.moveCount) > 0 || savedXiangqi.game.history?.length > 0);
+  const xiangqiAction = !savedXiangqi || (savedXiangqi.game.status === 'playing' && !canContinueXiangqi) ? '执红开局' : canContinueXiangqi ? '继续对局' : '查看战果';
+  const merge1048Action = !saved1048 || (saved1048.status === 'playing' && !canContinue1048) ? '开始合并' : canContinue1048 ? '继续上局' : '查看上局';
+  const sudoku6Action = !savedSudoku6 || (savedSudoku6.status === 'playing' && !canContinueSudoku6) ? '开始数独' : canContinueSudoku6 ? '继续上局' : '查看成绩';
+  const minesweeperAction = !savedMinesweeper || !canContinueMinesweeper && ['ready','playing'].includes(savedMinesweeper.status) ? '开始排雷' : canContinueMinesweeper ? '继续排雷' : '查看上局';
+  const minesweeperPreview = ['covered','covered','covered','covered','covered','covered','covered','one','one','one','covered','covered','covered','one','empty','two','flag','covered','covered','one','one','two','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered']
+    .map((cell) => `<i class="${cell}">${cell === 'one' ? '1' : cell === 'two' ? '2' : cell === 'flag' ? '⚑' : ''}</i>`).join('');
+  const resumeCandidates = [];
+  if (canContinueMinesweeper) {
+    const safeCells = savedMinesweeper.rows * savedMinesweeper.columns - savedMinesweeper.mineCount;
+    const completed = Math.min(safeCells, Number(savedMinesweeper.revealedCount) || 0);
+    resumeCandidates.push({
+      id:'minesweeper',
+      accent:'minesweeper', eyebrow:'继续游玩', title:'KAI 扫雷',
+      meta:`${MINESWEEPER_DIFFICULTIES[savedMinesweeper.difficulty].label}雷区 · 已揭开 ${completed}/${safeCells}`,
+      progress:safeCells ? Math.round(completed / safeCells * 100) : 0,
+      action:'open-minesweeper', label:minesweeperAction, glyph:'⚑',
+    });
+  }
+  if (canContinueSudoku6) {
+    const blanks = savedSudoku6.puzzle.filter((value) => value === 0).length;
+    const completed = savedSudoku6.values.reduce((total, value, index) => total + Number(savedSudoku6.puzzle[index] === 0 && value !== 0), 0);
+    resumeCandidates.push({
+      id:'sudoku6',
+      accent:'sudoku6', eyebrow:'继续游玩', title:'KAI 数独',
+      meta:`${SUDOKU6_DIFFICULTIES[savedSudoku6.difficulty].label}题 · 已填 ${completed}/${blanks} 格`,
+      progress:blanks ? Math.round(completed / blanks * 100) : 100,
+      action:'open-sudoku6', label:sudoku6Action, glyph:'6',
+    });
+  }
+  if (canContinue1048) {
+    resumeCandidates.push({
+      id:'1048',
+      accent:'1048', eyebrow:'继续游玩', title:'1048',
+      meta:`最高方块 ${saved1048.bestTile} · 已移动 ${saved1048.moves} 步`,
+      progress:null, note:'本地局面已保存，可继续合并',
+      action:'open-1048', label:merge1048Action, glyph:String(saved1048.bestTile || 2),
+    });
+  }
+  if (canContinueXiangqi) {
+    resumeCandidates.push({
+      id:'xiangqi',
+      accent:'xiangqi', eyebrow:'继续游玩', title:'KAI 象棋',
+      meta:`${XIANGQI_DIFFICULTIES[savedXiangqi.game.difficulty].label} KAI · 已走 ${savedXiangqi.game.moveCount} 手`,
+      progress:null, note:'局面已保存，可从当前回合继续',
+      action:'open-xiangqi', label:xiangqiAction, glyph:'帅',
+    });
+  }
+  const recentLocalGame = safeStorageGet(LAST_LOCAL_GAME_KEY);
+  const resumeGame = resumeCandidates.find((game) => game.id === recentLocalGame) || resumeCandidates[0] || {
+    accent:'minesweeper', eyebrow:'新手推荐', title:'先来一局扫雷',
+    meta:'首击必安全 · 从 10 颗雷的入门盘开始',
+    progress:null, note:'无需规则准备，点开就能玩', action:'open-minesweeper', label:'开始排雷', glyph:'⚑',
+  };
+  const resumeButton = resumeGame.action === 'open-sudoku6'
+    ? `<button class="btn primary" data-action="open-sudoku6">${resumeGame.label} <b>→</b></button>`
+    : resumeGame.action === 'open-1048'
+      ? `<button class="btn primary" data-action="open-1048">${resumeGame.label} <b>→</b></button>`
+      : resumeGame.action === 'open-xiangqi'
+        ? `<button class="btn primary" data-action="open-xiangqi">${resumeGame.label} <b>→</b></button>`
+        : `<button class="btn primary" data-action="open-minesweeper">${resumeGame.label} <b>→</b></button>`;
   const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
   const ddzActive = heroGame === 'ddz';
   const previewWall = '<i></i>'.repeat(17);
@@ -202,47 +473,87 @@ function lobby() {
     [{rank:6,suit:'条',label:'六条'},{rank:4,suit:'筒',label:'四筒'},{rank:0,suit:'字',label:'北'}],
   ];
   const previewRivers = ['north','east','south','west'].map((position,index)=>`<div class="preview-river preview-river--${position}">${previewRiverData[index].map((tile)=>mahjongFace(tile,'preview-river-tile')).join('')}</div>`).join('');
-  return `<div class="shell lobby-shell lobby-v4">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
+  return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
-      <section class="lobby-game-carousel" data-hero-carousel tabindex="0" aria-label="主要玩法，可左右滑动或使用方向键切换" aria-roledescription="carousel" aria-keyshortcuts="ArrowLeft ArrowRight">
-        <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--ddz ${ddzActive?'is-active':''}" data-hero-stage="ddz" aria-labelledby="live-table-title" aria-hidden="${ddzActive?'false':'true'}" ${ddzActive?'':'inert'}>
-          ${tableFrame('preview')}
-          <div class="live-table-seat live-seat-left"><span>A</span><b>智能牌友 A</b><small>左侧牌友</small></div>
-          <div class="live-table-seat live-seat-right"><span>B</span><b>智能牌友 B</b><small>右侧牌友</small></div>
-          <div class="live-table-center"><small>三人斗地主 · 牌桌预览</small><h1 id="live-table-title">还差你</h1><div class="lobby-card-scene" aria-hidden="true">${cardBack(true,'live-card-back')}${previewPoker(10,'spade')}${previewPoker(11,'spade')}${previewPoker(12,'heart')}${previewPoker(13,'club')}</div></div>
-          <div class="live-table-seat live-seat-you"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>你的座位</small></div>
-          <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="${firstGame?'开始首局':'快速人机'}，创建斗地主牌局">${firstGame?'开始首局':'快速人机'} <b>→</b></button><small>游客免注册 · 智能牌友补位 · 可断线恢复</small><span class="sr-only">点击后创建真实牌局，服务端统一判定。</span></div>
-        </section>
-        <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--mahjong ${ddzActive?'':'is-active'}" data-hero-stage="mahjong" aria-labelledby="mahjong-hero-title" aria-hidden="${ddzActive?'true':'false'}" ${ddzActive?'inert':''}>
-          <div class="mahjong-preview-table" aria-hidden="true">
-            <i class="mahjong-table-shadow"></i><i class="mahjong-table-base"></i><i class="mahjong-table-felt"></i>
-            <div class="mahjong-preview-wall preview-wall-top">${previewWall}</div><div class="mahjong-preview-wall preview-wall-left">${previewWall}</div><div class="mahjong-preview-wall preview-wall-right">${previewWall}</div><div class="mahjong-preview-wall preview-wall-bottom">${previewWall}</div>
-            <div class="mahjong-preview-rivers">${previewRivers}</div>
-            <div class="mahjong-preview-center"><small>东一局</small><b>83</b><span>余牌</span></div>
-            <div class="mahjong-preview-hand">${previewTiles}</div>
-          </div>
-          <div class="mahjong-preview-seat seat-north"><span>B</span><b>智能牌友 B</b><small>西家</small></div>
-          <div class="mahjong-preview-seat seat-west"><span>C</span><b>智能牌友 C</b><small>北家</small></div>
-          <div class="mahjong-preview-seat seat-east"><span>A</span><b>智能牌友 A</b><small>南家</small></div>
-          <div class="mahjong-preview-seat seat-south"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>东家 · 你</small></div>
-          <div class="mahjong-hero-copy"><small>KAI 麻将 · 四人基础速战</small><h1 id="mahjong-hero-title">听风入局</h1><p>你与三位智能牌友，摸打至自摸、荣和或流局。</p></div>
-          <div class="mahjong-hero-action"><button class="btn primary" data-action="open-mahjong">开始麻将 <b>→</b></button><small>免费人机局 · 不影响斗地主竞技分</small></div>
-        </section>
-        <nav class="hero-switcher" aria-label="切换主玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">↔ 滑动</span></nav>
-        <p class="sr-only" data-hero-status aria-live="polite">当前展示${ddzActive?'斗地主':'麻将'}</p>
+      <section class="game-center-intro" aria-labelledby="game-center-title">
+        <div><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>8 款即开即玩的牌桌与益智游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>4 款本地自动保存</span></div>
+        <nav class="mood-rail" aria-label="按心情选择玩法">
+          <button data-action="jump-world" data-world-target="minesweeper"><i>⚑</i>短局放松</button>
+          <button data-action="jump-world" data-world-target="sudoku6"><i>6</i>动脑解谜</button>
+          <button data-action="jump-world" data-world-target="xiangqi"><i>帅</i>棋桌对战</button>
+          <button data-action="jump-world" data-world-target="ddz"><i>♠</i>牌桌对战</button>
+          <button data-action="jump-world" data-world-target="friends"><i>＋</i>和朋友玩</button>
+        </nav>
       </section>
-      <nav class="lobby-mode-rail" aria-label="大厅玩法入口"><button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><b>斗地主</b><small>三人牌桌</small></button><button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><b>麻将</b><small>四人速战</small></button><button class="mode-entry" data-action="open-1048"><b>1048 <em>新</em></b><small>数字合并</small></button><button class="mode-entry" data-action="create-room"><b>好友房</b><small>创建斗地主房间</small></button></nav>
-      <section class="lobby-shortcuts" aria-label="大厅快捷入口">
-        <article class="room-panel"><div><span>房间码</span><h2>加入好友桌</h2></div><div class="room-actions"><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入 6 位房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
-        <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
+
+      <section class="hub-discovery" aria-label="精选与快速开始">
+        <section class="lobby-game-carousel" data-hero-carousel tabindex="0" aria-label="精选玩法，可左右滑动或使用方向键切换" aria-roledescription="carousel" aria-keyshortcuts="ArrowLeft ArrowRight">
+          <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--ddz ${ddzActive?'is-active':''}" data-hero-stage="ddz" aria-labelledby="live-table-title" aria-hidden="${ddzActive?'false':'true'}" ${ddzActive?'':'inert'}>
+            ${tableFrame('preview')}
+            <div class="live-table-seat live-seat-left"><span>A</span><b>智能牌友 A</b><small>左侧牌友</small></div>
+            <div class="live-table-seat live-seat-right"><span>B</span><b>智能牌友 B</b><small>右侧牌友</small></div>
+            <div class="live-table-center"><span class="hub-hero-tag">牌桌精选</span><small>三人斗地主 · 牌桌预览 · 计入竞技战绩</small><h1 id="live-table-title">三人斗地主，马上开局</h1><p>两位智能牌友即时补位，竞叫、出牌、结算一局完成。</p></div>
+            <div class="lobby-card-scene" aria-hidden="true">${cardBack(true,'live-card-back')}${previewPoker(10,'spade')}${previewPoker(11,'spade')}${previewPoker(12,'heart')}${previewPoker(13,'club')}</div>
+            <div class="live-table-seat live-seat-you"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>你的座位</small></div>
+            <div class="live-join-bar"><button class="btn primary" data-action="quick" aria-label="${firstGame?'开始首局':'快速人机'}，创建斗地主牌局">${firstGame?'开始首局':'快速人机'} <b>→</b></button><small>游客免注册 · 智能牌友补位 · 可断线恢复</small><span class="sr-only">点击后创建真实牌局，服务端统一判定。</span></div>
+          </section>
+          <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--mahjong ${ddzActive?'':'is-active'}" data-hero-stage="mahjong" aria-labelledby="mahjong-hero-title" aria-hidden="${ddzActive?'true':'false'}" ${ddzActive?'inert':''}>
+            <div class="mahjong-preview-table" aria-hidden="true">
+              <i class="mahjong-table-shadow"></i><i class="mahjong-table-base"></i><i class="mahjong-table-felt"></i>
+              <div class="mahjong-preview-wall preview-wall-top">${previewWall}</div><div class="mahjong-preview-wall preview-wall-left">${previewWall}</div><div class="mahjong-preview-wall preview-wall-right">${previewWall}</div><div class="mahjong-preview-wall preview-wall-bottom">${previewWall}</div>
+              <div class="mahjong-preview-rivers">${previewRivers}</div>
+              <div class="mahjong-preview-center"><small>东一局</small><b>83</b><span>余牌</span></div>
+              <div class="mahjong-preview-hand">${previewTiles}</div>
+            </div>
+            <div class="mahjong-preview-seat seat-north"><span>B</span><b>智能牌友 B</b><small>西家</small></div>
+            <div class="mahjong-preview-seat seat-west"><span>C</span><b>智能牌友 C</b><small>北家</small></div>
+            <div class="mahjong-preview-seat seat-east"><span>A</span><b>智能牌友 A</b><small>南家</small></div>
+            <div class="mahjong-preview-seat seat-south"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>东家 · 你</small></div>
+            <div class="mahjong-hero-copy"><span class="hub-hero-tag">轻松牌桌</span><small>KAI 麻将 · 四人基础速战</small><h1 id="mahjong-hero-title">摸一手好牌，听风入局</h1><p>和三位智能牌友摸打至自摸、荣和或流局。</p></div>
+            <div class="mahjong-hero-action"><button class="btn primary" data-action="open-mahjong">开始麻将 <b>→</b></button><small>免费人机局 · 不影响竞技分</small></div>
+          </section>
+          <nav class="hero-switcher" aria-label="切换精选玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">↔ 滑动</span></nav>
+          <p class="sr-only" data-hero-status aria-live="polite">当前展示${ddzActive?'斗地主':'麻将'}</p>
+        </section>
+
+        <aside class="hub-side">
+          <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div><span class="hub-side-count">8 款可玩</span></div>
+          <article class="resume-card resume-${resumeGame.accent}">
+            <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
+            <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
+            ${resumeButton}
+          </article>
+          <div class="quick-entry-head"><span>快速入口</span><small>换个口味</small></div>
+          <nav class="lobby-mode-rail" aria-label="大厅玩法入口">
+            <button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><i aria-hidden="true">♠</i><b>斗地主</b><small>三人牌桌</small></button>
+            <button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><i aria-hidden="true">東</i><b>麻将</b><small>四人速战</small></button>
+            <button class="mode-entry" data-action="open-1048"><i aria-hidden="true">16</i><b>1048</b><small>数字合并</small></button>
+            <button class="mode-entry" data-action="open-minesweeper"><i aria-hidden="true">⚑</i><b>扫雷</b><small>首击安全</small></button>
+          </nav>
+        </aside>
       </section>
-      <section class="section-block" id="game-selection"><div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>5 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 4 款免费训练</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div><p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，查看全部 5 款玩法</p>
+
+      <section class="section-block game-catalog" id="game-selection">
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>8 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 7 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 8</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
+        <p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，下一款游戏已经露出来了</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
-          <article class="game-world world-ddz"><div><span>服务端三人桌</span><h3>斗地主</h3><p>争分、出牌、结算，完成一局会写入战绩。</p><button class="btn primary" data-action="quick">快速开局</button></div><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div></article>
-          <article class="game-world world-1048"><span class="world-badge">${saved1048?'进度已保存':'新上线'}</span><div><span>数字合并 · 单机益智</span><h3>1048</h3><p>普通数字逐级翻倍，最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action}</button></div><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div></article>
-          <article class="game-world world-three"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><div><span>三张定胜负</span><h3>炸金花训练</h3><p>免费单机比牌，不计竞技分。</p><button class="btn" data-action="open-three">翻开这一手</button></div></article>
-          <article class="game-world world-mahjong"><div><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>轮流摸打、四家牌河、自摸与荣和，完整打完一局。</p><button class="btn" data-action="open-mahjong">开始麻将</button></div><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div></article>
-          <article class="game-world world-reels"><div><span>大厅彩蛋</span><h3>算力转轮</h3><p>免费娱乐 · 无现金下注 · 无提现。</p></div><button class="btn" data-action="open-slots" aria-label="打开算力转轮"><span aria-hidden="true">7 · KAI · ⚡</span> 试转一次</button></article>
+          <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
+          <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
+          <article class="game-world world-mahjong" data-world-card data-world-id="mahjong"><span class="world-badge">牌桌经典</span><div class="world-cover"><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div><i class="world-cover-mark" aria-hidden="true">東</i></div><div class="world-copy"><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>摸牌、理牌、听牌，和三位 KAI 牌友打到结算。</p><button class="btn" data-action="open-mahjong">开始麻将 <b>→</b></button></div></article>
+          <article class="game-world world-1048" data-world-card data-world-id="1048"><span class="world-badge">${canContinue1048?'可继续':saved1048?.status==='playing'?'等待开局':saved1048?'上局已保存':'稀有目标'}</span><div class="world-cover"><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div><i class="world-cover-mark" aria-hidden="true">＋</i></div><div class="world-copy"><span>数字合并 · 单机益智 · 冲击 1048</span><h3>1048</h3><p>逐级合并数字，让最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action} <b>→</b></button></div></article>
+          <article class="game-world world-sudoku6" data-world-card data-world-id="sudoku6"><span class="world-badge">${canContinueSudoku6?'可继续':savedSudoku6?.status==='playing'?'待你开题':savedSudoku6?'成绩已保存':'每日一局'}</span><div class="world-cover"><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">6×6</i></div><div class="world-copy"><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>填满盘面，用一局让思路重新清晰，支持随手记笔记。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action} <b>→</b></button></div></article>
+          <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
+          <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">免费比牌</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三张定胜负 · 单机训练</span><h3>炸金花训练</h3><p>一眼判断牌型强弱，翻开这一手就见分晓。</p><button class="btn" data-action="open-three">翻开这一手 <b>→</b></button></div></article>
+          <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>轻点一次，看三枚符号能否同频连线。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">试转一次 <b>→</b></button></div></article>
+        </div>
+      </section>
+
+      <section class="lobby-tools" id="lobby-tools" aria-labelledby="lobby-tools-title">
+        <div class="section-head compact"><div><span class="section-kicker">一起玩与我的记录</span><h2 id="lobby-tools-title">需要时，再打开这些工具</h2></div></div>
+        <div class="lobby-shortcuts">
+          <article class="room-panel"><div><span>好友房</span><h2>叫上朋友，同桌斗地主</h2><p>创建一个新房间，或输入朋友发来的六位房号。</p></div><div class="room-actions"><button class="btn primary" data-action="create-room">创建房间</button><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
+          <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${firstGame?'完成首局，解锁你的胜率与牌局记录':`${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%`}</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
         </div>
       </section>
     </main>${nav('lobby')}</div>`;
@@ -266,22 +577,58 @@ const PIP_PATTERNS = Object.freeze({
   4: ['tl','tr','bl','br'],
   5: ['tl','tr','mc','bl','br'],
   6: ['tl','tr','ml','mr','bl','br'],
-  7: ['tl','tr','ml','mc','mr','bl','br'],
-  8: ['tl','tr','ul','ur','ll','lr','bl','br'],
+  7: ['tl','tr','cu','ml','mr','bl','br'],
+  8: ['tl','tr','cu','ml','mr','cl','bl','br'],
   9: ['tl','tr','ul','ur','mc','ll','lr','bl','br'],
-  10: ['tl','tr','ul','ur','ml','mr','ll','lr','bl','br'],
+  10: ['tl','tr','ul','ur','cu','cl','ll','lr','bl','br'],
 });
+
+const CARD_RANK_DATA = Object.freeze({
+  3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10',
+  11: 'j', 12: 'q', 13: 'k', 14: 'a', 15: '2', 16: 'small-joker', 17: 'big-joker',
+});
+const CARD_RANK_STOCK_INDEX = Object.freeze({
+  3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10,
+  11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17,
+});
+const CARD_SUIT_DATA = Object.freeze({
+  spade: 'spade', heart: 'heart', club: 'club', diamond: 'diamond', joker: 'joker',
+});
+const CARD_SUIT_LABELS = Object.freeze({
+  spade: '黑桃', heart: '红桃', club: '梅花', diamond: '方块', joker: '王',
+});
+const CARD_SUIT_STOCK_INDEX = Object.freeze({
+  spade: 1, heart: 2, club: 3, diamond: 4, joker: 5,
+});
+
+function cardMappedValue(map, key, fallback) {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : fallback;
+}
+
+function cardStockPosition(rankValue, suitValue) {
+  const rankIndex = cardMappedValue(CARD_RANK_STOCK_INDEX, rankValue, 0);
+  const suitIndex = cardMappedValue(CARD_SUIT_STOCK_INDEX, suitValue, 0);
+  const seed = (rankIndex * 5) + suitIndex;
+  return {
+    x: 9 + ((seed * 37) % 83),
+    y: 9 + ((seed * 61) % 83),
+  };
+}
 
 function cardPips(card, symbol) {
   const count = card.rank === 14 ? 1 : card.rank === 15 ? 2 : Number(card.rank);
   const pattern = PIP_PATTERNS[count];
   if (!pattern) return '';
-  return `<i class="card-pips card-pips-${count}" aria-hidden="true">${pattern.map((position)=>`<b class="pip pip-${position} ${['ll','lr','bl','bc','br'].includes(position)?'is-inverted':''}">${symbol}</b>`).join('')}</i>`;
+  return `<i class="card-pips card-pips-${count}" aria-hidden="true">${pattern.map((position)=>`<b class="pip pip-${position} ${['cl','ll','lr','bl','bc','br'].includes(position)?'is-inverted':''}">${symbol}</b>`).join('')}</i>`;
 }
 
 function poker(c, selectable = true, decorative = false, fan = null) {
   const rawLabel = rank(c.rank);
   const symbol = suit(c.suit);
+  const rankData = cardMappedValue(CARD_RANK_DATA, c.rank, 'unknown');
+  const suitData = cardMappedValue(CARD_SUIT_DATA, c.suit, 'unknown');
+  const suitLabel = cardMappedValue(CARD_SUIT_LABELS, c.suit, '未知花色');
+  const stock = cardStockPosition(c.rank, c.suit);
   const joker = c.suit === 'joker';
   const bigJoker = joker && c.rank === 17;
   const classes = ['poker-face', isRed(c)?'red':'', joker?'joker-card':'', joker?(bigJoker?'joker-red':'joker-gray'):'', decorative?'is-decorative':'', fan?'hand-card':''].filter(Boolean).join(' ');
@@ -291,13 +638,21 @@ function poker(c, selectable = true, decorative = false, fan = null) {
     : `<span class="card-index"><b>${rawLabel}</b><small>${symbol}</small></span>${bottomIndex}${[11,12,13].includes(c.rank)
       ? `<i class="card-court face-${String(rawLabel).toLowerCase()}"><em>${rawLabel}</em><b>${symbol}</b><strong>KAI</strong></i>`
       : cardPips(c, symbol)}<span class="card-signature">KAI</span>`;
-  const aria = joker ? `${bigJoker?'大王':'小王'} ${bigJoker?'红色':'灰色'} JOKER` : `${rawLabel}${symbol}`;
+  const aria = joker ? `${bigJoker?'大王':'小王'} ${bigJoker?'红色':'灰色'} JOKER` : `${suitLabel} ${rawLabel}`;
   const selected = state.selected.has(c.id);
-  const fanStyle = fan ? ` style="--card-angle:${(((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 3).toFixed(2)}deg;--card-curve:${(Math.abs((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 4).toFixed(2)}px;--card-order:${fan.index}"` : '';
+  const style = [`--card-stock-x:${stock.x}%`, `--card-stock-y:${stock.y}%`];
+  if (fan) {
+    style.push(
+      `--card-angle:${(((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 3).toFixed(2)}deg`,
+      `--card-curve:${(Math.abs((fan.index - (fan.total - 1) / 2) / Math.max(1, (fan.total - 1) / 2)) * 4).toFixed(2)}px`,
+      `--card-order:${fan.index}`,
+    );
+  }
+  const faceAttributes = `data-rank="${rankData}" data-suit="${suitData}" style="${style.join(';')}"`;
   if (!selectable) return decorative
-    ? `<span class="poker ${classes}" aria-hidden="true">${content}</span>`
-    : `<span class="poker ${classes}" role="img" aria-label="${esc(aria)}"${fanStyle}>${content}</span>`;
-  return `<button class="poker ${classes} ${selected?'selected':''}" data-card="${esc(c.id)}" aria-label="${esc(aria)}" aria-pressed="${selected?'true':'false'}"${fanStyle}>${content}</button>`;
+    ? `<span class="poker ${classes}" ${faceAttributes} aria-hidden="true">${content}</span>`
+    : `<span class="poker ${classes}" ${faceAttributes} role="img" aria-label="${esc(aria)}">${content}</span>`;
+  return `<button class="poker ${classes} ${selected?'selected':''}" ${faceAttributes} data-card="${esc(c.id)}" aria-label="${esc(aria)}" aria-pressed="${selected?'true':'false'}">${content}</button>`;
 }
 
 function previewPoker(rankValue, suitValue) {
@@ -572,6 +927,163 @@ function mahjongGame() {
   </section>${mahjongConfirmDialog()}<p class="casual-disclaimer">四人东一局基础速战：136 张牌、三位智能牌友、四家牌河，支持常规和牌、七对与国士无双的自摸/荣和。当前为基础规则，吃碰杠、立直、宝牌与完整点数结算将在后续版本加入。</p></div>`;
 }
 
+const XIANGQI_DIFFICULTY_DETAILS = Object.freeze({
+  beginner: '适合熟悉走法',
+  standard: '兼顾攻守',
+  challenge: '搜索更深入',
+});
+const XIANGQI_PIECE_NAMES = Object.freeze({
+  general: '将', advisor: '士', elephant: '象', horse: '马', rook: '车', cannon: '炮', soldier: '兵',
+});
+
+function formatXiangqiTime(totalSeconds) {
+  const seconds = safeLocalCounter(totalSeconds);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function xiangqiMoveFrom(move) {
+  if (!move || typeof move !== 'object') return null;
+  const value = move.fromIndex ?? move.from;
+  return Number.isInteger(value) ? value : null;
+}
+
+function xiangqiMoveTo(move) {
+  if (Number.isInteger(move)) return move;
+  if (!move || typeof move !== 'object') return null;
+  const value = move.toIndex ?? move.to;
+  return Number.isInteger(value) ? value : null;
+}
+
+function safeLegalXiangqiMoves(game, fromIndex) {
+  if (!game || !Number.isInteger(fromIndex)) return [];
+  try {
+    const moves = getLegalXiangqiMoves(game, fromIndex);
+    return Array.isArray(moves) ? moves : [];
+  } catch { return []; }
+}
+
+function safeXiangqiCheck(game, side = game?.turn) {
+  try { return Boolean(game && isXiangqiInCheck(game, side)); }
+  catch { return Boolean(game?.inCheck && (!side || side === game.turn)); }
+}
+
+function xiangqiPieceGlyph(piece) {
+  if (!piece) return '';
+  try { return xiangqiPieceLabel(piece) || ''; }
+  catch { return piece.label || XIANGQI_PIECE_NAMES[piece.type] || '?'; }
+}
+
+function xiangqiPieceSpoken(piece) {
+  if (!piece) return '空位';
+  const side = piece.side === 'red' ? '红方' : '黑方';
+  return `${side}${xiangqiPieceGlyph(piece) || XIANGQI_PIECE_NAMES[piece.type] || '棋子'}`;
+}
+
+function xiangqiCell(game, index, context) {
+  const row = Math.floor(index / 9);
+  const column = index % 9;
+  const piece = game.board[index];
+  const legalMove = context.legalByTarget.get(index);
+  const selected = index === context.selected;
+  const focused = index === context.focused;
+  const lastFrom = index === context.lastFrom;
+  const lastTo = index === context.lastTo;
+  const checked = piece && context.checkedSide === piece.side && ['general', 'king'].includes(piece.type);
+  const classes = ['xiangqi-cell'];
+  if (piece) classes.push('has-piece', `piece-${piece.side}`);
+  if (selected) classes.push('is-selected');
+  if (legalMove) classes.push(piece ? 'is-capture' : 'is-legal');
+  if (lastFrom) classes.push('is-last-from');
+  if (lastTo) classes.push('is-last-to');
+  if (checked) classes.push('is-check');
+  const interaction = selected ? '，已选中' : legalMove ? piece ? '，可吃子' : '，可落子' : !context.locked && piece?.side === 'red' ? '，可选择' : '';
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${xiangqiPieceSpoken(piece)}${interaction}`;
+  const marker = legalMove ? `<i class="xiangqi-target-mark" aria-hidden="true">${piece ? '×' : ''}</i>` : '';
+  const content = piece ? `<span class="xiangqi-piece" aria-hidden="true">${esc(xiangqiPieceGlyph(piece))}</span>` : '';
+  return `<button type="button" class="${classes.join(' ')}" data-xiangqi-cell="${index}" role="gridcell" aria-label="${esc(label)}" aria-selected="${selected}" aria-disabled="${context.locked}" tabindex="${focused ? '0' : '-1'}">${marker}${content}</button>`;
+}
+
+function xiangqiRows(game, context) {
+  return Array.from({ length: 10 }, (_, row) => {
+    const first = row * 9;
+    const cells = Array.from({ length: 9 }, (_, column) => xiangqiCell(game, first + column, context)).join('');
+    return `<div class="xiangqi-row" role="row" aria-rowindex="${row + 1}">${cells}</div>`;
+  }).join('');
+}
+
+function xiangqiTutorial(casual) {
+  const step = Number(casual?.tutorialStep) || 0;
+  if (!step) return '';
+  const copy = step === 1
+    ? ['你执红先行', '先点一枚红方棋子。']
+    : step === 2
+      ? ['选择落点', '圆点是可走位置，环形标记表示可以吃子。']
+      : ['等待回合', '落子后 KAI 会思考，轮到你时状态栏会自动提示。'];
+  return `<aside class="xiangqi-tutorial" aria-labelledby="xiangqi-tutorial-title"><span>${step} / 3 · 首局引导</span><h2 id="xiangqi-tutorial-title">${copy[0]}</h2><p>${copy[1]}</p><div><button class="text-link" data-action="xiangqi-tutorial-skip">跳过引导</button>${step === 3 ? '<button class="btn" data-action="xiangqi-tutorial-done">知道了</button>' : ''}</div></aside>`;
+}
+
+function xiangqiResult(game, casual) {
+  if (game.status === 'playing') return '';
+  const won = game.winner === 'red';
+  const draw = !game.winner;
+  const reason = ({ checkmate:'将死', stalemate:'困毙', repetition:'三次重复', long_game:'长局未吃子', draw:'双方议和' })[game.endReason || game.reason] || (draw ? '对局结束' : '将帅决胜');
+  const title = draw ? `和棋 · ${reason}` : won ? `红方胜 · ${reason}` : `黑方胜 · ${reason}`;
+  return `<section class="xiangqi-result ${won?'is-win':draw?'is-draw':'is-loss'}" data-xiangqi-result role="status" aria-live="polite" aria-labelledby="xiangqi-result-title" tabindex="-1"><span>本地人机训练完成</span><h2 id="xiangqi-result-title">${esc(title)}</h2><p>${XIANGQI_DIFFICULTIES[game.difficulty]?.label || '标准'}难度 · ${Math.ceil((Number(game.moveCount) || 0) / 2)} 回合 · 用时 ${formatXiangqiTime(casual.elapsedSeconds)} · 悔棋 ${safeLocalCounter(casual.undoCount)} 次</p><div><button class="btn primary" data-action="xiangqi-new">同难度再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div>${game.history?.length ? '<button class="text-link" data-action="xiangqi-undo">悔一回合继续训练</button>' : ''}</section>`;
+}
+
+function xiangqiConfirmDialog(casual) {
+  if (!casual?.confirmAction) return '';
+  const changingDifficulty = casual.confirmAction === 'difficulty';
+  const nextLabel = changingDifficulty ? XIANGQI_DIFFICULTIES[casual.pendingDifficulty]?.label : '';
+  const confirmLabel = changingDifficulty ? `切换到「${nextLabel || '新'}」并重开` : '确认重开';
+  return `<div class="exit-shade"><section class="exit-dialog" data-xiangqi-confirm-dialog role="dialog" aria-modal="true" aria-labelledby="xiangqi-confirm-title" aria-describedby="xiangqi-confirm-description" tabindex="-1"><span>当前棋局进行中</span><h2 id="xiangqi-confirm-title">${changingDifficulty ? `切换到${esc(nextLabel || '新')}难度？` : '确定重新开局？'}</h2><p id="xiangqi-confirm-description">${changingDifficulty ? '切换难度会清除当前棋局，并立即以新难度执红开局。' : '重新开局会清除本局进度。确定重开吗？'}</p><div><button class="btn" data-action="xiangqi-cancel-confirm">继续对局</button><button class="btn danger" data-action="xiangqi-confirm">${esc(confirmLabel)}</button></div></section></div>`;
+}
+
+function xiangqiRulesDialog(casual) {
+  if (!casual?.showRules) return '';
+  return `<div class="exit-shade"><section class="xiangqi-rules-dialog" data-xiangqi-rules-dialog role="dialog" aria-modal="true" aria-labelledby="xiangqi-rules-title" aria-describedby="xiangqi-rules-summary" tabindex="-1"><span>基础训练规则</span><h2 id="xiangqi-rules-title">中国象棋怎么走</h2><div class="xiangqi-rule-grid"><p><b>车 / 炮</b>车走直线；炮吃子时隔一枚棋子。</p><p><b>马 / 象（相）</b>马走日且会蹩腿；象（相）走田且不过河。</p><p><b>士（仕）/ 将（帅）</b>士（仕）守九宫斜走；将（帅）在九宫内直走一步。</p><p><b>兵 / 卒</b>过河前向前一步，过河后可左右走。</p></div><p id="xiangqi-rules-summary">不能让自己的将帅受到攻击；将死或困毙对方即可获胜。同一局面连同走子方第三次出现时，本局判和。</p><button class="btn primary" data-action="xiangqi-close-rules">返回棋局</button></section></div>`;
+}
+
+function xiangqiGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || !Array.isArray(game.board) || game.board.length !== 90) return lobby();
+  const selected = Number.isInteger(casual.selectedCell) ? casual.selectedCell : null;
+  const focused = Number.isInteger(casual.focusedCell) ? casual.focusedCell : 85;
+  const legalMoves = safeLegalXiangqiMoves(game, selected);
+  const legalByTarget = new Map(legalMoves.map((move) => [xiangqiMoveTo(move), move]).filter(([index]) => Number.isInteger(index)));
+  const lastMove = game.lastMove || game.history?.at?.(-1) || game.history?.[game.history.length - 1];
+  const checkedSide = safeXiangqiCheck(game, game.turn) ? game.turn : null;
+  const playerTurn = game.status === 'playing' && game.turn === 'red';
+  const modalOpen = Boolean(casual.confirmAction || casual.showRules);
+  const saveCopy = casual.saveAvailable === false ? '本次无法自动保存' : '自动保存';
+  const status = game.status !== 'playing' ? '本局已经结束'
+    : casual.aiThinking ? (checkedSide === 'black' ? '你已将军 · KAI 正在应对…' : 'KAI 正在思考…')
+      : checkedSide === 'red' ? '将军！请先解除威胁'
+        : casual.announcement || (playerTurn ? `轮到你 · ${casual.saveAvailable === false ? '本次不保存' : '进度已保存'}` : '等待 KAI 落子');
+  const context = {
+    selected, focused, legalByTarget, checkedSide,
+    lastFrom: xiangqiMoveFrom(lastMove), lastTo: xiangqiMoveTo(lastMove),
+    locked: !playerTurn || casual.aiThinking || modalOpen || game.status !== 'playing',
+  };
+  const difficulty = game.difficulty || 'beginner';
+  const difficultyControls = ['beginner','standard','challenge'].map((key) => {
+    const entry = XIANGQI_DIFFICULTIES[key] || { label: key };
+    return `<button type="button" data-action="xiangqi-difficulty" data-xiangqi-difficulty="${key}" aria-pressed="${difficulty === key}" class="${difficulty === key ? 'active' : ''}"><b>${esc(entry.label)}</b><small>${XIANGQI_DIFFICULTY_DETAILS[key]}</small></button>`;
+  }).join('');
+  const turnLabel = game.status !== 'playing' ? '对局结束' : playerTurn ? '红方 · 你' : '黑方 · KAI';
+  return `<div class="shell casual-shell xiangqi-route"><div class="xiangqi-background"${modalOpen ? ' inert aria-hidden="true"' : ''}>${casualHeader('KAI 象棋','CHINESE CHESS',`红方先行 · ${XIANGQI_DIFFICULTIES[difficulty]?.label || '初学'}难度`)}<main class="xiangqi-stage">
+    <section class="xiangqi-copy"><div><span>本地人机训练 · ${saveCopy}</span><h1>隔河对弈<br><b>一步定势</b></h1><p>你执红先行。点选棋子，再落到高亮位置；将死或困毙对方即可获胜。</p></div><div class="xiangqi-difficulties" aria-label="选择象棋难度">${difficultyControls}</div>${xiangqiTutorial(casual)}</section>
+    <section class="xiangqi-play" aria-busy="${casual.aiThinking}"><div class="xiangqi-metrics" aria-label="本局数据"><div><small>难度</small><strong>${esc(XIANGQI_DIFFICULTIES[difficulty]?.label || '初学')}</strong></div><div><small>回合</small><strong>${Math.ceil((Number(game.moveCount) || 0) / 2)}</strong></div><div><small>用时</small><strong data-xiangqi-time>${formatXiangqiTime(casual.elapsedSeconds)}</strong></div></div>
+      <div class="xiangqi-status ${checkedSide?'is-check':''} ${casual.aiThinking?'is-thinking':''}" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${turnLabel}</b></div>
+      <div class="xiangqi-board ${casual.aiThinking?'is-thinking':''}" data-xiangqi-board role="grid" aria-label="中国象棋棋盘，红方在下；使用方向键移动焦点，回车或空格选子落子" aria-rowcount="10" aria-colcount="9" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Escape Control+Z" aria-busy="${casual.aiThinking}"><div class="xiangqi-board-lines" aria-hidden="true"><i class="palace palace-black"></i><i class="palace palace-red"></i><span class="xiangqi-river"><b>楚河</b><b>漢界</b></span></div>${xiangqiRows(game, context)}</div>
+      <div class="xiangqi-tools" aria-label="象棋工具"><button type="button" data-action="xiangqi-undo" ${game.history?.length && !casual.aiThinking ? '' : 'disabled'}><i aria-hidden="true">↶</i><span>悔棋</span></button><button type="button" data-action="xiangqi-new"><i aria-hidden="true">↻</i><span>重新开局</span></button><button type="button" data-action="xiangqi-rules"><i aria-hidden="true">?</i><span>规则</span></button></div>
+      <p class="xiangqi-key-hint">键盘：方向键移动 · Enter / 空格选择 · Esc 取消 · Ctrl/⌘ + Z 悔棋</p>${xiangqiResult(game, casual)}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '本局仅在当前页面运行，本次无法自动保存；' : '本局在当前浏览器运行并自动保存，'}不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>${xiangqiConfirmDialog(casual)}${xiangqiRulesDialog(casual)}</div>`;
+}
+
 function merge1048Tile(value, index) {
   const label = value ? `数字 ${value}` : '空格';
   return `<div class="merge-1048-tile value-${value || 0}" role="gridcell" aria-label="第 ${index + 1} 格，${label}">${value ? `<b>${value}</b>` : ''}</div>`;
@@ -609,6 +1121,178 @@ function slotsGame() {
   const result = casual.last?.result;
   const resultCopy = result?.tier==='jackpot' ? '三个图标完全相同' : result?.tier==='pair' ? '其中两个图标相同' : result ? '三个图标各不相同' : '点击按钮，等待三个转轮依次停止';
   return `<div class="shell casual-shell">${casualHeader('算力转轮','COMPUTE REELS',`已旋转 ${casual.spins} 次`)}<section class="casual-stage slots-stage"><div class="slot-guide"><b>怎么玩？</b><span><i>1</i>点击免费旋转</span><span><i>2</i>三个转轮停止</span><span><i>3</i>查看图标组合</span></div><div class="slot-machine"><div class="slot-crown"><span>KAI PLAY</span><b>算力转轮</b><small>免费娱乐 · 零消耗</small></div><div class="slot-reels ${casual.spinning?'spinning':''}">${casual.reels.map((symbol,index)=>`<div class="slot-reel" style="--reel:${index}"><small>◆</small><span class="slot-symbol symbol-${symbol==='7'?'seven':'kai'}">${esc(symbol)}</span><small>★</small></div>`).join('')}</div><div class="slot-paytable"><span><b>三枚相同</b><small>三连共振</small></span><span><b>两枚相同</b><small>双核同频</small></span><span><b>各不相同</b><small>继续挑战</small></span></div><div class="slot-result ${result?.tier||''}"><b>${casual.spinning?'转轮依次停止中…':result?.label||'准备好了吗？'}</b><small>${resultCopy}</small></div><button class="slot-lever" data-action="slots-spin" ${casual.spinning?'disabled':''}><i></i><span>${casual.spinning?'正在旋转…':'免费旋转一次'}</span></button></div></section><p class="casual-disclaimer">纯视觉娱乐，不支付、不下注、不发放可兑换奖励，不会扣除竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function sudoku6Cell(game, index, context) {
+  const row = Math.floor(index / 6);
+  const column = index % 6;
+  const value = game.values[index];
+  const given = game.puzzle[index] !== 0;
+  const notes = sudoku6NoteValues(game.notes[index]);
+  const conflict = context.conflicts.has(index);
+  const wrong = !given && value > 0 && value !== game.solution[index];
+  const selected = index === context.selected;
+  const related = context.related.has(index);
+  const matched = context.selectedValue > 0 && value === context.selectedValue;
+  const classes = ['sudoku6-cell', given ? 'is-given' : 'is-editable'];
+  if (selected) classes.push('is-selected');
+  else if (matched) classes.push('is-matched');
+  else if (related) classes.push('is-related');
+  if (conflict) classes.push('is-conflict');
+  if (wrong) classes.push('is-wrong');
+  if (game.hinted[index]) classes.push('is-hinted');
+  const content = value
+    ? `<b>${value}</b>`
+    : notes.length
+      ? `<span class="sudoku6-notes">${Array.from({ length: 6 }, (_, offset) => `<i>${notes.includes(offset + 1) ? offset + 1 : ''}</i>`).join('')}</span>`
+      : '<span class="sudoku6-empty" aria-hidden="true"></span>';
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${value ? `数字 ${value}` : notes.length ? `候选 ${notes.join('、')}` : '空白'}，${given ? '题目给定，只读' : '可填写'}${conflict || wrong ? '，当前有误' : ''}`;
+  return `<button type="button" class="${classes.join(' ')}" data-sudoku6-cell="${index}" role="gridcell" aria-label="${label}" aria-selected="${selected}" aria-readonly="${given}" aria-invalid="${conflict || wrong}" tabindex="${selected ? '0' : '-1'}">${content}</button>`;
+}
+
+function sudoku6Result(game) {
+  if (game.status !== 'completed') return '';
+  const modeCopy = game.mode === 'daily' ? '今日挑战完成' : `${SUDOKU6_DIFFICULTIES[game.difficulty].label}练习完成`;
+  return `<section class="sudoku6-result" data-sudoku6-result role="dialog" aria-labelledby="sudoku6-result-title" tabindex="-1"><span>${modeCopy}</span><h2 id="sudoku6-result-title">逻辑归位</h2><p>用时 ${formatSudoku6Time(game.elapsedSeconds)} · 误填 ${game.mistakes} 次 · 提示 ${game.hintsUsed} 次</p><div><button class="btn primary" data-action="sudoku6-new">${game.mode === 'daily' ? '重做今日题' : '再来一题'}</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function sudoku6Game() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game) return lobby();
+  const selected = Number.isInteger(casual.selectedCell) ? casual.selectedCell : game.values.findIndex((value, index) => game.puzzle[index] === 0 && value === 0);
+  const conflicts = getSudoku6Conflicts(game.values);
+  const related = new Set(sudoku6PeerIndexes(selected));
+  const selectedValue = game.values[selected] || 0;
+  const best = loadSudoku6Stats()[sudoku6StatKey(game)];
+  const difficulty = SUDOKU6_DIFFICULTIES[game.difficulty];
+  const modeLabel = game.mode === 'daily' ? `每日一局 · ${game.date.slice(5).replace('-', '.')}` : `${difficulty.label}练习 · ${difficulty.clues} 个提示数`;
+  const status = game.status === 'completed' ? '已完成' : casual.announcement || (conflicts.size ? '存在重复数字，请检查行、列或宫格' : '进度已自动保存');
+  const difficultyControls = game.mode === 'practice'
+    ? `<div class="sudoku6-difficulties" aria-label="选择数独难度">${Object.values(SUDOKU6_DIFFICULTIES).map((entry) => `<button type="button" data-action="sudoku6-difficulty" data-sudoku6-difficulty="${entry.key}" aria-pressed="${entry.key === game.difficulty}" class="${entry.key === game.difficulty ? 'active' : ''}">${entry.label}<small>${entry.clues} 提示</small></button>`).join('')}</div>`
+    : '<p class="sudoku6-daily-note">每日题固定为标准难度，当天题目对所有本地挑战一致。</p>';
+  const context = { selected, selectedValue, related, conflicts };
+  return `<div class="shell casual-shell sudoku6-route">${casualHeader('KAI 数独','6×6 LOGIC',modeLabel)}<main class="sudoku6-stage">
+    <section class="sudoku6-copy"><div><span>短时逻辑挑战 · 自动保存</span><h1>让每个数字<br><b>各得其所</b></h1><p>用 1–6 填满棋盘，每行、每列、每个 2×3 宫格中的数字都不能重复。</p></div><div class="sudoku6-mode-switch" aria-label="选择数独模式"><button type="button" data-action="sudoku6-practice" aria-pressed="${game.mode === 'practice'}" class="${game.mode === 'practice' ? 'active' : ''}">自由练习</button><button type="button" data-action="sudoku6-daily" aria-pressed="${game.mode === 'daily'}" class="${game.mode === 'daily' ? 'active' : ''}">每日一局</button></div>${difficultyControls}<button class="btn sudoku6-new" data-action="sudoku6-new">重新开题</button></section>
+    <section class="sudoku6-play"><div class="sudoku6-metrics" aria-label="本局数据"><div><small>用时</small><strong data-sudoku6-time>${formatSudoku6Time(game.elapsedSeconds)}</strong></div><div><small>误填</small><strong>${game.mistakes}</strong></div><div><small>提示</small><strong>${game.hintsUsed}/${SUDOKU6_MAX_HINTS}</strong></div><div><small>无提示最佳</small><strong>${Number.isSafeInteger(best) ? formatSudoku6Time(best) : '--:--'}</strong></div></div>
+      <div class="sudoku6-status ${conflicts.size ? 'is-warning' : ''}" role="status" aria-live="polite" aria-atomic="true"><i></i><span>${esc(status)}</span><b>${casual.noteMode ? '笔记模式' : '填数模式'}</b></div>
+      <div class="sudoku6-board" data-sudoku6-board role="grid" aria-label="6 乘 6 数独棋盘，使用数字键填写，方向键移动" aria-rowcount="6" aria-colcount="6" aria-keyshortcuts="1 2 3 4 5 6 Backspace Delete N Control+Z">${game.values.map((_, index) => sudoku6Cell(game, index, context)).join('')}</div>
+      <div class="sudoku6-number-pad" aria-label="数字键盘">${[1,2,3,4,5,6].map((value) => `<button type="button" data-action="sudoku6-value" data-sudoku6-value="${value}" ${game.status === 'playing' ? '' : 'disabled'}>${value}</button>`).join('')}</div>
+      <div class="sudoku6-tools" aria-label="数独工具"><button type="button" data-action="sudoku6-notes" aria-pressed="${casual.noteMode}" class="${casual.noteMode ? 'active' : ''}" ${game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">N</i><span>笔记</span></button><button type="button" data-action="sudoku6-undo" ${game.undoStack.length && game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">↶</i><span>撤销</span></button><button type="button" data-action="sudoku6-clear" ${game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">×</i><span>擦除</span></button><button type="button" data-action="sudoku6-hint" ${game.hintsUsed < SUDOKU6_MAX_HINTS && game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">?</i><span>提示</span></button></div>
+      <p class="sudoku6-key-hint">键盘：1–6 填写 · N 笔记 · Delete 擦除 · Ctrl/⌘ + Z 撤销</p>${sudoku6Result(game)}
+    </section>
+  </main><p class="casual-disclaimer">数独题目在本地生成并验证唯一解。进度仅保存在当前浏览器，不请求服务端结算，不改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function formatMinesweeperTime(totalSeconds) {
+  const seconds = safeLocalCounter(totalSeconds);
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function minesweeperCell(game, index, context) {
+  const row = Math.floor(index / game.columns);
+  const column = index % game.columns;
+  const cell = getMinesweeperCell(game, index);
+  const focused = index === context.focused;
+  const lost = game.status === 'lost';
+  const won = game.status === 'won';
+  const exposedMine = cell.exploded || (lost && cell.mine);
+  const wrongFlag = lost && cell.flagged && !cell.mine;
+  const winningFlag = won && cell.mine;
+  const classes = ['minesweeper-cell'];
+  if (cell.revealed) classes.push('is-revealed');
+  else classes.push('is-covered');
+  if (cell.flagged || winningFlag) classes.push('is-flagged');
+  if (exposedMine) classes.push('is-mine');
+  if (cell.exploded) classes.push('is-exploded');
+  if (wrongFlag) classes.push('is-wrong-flag');
+  if (cell.revealed && cell.adjacentMines > 0) classes.push(`number-${cell.adjacentMines}`);
+
+  let content = '';
+  let description = '未揭开';
+  if (wrongFlag) {
+    content = '<span class="minesweeper-wrong-flag" aria-hidden="true"><b>⚑</b><i>×</i></span>';
+    description = '错误插旗，这里没有雷';
+  } else if (cell.exploded) {
+    content = '<span class="minesweeper-mine" aria-hidden="true">✹</span>';
+    description = '已引爆的地雷';
+  } else if (exposedMine) {
+    content = cell.flagged ? '<span class="minesweeper-flag" aria-hidden="true">⚑</span>' : '<span class="minesweeper-mine" aria-hidden="true">✹</span>';
+    description = cell.flagged ? '地雷，已正确插旗' : '地雷';
+  } else if (cell.flagged || winningFlag) {
+    content = '<span class="minesweeper-flag" aria-hidden="true">⚑</span>';
+    description = won ? '地雷，已标记' : '已插旗';
+  } else if (cell.revealed && cell.adjacentMines > 0) {
+    content = `<b aria-hidden="true">${cell.adjacentMines}</b>`;
+    description = `数字 ${cell.adjacentMines}，周围有 ${cell.adjacentMines} 颗雷`;
+  } else if (cell.revealed) {
+    content = '<span class="minesweeper-empty" aria-hidden="true"></span>';
+    description = '已揭开的空白格';
+  }
+
+  let actionHint = '';
+  if (game.status === 'ready' || game.status === 'playing') {
+    if (cell.revealed) actionHint = cell.adjacentMines > 0 ? '，按回车可尝试和弦展开' : '，已展开';
+    else if (cell.flagged) actionHint = context.inputMode === 'flag' ? '，按 F 或点击取消旗帜' : '，按 F 取消旗帜';
+    else actionHint = `，${context.inputMode === 'flag' ? '当前点击会插旗' : '当前点击会揭开'}`;
+  }
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${description}${actionHint}`;
+  return `<button type="button" class="${classes.join(' ')}" data-minesweeper-cell="${index}" role="gridcell" aria-rowindex="${row + 1}" aria-colindex="${column + 1}" aria-label="${esc(label)}" aria-selected="${focused}" aria-disabled="${context.locked}" tabindex="${focused ? '0' : '-1'}">${content}</button>`;
+}
+
+function minesweeperRows(game, context) {
+  return Array.from({ length: game.rows }, (_, row) => {
+    const cells = Array.from({ length: game.columns }, (_, column) => minesweeperCell(game, row * game.columns + column, context)).join('');
+    return `<div class="minesweeper-row" role="row" aria-rowindex="${row + 1}">${cells}</div>`;
+  }).join('');
+}
+
+function minesweeperResult(game) {
+  if (!['won','lost'].includes(game.status)) return '';
+  const won = game.status === 'won';
+  return `<section class="minesweeper-result ${won ? 'is-win' : 'is-loss'}" data-minesweeper-result role="status" aria-live="polite" aria-labelledby="minesweeper-result-title" tabindex="-1"><span>${won ? '本地排雷完成' : '本局结束'}</span><h2 id="minesweeper-result-title">${won ? '雷区已清理' : '这一步踩到雷了'}</h2><p>${MINESWEEPER_DIFFICULTIES[game.difficulty]?.label || '初级'} · 用时 ${formatMinesweeperTime(game.elapsedSeconds)} · 揭开 ${safeLocalCounter(game.revealedCount)} 格 · 和弦 ${safeLocalCounter(game.chordCount)} 次</p><div><button class="btn primary" data-action="minesweeper-new">同难度再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function minesweeperConfirmDialog(casual) {
+  if (!casual?.confirmAction) return '';
+  const changingDifficulty = casual.confirmAction === 'difficulty';
+  const nextDifficulty = MINESWEEPER_DIFFICULTIES[casual.pendingDifficulty];
+  return `<div class="exit-shade"><section class="exit-dialog minesweeper-confirm-dialog" data-minesweeper-confirm-dialog role="dialog" aria-modal="true" aria-labelledby="minesweeper-confirm-title" aria-describedby="minesweeper-confirm-description" tabindex="-1"><span>当前雷区尚未完成</span><h2 id="minesweeper-confirm-title">${changingDifficulty ? `切换到${esc(nextDifficulty?.label || '新')}难度？` : '确定重新布置雷区？'}</h2><p id="minesweeper-confirm-description">${changingDifficulty ? `切换后会清除本局进度，并生成 ${nextDifficulty?.rows || ''}×${nextDifficulty?.columns || ''} 的新棋盘。` : '重新开局会清除当前揭格、旗帜和计时。确定继续吗？'}</p><div><button class="btn" data-action="minesweeper-cancel-confirm">继续本局</button><button class="btn danger" data-action="minesweeper-confirm">${changingDifficulty ? '切换难度' : '重新开局'}</button></div></section></div>`;
+}
+
+function minesweeperGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game) return lobby();
+  const difficulty = MINESWEEPER_DIFFICULTIES[game.difficulty] || MINESWEEPER_DIFFICULTIES.beginner;
+  const focused = Number.isInteger(casual.focusedCell) && casual.focusedCell >= 0 && casual.focusedCell < game.rows * game.columns ? casual.focusedCell : 0;
+  const inputMode = casual.inputMode === 'flag' ? 'flag' : 'reveal';
+  const modalOpen = Boolean(casual.confirmAction);
+  const remaining = getMinesweeperRemainingMines(game);
+  const safeCellCount = game.rows * game.columns - game.mineCount;
+  const progress = Math.round((safeLocalCounter(game.revealedCount) / Math.max(1, safeCellCount)) * 100);
+  const saveConflict = casual.saveConflict === true;
+  const saveUnavailable = casual.saveAvailable === false && !saveConflict;
+  const status = saveConflict ? '另一个标签页已有更新 · 本页不会覆盖最新存档'
+    : saveUnavailable ? '本浏览器无法保存进度 · 本局仍可继续'
+      : game.status === 'ready' ? casual.announcement || '第一步不会踩雷 · 请选择一格开始'
+    : game.status === 'won' ? '全部安全格已经揭开'
+      : game.status === 'lost' ? '雷区已展开 · 错误旗帜以红色标出'
+        : casual.announcement || '进度已自动保存';
+  const context = { focused, inputMode, locked: modalOpen || ['won','lost'].includes(game.status) };
+  const difficultyControls = Object.values(MINESWEEPER_DIFFICULTIES).map((entry) => `<button type="button" data-action="minesweeper-difficulty" data-minesweeper-difficulty="${entry.key}" aria-pressed="${entry.key === game.difficulty}" class="${entry.key === game.difficulty ? 'active' : ''}"><b>${esc(entry.label)}</b><small>${entry.rows}×${entry.columns} · ${entry.mines} 雷</small></button>`).join('');
+  const scrollHint = game.columns >= 12 ? '<p class="minesweeper-scroll-hint" id="minesweeper-scroll-hint">棋盘较宽，小屏可左右滑动查看完整雷区。</p>' : '';
+  const boardDescription = `minesweeper-key-hint${game.columns >= 12 ? ' minesweeper-scroll-hint' : ''}`;
+  return `<div class="shell casual-shell minesweeper-route difficulty-${game.difficulty}"><div class="minesweeper-background"${modalOpen ? ' inert aria-hidden="true"' : ''}>${casualHeader('KAI 扫雷','MINESWEEPER',`${difficulty.label} · ${game.rows}×${game.columns} · ${game.mineCount} 雷`)}<main class="minesweeper-stage">
+    <section class="minesweeper-copy"><div><span>首击安全 · ${saveConflict ? '多标签冲突保护' : saveUnavailable ? '当前存档不可用' : '本地自动保存'}</span><h1>读懂数字<br><b>排除雷区</b></h1><p>数字表示周围八格的地雷数量。先从确定安全的位置展开，再把推断出的地雷插上旗帜。</p></div><div class="minesweeper-difficulties" aria-label="选择扫雷难度">${difficultyControls}</div><ol class="minesweeper-guide"><li><i>1</i><span><b>放心首击</b><small>第一格及附近区域不会布雷</small></span></li><li><i>2</i><span><b>数字推理</b><small>数字等于周围八格的雷数</small></span></li><li><i>3</i><span><b>快速展开</b><small>旗数吻合时点击数字格可和弦</small></span></li></ol><button class="btn minesweeper-new" data-action="minesweeper-new">重新布雷</button></section>
+    <section class="minesweeper-play"><div class="minesweeper-metrics" aria-label="本局数据"><div><small>剩余雷数</small><strong>${remaining}</strong></div><div><small>已插旗</small><strong>${safeLocalCounter(game.flagCount)}/${game.mineCount}</strong></div><div><small>用时</small><strong data-minesweeper-time>${formatMinesweeperTime(game.elapsedSeconds)}</strong></div><div><small>已展开</small><strong>${Math.min(100, progress)}%</strong></div></div>
+      <div class="minesweeper-status ${game.status === 'lost' ? 'is-danger' : game.status === 'won' ? 'is-success' : ''}" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${inputMode === 'flag' ? '插旗模式' : '揭开模式'}</b></div>
+      <div class="minesweeper-input-modes" role="group" aria-label="触屏操作模式"><button type="button" data-action="minesweeper-mode" data-minesweeper-mode="reveal" class="${inputMode === 'reveal' ? 'active' : ''}" aria-pressed="${inputMode === 'reveal'}"><i aria-hidden="true">⌁</i><span>揭开格子</span></button><button type="button" data-action="minesweeper-mode" data-minesweeper-mode="flag" class="${inputMode === 'flag' ? 'active' : ''}" aria-pressed="${inputMode === 'flag'}"><i aria-hidden="true">⚑</i><span>插旗标记</span></button></div>
+      ${scrollHint}<div class="minesweeper-board-scroll" data-minesweeper-scroll tabindex="-1"><div class="minesweeper-board" data-minesweeper-board role="grid" aria-label="${game.rows} 行 ${game.columns} 列扫雷棋盘，首击安全；使用方向键移动，回车或空格揭开，F 插旗" aria-describedby="${boardDescription}" aria-rowcount="${game.rows}" aria-colcount="${game.columns}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space F Escape" aria-disabled="${context.locked}" style="--minesweeper-columns:${game.columns}">${minesweeperRows(game, context)}</div></div>
+      <p class="minesweeper-key-hint" id="minesweeper-key-hint">键盘：方向键移动 · Enter / 空格揭开或和弦 · F 插旗 · Esc 返回揭开模式</p>${minesweeperResult(game)}
+    </section>
+  </main><p class="casual-disclaimer">${saveConflict ? '检测到其他标签页的更新，本页已停止写入以保护最新存档；返回大厅后重新进入即可载入。' : saveUnavailable ? '本浏览器当前无法写入本地存档；本局仍可继续，但刷新后可能无法恢复。' : '本局完全在当前浏览器运行并自动保存；'}不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>${minesweeperConfirmDialog(casual)}</div>`;
 }
 
 function historyMatchWon(match) {
@@ -671,10 +1355,10 @@ function history() {
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与数字生成</h3><p class="muted">斗地主开局向三位玩家各发 17 张并预留 3 张增补牌；炸金花每轮独立发三张；麻将使用 136 张基础牌墙；1048 每次有效移动后生成一个新数字。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；炸金花、麻将、1048 和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；炸金花、麻将、1048、数独与扫雷按各自规则生成内容；KAI 象棋由本地规则引擎判定每一步合法走法。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、炸金花、麻将、1048、数独、扫雷和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='1048'?merge1048Game():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -690,8 +1374,12 @@ function stopMahjongBotSequence() {
 function stopCasualTimers() {
   if (threeRevealTimer) clearTimeout(threeRevealTimer);
   if (slotSpinTimer) clearTimeout(slotSpinTimer);
+  if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
   threeRevealTimer = null;
   slotSpinTimer = null;
+  xiangqiAiTimer = null;
+  cancelMinesweeperLongPress();
+  minesweeperSuppressedClick = null;
 }
 
 function queueMahjongBotTurn() {
@@ -735,7 +1423,7 @@ function switchHero(nextGame, direction = 'next') {
   const current = carousel?.querySelector(`[data-hero-stage="${previous}"]`);
   const next = carousel?.querySelector(`[data-hero-stage="${normalized}"]`);
   state.heroGame = normalized;
-  localStorage.setItem(HERO_GAME_KEY, normalized);
+  safeStorageSet(HERO_GAME_KEY, normalized);
   updateHeroControls(normalized);
   if (!current || !next) { render(); return; }
   if (heroTransitionTimer) {
@@ -789,9 +1477,230 @@ function openMahjong() {
   stopCasualTimers();
   const game = newMahjongGame();
   state.heroGame = 'mahjong';
-  localStorage.setItem(HERO_GAME_KEY, 'mahjong');
+  safeStorageSet(HERO_GAME_KEY, 'mahjong');
   state.casual = { kind: 'mahjong', game, selectedTileId: null, confirmAction: null };
   state.view = 'mahjong';
+}
+function preferredXiangqiFocus(game, preferred = 85) {
+  if (Number.isInteger(preferred) && game?.board?.[preferred]?.side === 'red') return preferred;
+  const redGeneral = game?.board?.findIndex((piece) => piece?.side === 'red' && piece.type === 'general');
+  if (Number.isInteger(redGeneral) && redGeneral >= 0) return redGeneral;
+  const redPiece = game?.board?.findIndex((piece) => piece?.side === 'red');
+  return Number.isInteger(redPiece) && redPiece >= 0 ? redPiece : 85;
+}
+function startXiangqiSession(session, announcement = '你执红先行') {
+  const game = session.game || session;
+  const tutorialSeen = safeStorageGet(XIANGQI_TUTORIAL_KEY) === 'seen';
+  state.casual = {
+    kind: 'xiangqi',
+    game,
+    selectedCell: null,
+    focusedCell: preferredXiangqiFocus(game, xiangqiMoveTo(game.lastMove)),
+    announcement,
+    aiThinking: false,
+    confirmAction: null,
+    pendingDifficulty: null,
+    showRules: false,
+    dialogReturnFocus: null,
+    tutorialStep: tutorialSeen ? 0 : (Number(game.moveCount) > 0 ? 3 : 1),
+    elapsedSeconds: safeLocalCounter(session.elapsedSeconds),
+    undoCount: safeLocalCounter(session.undoCount),
+    saveAvailable: true,
+    xiangqiLastTick: Date.now(),
+  };
+  state.view = 'xiangqi';
+  if (!saveXiangqiSession()) state.casual.announcement = '本浏览器无法保存进度 · 可继续本局';
+}
+function openXiangqi() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const saved = loadSavedXiangqiSession();
+  const storedDifficulty = safeStorageGet(XIANGQI_DIFFICULTY_KEY);
+  const difficulty = ['beginner','standard','challenge'].includes(storedDifficulty) ? storedDifficulty : 'beginner';
+  const session = saved || { game: newXiangqiGame({ humanSide:'red', difficulty }), elapsedSeconds:0, undoCount:0 };
+  const announcement = saved ? (session.game.status === 'playing' ? '已恢复本地进度' : '上局战果已保留') : '你执红先行';
+  startXiangqiSession(session, announcement);
+  rememberLastLocalGame('xiangqi');
+}
+function settleXiangqiClock(now = Date.now()) {
+  const casual = state.casual;
+  if (state.view !== 'xiangqi' || casual?.kind !== 'xiangqi' || casual.game?.status !== 'playing' || casual.confirmAction || casual.showRules) return 0;
+  const lastTick = Number.isFinite(casual.xiangqiLastTick) ? casual.xiangqiLastTick : now;
+  const elapsed = Math.floor(Math.max(0, now - lastTick) / 1000);
+  if (elapsed <= 0) return 0;
+  casual.elapsedSeconds = Math.min(Number.MAX_SAFE_INTEGER, safeLocalCounter(casual.elapsedSeconds) + elapsed);
+  casual.xiangqiLastTick = lastTick + elapsed * 1000;
+  const clock = document.querySelector('[data-xiangqi-time]');
+  if (clock) clock.textContent = formatXiangqiTime(casual.elapsedSeconds);
+  return elapsed;
+}
+function updateXiangqiClock() {
+  const elapsed = settleXiangqiClock();
+  if (elapsed && state.casual.elapsedSeconds % 5 < elapsed) saveXiangqiSession();
+}
+function focusXiangqiInteraction(index = state.casual?.focusedCell) {
+  const result = document.querySelector('[data-xiangqi-result]');
+  if (result) { result.focus({ preventScroll:true }); return; }
+  document.querySelector(`[data-xiangqi-cell="${Number.isInteger(index) ? index : 85}"]`)?.focus({ preventScroll:true });
+}
+function focusXiangqiDialog() {
+  const dialog = document.querySelector('[data-xiangqi-confirm-dialog], [data-xiangqi-rules-dialog]');
+  const firstControl = dialog?.querySelector('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])');
+  (firstControl || dialog)?.focus({ preventScroll:true });
+}
+function focusXiangqiReturnControl(reference) {
+  let control = null;
+  if (reference === 'rules') control = document.querySelector('[data-action="xiangqi-rules"]');
+  if (reference === 'new') control = document.querySelector('[data-action="xiangqi-new"]');
+  if (reference?.startsWith('difficulty:')) {
+    const difficulty = reference.slice('difficulty:'.length);
+    if (['beginner','standard','challenge'].includes(difficulty)) {
+      control = document.querySelector(`[data-xiangqi-difficulty="${difficulty}"]`);
+    }
+  }
+  if (control) control.focus({ preventScroll:true });
+  else focusXiangqiInteraction();
+}
+function trapXiangqiDialogTab(event) {
+  const dialog = document.querySelector('[data-xiangqi-confirm-dialog], [data-xiangqi-rules-dialog]');
+  if (!dialog || event.key !== 'Tab') return false;
+  const controls = [...dialog.querySelectorAll('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])')];
+  if (!controls.length) { event.preventDefault(); dialog.focus({ preventScroll:true }); return true; }
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus({ preventScroll:true });
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();last.focus({ preventScroll:true });
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();first.focus({ preventScroll:true });
+  }
+  return true;
+}
+function finishXiangqiTutorial() {
+  if (!state.casual || state.view !== 'xiangqi') return;
+  state.casual.tutorialStep = 0;
+  safeStorageSet(XIANGQI_TUTORIAL_KEY, 'seen');
+}
+function queueXiangqiAiTurn() {
+  if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
+  xiangqiAiTimer = null;
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'xiangqi' || casual?.kind !== 'xiangqi' || game?.status !== 'playing' || game.turn === 'red' || casual.confirmAction || casual.showRules) return;
+  const playerFocus = preferredXiangqiFocus(game, casual.focusedCell);
+  casual.focusedCell = playerFocus;
+  casual.aiThinking = true;
+  casual.announcement = safeXiangqiCheck(game, 'black') ? '你已将军 · KAI 正在应对…' : 'KAI 正在思考…';
+  render();
+  focusXiangqiInteraction(playerFocus);
+  const delay = ({ beginner:320, standard:520, challenge:720 })[game.difficulty] || 520;
+  xiangqiAiTimer = setTimeout(() => {
+    xiangqiAiTimer = null;
+    const live = state.casual;
+    const current = live?.game;
+    if (state.view !== 'xiangqi' || live !== casual || current?.status !== 'playing' || current.turn === 'red') return;
+    try {
+      const move = chooseXiangqiMove(current, current.difficulty);
+      const from = xiangqiMoveFrom(move);
+      const to = xiangqiMoveTo(move);
+      if (!Number.isInteger(from) || !Number.isInteger(to)) throw new Error('KAI 暂时没有找到可行走法');
+      settleXiangqiClock();
+      const next = playXiangqiMove(current, from, to);
+      live.game = next;
+      live.focusedCell = preferredXiangqiFocus(next, playerFocus);
+      live.selectedCell = null;
+      live.aiThinking = false;
+      live.announcement = next.status === 'playing'
+        ? safeXiangqiCheck(next, 'red') ? '将军！请先解除威胁' : 'KAI 已落子 · 轮到你'
+        : '本局已经结束';
+      live.xiangqiLastTick = Date.now();
+      saveXiangqiSession(live);
+      render();
+      focusXiangqiInteraction(live.focusedCell);
+    } catch (error) {
+      live.aiThinking = false;
+      live.announcement = error?.message || 'KAI 思考失败，请悔棋或重新开局';
+      render();
+      focusXiangqiInteraction(live.focusedCell);
+      toast(live.announcement);
+    }
+  }, delay);
+}
+function performXiangqiMove(from, to) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'xiangqi' || casual?.aiThinking || casual?.confirmAction || casual?.showRules || game?.status !== 'playing' || game.turn !== 'red') return;
+  const movingPiece = game.board[from];
+  const captured = game.board[to];
+  try {
+    settleXiangqiClock();
+    const next = playXiangqiMove(game, from, to);
+    casual.game = next;
+    casual.selectedCell = null;
+    casual.focusedCell = to;
+    casual.announcement = next.status !== 'playing' ? '本局已经结束'
+      : safeXiangqiCheck(next, 'black') ? '你已将军 · KAI 正在应对'
+        : `${xiangqiPieceSpoken(movingPiece)}已落子${captured ? `并吃掉${xiangqiPieceSpoken(captured)}` : ''}`;
+    if (casual.tutorialStep && casual.tutorialStep < 3) casual.tutorialStep = 3;
+    casual.xiangqiLastTick = Date.now();
+    saveXiangqiSession(casual);
+    render();
+    if (next.status === 'playing' && next.turn !== 'red') queueXiangqiAiTurn();
+    else focusXiangqiInteraction(to);
+  } catch (error) {
+    casual.announcement = error?.message || '该位置不能落子';
+    render();
+    focusXiangqiInteraction(from);
+  }
+}
+function selectXiangqiCell(index) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'xiangqi' || casual?.aiThinking || casual?.confirmAction || casual?.showRules || game?.status !== 'playing') return;
+  casual.focusedCell = index;
+  if (game.turn !== 'red') {
+    casual.announcement = '请等待 KAI 落子';
+    render();focusXiangqiInteraction(index);return;
+  }
+  const piece = game.board[index];
+  const selected = casual.selectedCell;
+  if (!Number.isInteger(selected)) {
+    if (piece?.side !== 'red') {
+      casual.announcement = piece ? '黑方棋子不可选择' : '请先选择一枚红方棋子';
+    } else {
+      casual.selectedCell = index;
+      const moveCount = safeLegalXiangqiMoves(game, index).length;
+      casual.announcement = `已选${xiangqiPieceSpoken(piece)} · 可走 ${moveCount} 处`;
+      if (casual.tutorialStep === 1) casual.tutorialStep = 2;
+    }
+    render();focusXiangqiInteraction(index);return;
+  }
+  if (index === selected) {
+    casual.selectedCell = null;
+    casual.announcement = '已取消选择';
+    render();focusXiangqiInteraction(index);return;
+  }
+  if (piece?.side === 'red') {
+    casual.selectedCell = index;
+    casual.announcement = `已改选${xiangqiPieceSpoken(piece)} · 可走 ${safeLegalXiangqiMoves(game, index).length} 处`;
+    render();focusXiangqiInteraction(index);return;
+  }
+  const legal = safeLegalXiangqiMoves(game, selected).some((move) => xiangqiMoveTo(move) === index);
+  if (!legal) {
+    casual.announcement = safeXiangqiCheck(game, 'red') ? '将军！这一步不能解除威胁' : '该位置不能落子';
+    render();focusXiangqiInteraction(selected);return;
+  }
+  performXiangqiMove(selected, index);
+}
+function newXiangqiSession(difficulty = state.casual?.game?.difficulty || 'beginner') {
+  if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
+  xiangqiAiTimer = null;
+  const game = newXiangqiGame({ humanSide:'red', difficulty });
+  startXiangqiSession({ game, elapsedSeconds:0, undoCount:0 }, `已开始${XIANGQI_DIFFICULTIES[difficulty]?.label || '初学'}难度新局`);
 }
 function open1048() {
   stopGameSync();
@@ -802,6 +1711,7 @@ function open1048() {
   state.casual = { kind: '1048', game };
   save1048Game(game);
   state.view = '1048';
+  rememberLastLocalGame('1048');
 }
 function focus1048Interaction() {
   const target = document.querySelector('[data-1048-result]') || document.querySelector('[data-1048-board]');
@@ -816,6 +1726,299 @@ function perform1048Move(direction) {
   render();
   focus1048Interaction();
 }
+function firstSudoku6Cell(game) {
+  const unfinished = game.values.findIndex((value, index) => game.puzzle[index] === 0 && value !== game.solution[index]);
+  if (unfinished >= 0) return unfinished;
+  const editable = game.puzzle.findIndex((value) => value === 0);
+  return editable >= 0 ? editable : 0;
+}
+function startSudoku6Session(game, announcement = '选择一个空格，填入 1 到 6') {
+  state.casual = {
+    kind: 'sudoku6',
+    game,
+    selectedCell: firstSudoku6Cell(game),
+    noteMode: false,
+    announcement,
+    sudokuLastTick: Date.now(),
+  };
+  saveSudoku6Game(game);
+  state.view = 'sudoku6';
+}
+function openSudoku6() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const game = loadSavedSudoku6Game() || newSudoku6Game({ difficulty: 'medium' });
+  startSudoku6Session(game, game.status === 'completed' ? '上次数独已完成' : '已恢复本地进度');
+  rememberLastLocalGame('sudoku6');
+}
+function focusSudoku6Interaction() {
+  const result = document.querySelector('[data-sudoku6-result]');
+  if (result) { result.focus({ preventScroll: true }); return; }
+  const target = document.querySelector(`[data-sudoku6-cell="${state.casual?.selectedCell}"]`);
+  target?.focus({ preventScroll: true });
+}
+function settleSudoku6Clock(now = Date.now()) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'sudoku6' || !game || game.status !== 'playing') return 0;
+  const lastTick = Number.isFinite(casual.sudokuLastTick) ? casual.sudokuLastTick : now;
+  const elapsed = Math.floor(Math.max(0, now - lastTick) / 1000);
+  if (elapsed <= 0) { casual.sudokuLastTick = lastTick; return 0; }
+  game.elapsedSeconds += elapsed;
+  casual.sudokuLastTick = lastTick + elapsed * 1000;
+  const clock = document.querySelector('[data-sudoku6-time]');
+  if (clock) clock.textContent = formatSudoku6Time(game.elapsedSeconds);
+  return elapsed;
+}
+function settleAndSaveSudoku6() {
+  settleSudoku6Clock();
+  const game = state.casual?.game;
+  if (state.view === 'sudoku6' && game) saveSudoku6Game(game);
+}
+function sudoku6HasProgress(game) {
+  return game?.status === 'playing' && (game.elapsedSeconds > 0 || game.undoStack.length > 0);
+}
+function confirmSudoku6Replacement(game, message) {
+  if (!sudoku6HasProgress(game)) return true;
+  return typeof globalThis.confirm === 'function' ? globalThis.confirm(message) : false;
+}
+function commitSudoku6Game(next, announcement) {
+  const previous = state.casual?.game;
+  if (!previous || state.view !== 'sudoku6') return;
+  state.casual.game = next;
+  state.casual.announcement = announcement;
+  saveSudoku6Game(next);
+  if (previous.status !== 'completed' && next.status === 'completed') recordSudoku6Best(next);
+  render();
+  focusSudoku6Interaction();
+}
+function performSudoku6Value(value) {
+  const game = state.casual?.game;
+  const index = state.casual?.selectedCell;
+  if (state.view !== 'sudoku6' || !game || game.status !== 'playing' || !Number.isInteger(index)) return;
+  settleSudoku6Clock();
+  const next = enterSudoku6Value(game, index, value, { noteMode: value > 0 && state.casual.noteMode });
+  if (next.undoStack.length === game.undoStack.length) {
+    state.casual.announcement = game.puzzle[index] ? '题目给定数字不可修改' : '当前操作没有改变棋盘';
+    render();
+    focusSudoku6Interaction();
+    return;
+  }
+  const announcement = next.status === 'completed' ? '数独完成，所有数字都已归位'
+    : next.lastAction === 'mistake' ? '这个数字不符合本格答案，可以擦除或撤销'
+      : next.lastAction === 'note' ? '候选笔记已更新'
+        : next.lastAction === 'clear' ? '已擦除当前格' : '数字正确';
+  commitSudoku6Game(next, announcement);
+}
+function updateSudoku6Clock() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'sudoku6' || !game || game.status !== 'playing') return;
+  const now = Date.now();
+  if (document.visibilityState === 'hidden') { casual.sudokuLastTick = now; return; }
+  const elapsed = settleSudoku6Clock(now);
+  if (elapsed <= 0) return;
+  if (game.elapsedSeconds % 5 < elapsed) saveSudoku6Game(game);
+}
+
+function firstMinesweeperCell(game) {
+  const covered = game.revealed?.findIndex((revealed, index) => !revealed && !game.flagged?.[index]);
+  return Number.isInteger(covered) && covered >= 0 ? covered : 0;
+}
+
+function startMinesweeperSession(game, announcement = '第一步安全，选择一格开始排雷') {
+  state.casual = {
+    kind: 'minesweeper',
+    game,
+    focusedCell: firstMinesweeperCell(game),
+    inputMode: 'reveal',
+    announcement,
+    confirmAction: null,
+    pendingDifficulty: null,
+    dialogReturnFocus: null,
+    saveAvailable: true,
+    saveConflict: false,
+    minesweeperPersistedSnapshot: null,
+    minesweeperLastTick: Date.now(),
+    minesweeperPausedAt: null,
+  };
+  state.view = 'minesweeper';
+  if (!saveMinesweeperGame(game, state.casual, { force:true })) state.casual.announcement = '本浏览器无法保存进度 · 可继续排雷';
+}
+
+function openMinesweeper() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const saved = loadSavedMinesweeperGame();
+  const storedDifficulty = safeStorageGet(MINESWEEPER_DIFFICULTY_KEY);
+  const difficulty = Object.hasOwn(MINESWEEPER_DIFFICULTIES, storedDifficulty) ? storedDifficulty : 'beginner';
+  const game = saved || newMinesweeperGame({ difficulty });
+  const announcement = !saved ? '第一步安全，选择一格开始排雷'
+    : game.status === 'ready' ? '已恢复未开始的本地棋盘 · 首击安全'
+      : game.status === 'playing' ? '已恢复本地排雷进度' : '上局结果已保留';
+  startMinesweeperSession(game, announcement);
+  rememberLastLocalGame('minesweeper');
+}
+
+function newMinesweeperSession(difficulty = state.casual?.game?.difficulty || 'beginner') {
+  cancelMinesweeperLongPress();
+  const normalized = Object.hasOwn(MINESWEEPER_DIFFICULTIES, difficulty) ? difficulty : 'beginner';
+  startMinesweeperSession(newMinesweeperGame({ difficulty: normalized }), `已生成${MINESWEEPER_DIFFICULTIES[normalized].label}雷区 · 首击安全`);
+}
+
+function settleMinesweeperClock(now = Date.now()) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'minesweeper' || casual?.kind !== 'minesweeper' || game?.status !== 'playing' || casual.confirmAction || Number.isFinite(casual.minesweeperPausedAt)) return 0;
+  const lastTick = Number.isFinite(casual.minesweeperLastTick) ? casual.minesweeperLastTick : now;
+  const elapsed = Math.floor(Math.max(0, now - lastTick) / 1000);
+  if (elapsed <= 0) return 0;
+  const elapsedSeconds = Math.min(Number.MAX_SAFE_INTEGER, safeLocalCounter(game.elapsedSeconds) + elapsed);
+  casual.game = { ...game, elapsedSeconds };
+  casual.minesweeperLastTick = lastTick + elapsed * 1000;
+  const clock = document.querySelector('[data-minesweeper-time]');
+  if (clock) clock.textContent = formatMinesweeperTime(elapsedSeconds);
+  return elapsed;
+}
+
+function pauseMinesweeperClock(now = Date.now()) {
+  const casual = state.casual;
+  if (state.view !== 'minesweeper' || casual?.kind !== 'minesweeper' || Number.isFinite(casual.minesweeperPausedAt)) return;
+  settleMinesweeperClock(now);
+  casual.minesweeperPausedAt = now;
+}
+
+function resumeMinesweeperClock(now = Date.now()) {
+  const casual = state.casual;
+  if (state.view !== 'minesweeper' || casual?.kind !== 'minesweeper') return;
+  const pausedAt = casual.minesweeperPausedAt;
+  if (!Number.isFinite(pausedAt)) { casual.minesweeperLastTick = now; return; }
+  const lastTick = Number.isFinite(casual.minesweeperLastTick) ? casual.minesweeperLastTick : pausedAt;
+  casual.minesweeperLastTick = lastTick + Math.max(0, now - pausedAt);
+  casual.minesweeperPausedAt = null;
+}
+
+function updateMinesweeperClock() {
+  const elapsed = settleMinesweeperClock();
+  if (elapsed && state.casual.game.elapsedSeconds % 5 < elapsed) saveMinesweeperGame(state.casual.game);
+}
+
+function settleAndSaveMinesweeper() {
+  settleMinesweeperClock();
+  if (state.view === 'minesweeper' && state.casual?.game) saveMinesweeperGame(state.casual.game);
+}
+
+function focusMinesweeperInteraction(index = state.casual?.focusedCell) {
+  const result = document.querySelector('[data-minesweeper-result]');
+  if (result) { result.focus({ preventScroll:true }); return; }
+  const target = document.querySelector(`[data-minesweeper-cell="${Number.isInteger(index) ? index : 0}"]`);
+  target?.focus({ preventScroll:true });
+  target?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function focusMinesweeperDialog() {
+  const dialog = document.querySelector('[data-minesweeper-confirm-dialog]');
+  const firstControl = dialog?.querySelector('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])');
+  (firstControl || dialog)?.focus({ preventScroll:true });
+}
+
+function focusMinesweeperReturnControl(reference) {
+  let control = null;
+  if (reference === 'new') control = document.querySelector('[data-action="minesweeper-new"]');
+  if (reference?.startsWith('difficulty:')) {
+    const difficulty = reference.slice('difficulty:'.length);
+    control = document.querySelector(`[data-minesweeper-difficulty="${difficulty}"]`);
+  }
+  if (control) control.focus({ preventScroll:true });
+  else focusMinesweeperInteraction();
+}
+
+function trapMinesweeperDialogTab(event) {
+  const dialog = document.querySelector('[data-minesweeper-confirm-dialog]');
+  if (!dialog || event.key !== 'Tab') return false;
+  const controls = [...dialog.querySelectorAll('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])')];
+  if (!controls.length) { event.preventDefault();dialog.focus({ preventScroll:true });return true; }
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!dialog.contains(document.activeElement)) {
+    event.preventDefault();(event.shiftKey ? last : first).focus({ preventScroll:true });
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();last.focus({ preventScroll:true });
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();first.focus({ preventScroll:true });
+  }
+  return true;
+}
+
+function commitMinesweeperGame(next, announcement, focusIndex = state.casual?.focusedCell) {
+  if (state.view !== 'minesweeper' || state.casual?.kind !== 'minesweeper' || !next) return;
+  state.casual.game = next;
+  state.casual.focusedCell = Number.isInteger(focusIndex) ? focusIndex : firstMinesweeperCell(next);
+  state.casual.announcement = announcement;
+  saveMinesweeperGame(next);
+  render();
+  focusMinesweeperInteraction(state.casual.focusedCell);
+}
+
+function performMinesweeperReveal(index) {
+  if (state.view !== 'minesweeper' || state.casual?.confirmAction) return;
+  settleMinesweeperClock();
+  const game = state.casual?.game;
+  if (!game || !['ready','playing'].includes(game.status) || !Number.isInteger(index)) return;
+  state.casual.focusedCell = index;
+  try {
+    const cell = getMinesweeperCell(game, index);
+    const wasReady = game.status === 'ready';
+    const chord = cell.revealed && cell.adjacentMines > 0;
+    const next = chord ? chordMinesweeperCell(game, index) : revealMinesweeperCell(game, index);
+    if (wasReady && next !== game && next.status === 'playing') state.casual.minesweeperLastTick = Date.now();
+    let announcement = '';
+    if (next === game) {
+      announcement = cell.flagged ? '已插旗的格子不能揭开，请先取消旗帜'
+        : cell.revealed ? (cell.adjacentMines ? '周围旗帜数量还未与数字吻合' : '这片空白区域已经展开') : '当前操作没有改变棋盘';
+    } else if (next.status === 'won') announcement = '排雷成功，全部安全格已经揭开';
+    else if (next.status === 'lost') announcement = '踩到地雷，本局结束';
+    else if (wasReady) announcement = '首击安全，已展开起始区域';
+    else if (chord) announcement = `和弦展开了 ${Math.max(0, next.revealedCount - game.revealedCount)} 个安全格`;
+    else announcement = next.revealedCount - game.revealedCount > 1 ? '空白区域已连续展开' : '已揭开这个格子';
+    commitMinesweeperGame(next, announcement, index);
+  } catch (error) {
+    state.casual.announcement = error?.message || '这个格子暂时无法揭开';
+    render();focusMinesweeperInteraction(index);
+  }
+}
+
+function performMinesweeperFlag(index) {
+  if (state.view !== 'minesweeper' || state.casual?.confirmAction) return;
+  settleMinesweeperClock();
+  const game = state.casual?.game;
+  if (!game || !['ready','playing'].includes(game.status) || !Number.isInteger(index)) return;
+  state.casual.focusedCell = index;
+  try {
+    const cell = getMinesweeperCell(game, index);
+    const next = toggleMinesweeperFlag(game, index);
+    const announcement = next === game ? (cell.revealed ? '已经揭开的格子不能插旗' : '当前操作没有改变旗帜')
+      : next.flagCount > game.flagCount ? `已插旗 · 还可标记 ${getMinesweeperRemainingMines(next)} 处` : '已取消旗帜';
+    commitMinesweeperGame(next, announcement, index);
+  } catch (error) {
+    state.casual.announcement = error?.message || '这个格子暂时无法标记';
+    render();focusMinesweeperInteraction(index);
+  }
+}
+
+function minesweeperHasProgress(game) {
+  return ['ready','playing'].includes(game?.status) && (safeLocalCounter(game.moveCount) > 0 || safeLocalCounter(game.flagCount) > 0 || safeLocalCounter(game.elapsedSeconds) > 0);
+}
+
+function cancelMinesweeperLongPress() {
+  if (minesweeperLongPress?.timer) clearTimeout(minesweeperLongPress.timer);
+  minesweeperLongPress = null;
+}
+
 function openSlots() {
   stopGameSync();
   stopRoomSync();
@@ -965,8 +2168,85 @@ function scrollWorldCarousel(direction) {
   strip.scrollBy({left:direction*step,behavior:reduceMotion?'auto':'smooth'});
 }
 
+function updateWorldCarouselStatus(strip = document.querySelector('[data-world-strip]')) {
+  if (!strip) return;
+  const cards=[...strip.querySelectorAll('.game-world')];
+  if (!cards.length) return;
+  const stripLeft=strip.getBoundingClientRect().left;
+  const current=cards.reduce((closest,card,index)=>{
+    const distance=Math.abs(card.getBoundingClientRect().left-stripLeft);
+    return distance<closest.distance?{index,distance}:closest;
+  },{index:0,distance:Number.POSITIVE_INFINITY});
+  const status=document.querySelector('[data-world-status]');
+  const nextText=`${current.index+1} / ${cards.length}`;
+  if(status&&status.textContent!==nextText)status.textContent=nextText;
+}
+
+function scheduleWorldCarouselStatus(strip) {
+  worldCarouselPendingStrip=strip;
+  if(worldCarouselStatusFramePending)return;
+  worldCarouselStatusFramePending=true;
+  const update=()=>{
+    worldCarouselStatusFramePending=false;
+    const pendingStrip=worldCarouselPendingStrip;
+    worldCarouselPendingStrip=null;
+    updateWorldCarouselStatus(pendingStrip);
+  };
+  if(typeof globalThis.requestAnimationFrame==='function')globalThis.requestAnimationFrame(update);
+  else globalThis.setTimeout?.(update,16);
+}
+
+function jumpToLobbyTarget(target) {
+  const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if(target==='friends'){
+    const tools=document.querySelector('#lobby-tools');
+    tools?.scrollIntoView({block:'start',behavior:reduceMotion?'auto':'smooth'});
+    globalThis.setTimeout?.(()=>document.querySelector('#room-code')?.focus({preventScroll:true}),reduceMotion?0:420);
+    return;
+  }
+  const allowed=new Set(['ddz','xiangqi','mahjong','1048','sudoku6','minesweeper','three','reels']);
+  if(!allowed.has(target))return;
+  const strip=document.querySelector('[data-world-strip]');
+  const card=strip?.querySelector(`[data-world-id="${target}"]`);
+  if(!strip||!card)return;
+  const left=card.offsetLeft-strip.offsetLeft;
+  card.scrollIntoView({block:'center',inline:'nearest',behavior:reduceMotion?'auto':'smooth'});
+  strip.scrollTo({left,behavior:reduceMotion?'auto':'smooth'});
+  card.classList.add('is-highlighted');
+  globalThis.setTimeout?.(()=>{
+    card.classList.remove('is-highlighted');
+    card.querySelector('button')?.focus({preventScroll:true});
+    scheduleWorldCarouselStatus(strip);
+  },reduceMotion?0:420);
+}
+
 app.addEventListener('click', e => {
-  const el=e.target.closest('button'); if(!el)return;
+  const el=e.target.closest('button');
+  if(!el){
+    const worldCard=e.target.closest?.('[data-world-card]');
+    if(worldCard)worldCard.querySelector('button[data-action]')?.click();
+    return;
+  }
+  if(state.view==='xiangqi'&&(state.casual?.showRules||state.casual?.confirmAction)&&!el.closest('[data-xiangqi-rules-dialog], [data-xiangqi-confirm-dialog]'))return;
+  if(state.view==='minesweeper'&&state.casual?.confirmAction&&!el.closest('[data-minesweeper-confirm-dialog]'))return;
+  if(el.dataset.xiangqiCell!==undefined){
+    selectXiangqiCell(Number(el.dataset.xiangqiCell));
+    return;
+  }
+  if(el.dataset.minesweeperCell!==undefined){
+    const index=Number(el.dataset.minesweeperCell);
+    if(minesweeperSuppressedClick?.index===index&&Date.now()<minesweeperSuppressedClick.until){minesweeperSuppressedClick=null;return;}
+    minesweeperSuppressedClick=null;
+    if(state.view!=='minesweeper'||!state.casual?.game)return;
+    if(state.casual.inputMode==='flag')performMinesweeperFlag(index);else performMinesweeperReveal(index);
+    return;
+  }
+  if(el.dataset.sudoku6Cell!==undefined){
+    if(state.view!=='sudoku6'||!state.casual?.game)return;
+    state.casual.selectedCell=Number(el.dataset.sudoku6Cell);
+    state.casual.announcement=state.casual.game.puzzle[state.casual.selectedCell]?'已选中题目给定数字':'已选中可填写格';
+    render();focusSudoku6Interaction();return;
+  }
   if(el.dataset.card){
     const id=el.dataset.card;
     const previousScroll=el.closest('.hand')?.scrollLeft || 0;
@@ -1003,16 +2283,23 @@ app.addEventListener('click', e => {
   if(a==='hero-select'){switchHero(el.dataset.heroGame,el.dataset.heroGame==='ddz'?'previous':'next');return;}
   if(a==='world-prev'){scrollWorldCarousel(-1);return;}
   if(a==='world-next'){scrollWorldCarousel(1);return;}
+  if(a==='jump-world'){jumpToLobbyTarget(el.dataset.worldTarget);return;}
   if(a==='clear-selection'){state.selected.clear();render();return;}
   if(a==='quick') act(startQuickGame);
   if(a==='open-three'){openThreeCard();render();}
   if(a==='open-mahjong'){openMahjong();render();globalThis.scrollTo?.(0,0);}
+  if(a==='open-xiangqi'){openXiangqi();render();globalThis.scrollTo?.(0,0);focusXiangqiInteraction();queueXiangqiAiTurn();}
   if(a==='open-1048'){open1048();render();globalThis.scrollTo?.(0,0);focus1048Interaction();}
+  if(a==='open-sudoku6'){openSudoku6();render();globalThis.scrollTo?.(0,0);focusSudoku6Interaction();}
+  if(a==='open-minesweeper'){openMinesweeper();render();globalThis.scrollTo?.(0,0);focusMinesweeperInteraction();}
   if(a==='open-slots'){openSlots();render();}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
       stopMahjongBotSequence();state.casual.confirmAction='home';render();return;
     }
+    if(state.view==='xiangqi'){settleXiangqiClock();saveXiangqiSession();}
+    if(state.view==='sudoku6')settleAndSaveSudoku6();
+    if(state.view==='minesweeper')settleAndSaveMinesweeper();
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
   if(a==='three-new'){stopCasualTimers();state.casual={kind:'three',round:newThreeCardRound(),revealed:false,thinking:false};render();}
@@ -1041,6 +2328,52 @@ app.addEventListener('click', e => {
     if(!game||!tileId||game.phase!=='playing'||game.currentSeat!==0)return;
     try{state.casual.game=playMahjongDiscard(game,tileId,{advanceBots:false});state.casual.selectedTileId=null;}catch(error){toast(error.message);}render();queueMahjongBotTurn();return;
   }
+  if(a==='xiangqi-tutorial-skip'){
+    finishXiangqiTutorial();state.casual.announcement='首局引导已跳过';render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-tutorial-done'){
+    finishXiangqiTutorial();state.casual.announcement='首局引导完成';render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-rules'&&state.view==='xiangqi'){
+    if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;
+    state.casual.aiThinking=false;settleXiangqiClock();state.casual.xiangqiLastTick=Date.now();state.casual.dialogReturnFocus='rules';state.casual.showRules=true;render();focusXiangqiDialog();return;
+  }
+  if(a==='xiangqi-close-rules'&&state.view==='xiangqi'){
+    const returnFocus=state.casual.dialogReturnFocus;state.casual.showRules=false;state.casual.dialogReturnFocus=null;state.casual.xiangqiLastTick=Date.now();state.casual.announcement='已返回棋局';render();focusXiangqiReturnControl(returnFocus);queueXiangqiAiTurn();return;
+  }
+  if(a==='xiangqi-undo'&&state.view==='xiangqi'){
+    const casual=state.casual;const game=casual?.game;if(!game)return;
+    if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;casual.aiThinking=false;settleXiangqiClock();
+    try{
+      const next=undoXiangqiToHumanTurn(game);
+      if((next.history?.length||0)===(game.history?.length||0)){toast('还没有可以撤销的回合');render();focusXiangqiInteraction();return;}
+      casual.game=next;casual.selectedCell=null;casual.focusedCell=preferredXiangqiFocus(next, xiangqiMoveTo(next.lastMove));casual.undoCount=safeLocalCounter(casual.undoCount)+1;casual.announcement='已悔一回合 · 轮到你';casual.xiangqiLastTick=Date.now();saveXiangqiSession(casual);render();focusXiangqiInteraction();
+    }catch(error){casual.announcement=error?.message||'当前不能悔棋';render();toast(casual.announcement);}
+    return;
+  }
+  if(a==='xiangqi-new'&&state.view==='xiangqi'){
+    const game=state.casual?.game;if(!game)return;
+    if(game.status==='playing'&&(Number(game.moveCount)>0||game.history?.length)){
+      if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;state.casual.aiThinking=false;settleXiangqiClock();state.casual.xiangqiLastTick=Date.now();state.casual.dialogReturnFocus='new';state.casual.confirmAction='new';render();focusXiangqiDialog();return;
+    }
+    newXiangqiSession(game.difficulty);render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-difficulty'&&state.view==='xiangqi'){
+    const difficulty=el.dataset.xiangqiDifficulty;const game=state.casual?.game;
+    if(!game||!['beginner','standard','challenge'].includes(difficulty))return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个难度';render();document.querySelector(`[data-xiangqi-difficulty="${difficulty}"]`)?.focus({preventScroll:true});return;}
+    if(game.status==='playing'&&(Number(game.moveCount)>0||game.history?.length)){
+      if(xiangqiAiTimer)clearTimeout(xiangqiAiTimer);xiangqiAiTimer=null;state.casual.aiThinking=false;settleXiangqiClock();state.casual.xiangqiLastTick=Date.now();state.casual.dialogReturnFocus=`difficulty:${difficulty}`;state.casual.confirmAction='difficulty';state.casual.pendingDifficulty=difficulty;render();focusXiangqiDialog();return;
+    }
+    newXiangqiSession(difficulty);render();focusXiangqiInteraction();return;
+  }
+  if(a==='xiangqi-cancel-confirm'&&state.view==='xiangqi'){
+    const returnFocus=state.casual.dialogReturnFocus;state.casual.confirmAction=null;state.casual.pendingDifficulty=null;state.casual.dialogReturnFocus=null;state.casual.xiangqiLastTick=Date.now();state.casual.announcement='继续当前棋局';render();focusXiangqiReturnControl(returnFocus);queueXiangqiAiTurn();return;
+  }
+  if(a==='xiangqi-confirm'&&state.view==='xiangqi'){
+    const difficulty=state.casual.confirmAction==='difficulty'?state.casual.pendingDifficulty:state.casual.game.difficulty;
+    newXiangqiSession(difficulty||'beginner');render();focusXiangqiInteraction();return;
+  }
   if(a==='1048-move'){perform1048Move(el.dataset.mergeDirection);return;}
   if(a==='1048-new'){const game=new1048Game();state.casual={kind:'1048',game};save1048Game(game);state.view='1048';render();focus1048Interaction();return;}
   if(a==='1048-continue'){
@@ -1049,6 +2382,85 @@ app.addEventListener('click', e => {
       state.casual.game={...game,status:canMove1048(game.board)?'playing':'over',continued:true};save1048Game(state.casual.game);render();focus1048Interaction();
     }
     return;
+  }
+  if(a==='sudoku6-value'){performSudoku6Value(Number(el.dataset.sudoku6Value));return;}
+  if(a==='sudoku6-clear'){performSudoku6Value(0);return;}
+  if(a==='sudoku6-notes'&&state.view==='sudoku6'){
+    state.casual.noteMode=!state.casual.noteMode;
+    state.casual.announcement=state.casual.noteMode?'已开启笔记模式':'已返回填数模式';
+    render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-undo'&&state.view==='sudoku6'){
+    const game=state.casual?.game;if(!game)return;
+    settleSudoku6Clock();
+    const next=undoSudoku6(game);
+    if(next.undoStack.length===game.undoStack.length)return;
+    commitSudoku6Game(next,'已撤销上一步');return;
+  }
+  if(a==='sudoku6-hint'&&state.view==='sudoku6'){
+    const game=state.casual?.game;if(!game)return;
+    settleSudoku6Clock();
+    const next=hintSudoku6(game,state.casual.selectedCell);
+    if(next.hintsUsed===game.hintsUsed){toast('本局的 3 次提示已用完');return;}
+    const hintedIndex=next.values.findIndex((value,index)=>value!==game.values[index]);
+    if(hintedIndex>=0)state.casual.selectedCell=hintedIndex;
+    commitSudoku6Game(next,next.status==='completed'?'数独完成':'已为当前格填入一个提示');return;
+  }
+  if(a==='sudoku6-new'&&state.view==='sudoku6'){
+    const current=state.casual?.game;if(!current)return;
+    settleAndSaveSudoku6();
+    if(!confirmSudoku6Replacement(current,'当前进度尚未完成，确定重新开题吗？'))return;
+    const game=newSudoku6Game({mode:current.mode,difficulty:current.mode==='daily'?'medium':current.difficulty,date:current.date||localDateKey()});
+    startSudoku6Session(game,'新题已准备好');render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-difficulty'&&state.view==='sudoku6'){
+    const difficulty=el.dataset.sudoku6Difficulty;
+    const current=state.casual?.game;if(!current)return;
+    settleAndSaveSudoku6();
+    if(current.mode==='practice'&&difficulty===current.difficulty){state.casual.announcement='当前已是这个难度';render();focusSudoku6Interaction();return;}
+    if(!confirmSudoku6Replacement(current,'切换难度会开始新题，确定继续吗？'))return;
+    const game=newSudoku6Game({mode:'practice',difficulty});
+    startSudoku6Session(game,`已切换为${SUDOKU6_DIFFICULTIES[game.difficulty].label}难度`);render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-daily'&&state.view==='sudoku6'){
+    settleAndSaveSudoku6();
+    const game=loadSavedSudoku6Game('daily')||newSudoku6Game({mode:'daily',difficulty:'medium',date:localDateKey()});
+    startSudoku6Session(game,'已进入今日挑战');render();focusSudoku6Interaction();return;
+  }
+  if(a==='sudoku6-practice'&&state.view==='sudoku6'){
+    settleAndSaveSudoku6();
+    const fallbackDifficulty=state.casual?.game?.difficulty||'medium';
+    const game=loadSavedSudoku6Game('practice')||newSudoku6Game({mode:'practice',difficulty:fallbackDifficulty});
+    startSudoku6Session(game,'已进入自由练习');render();focusSudoku6Interaction();return;
+  }
+  if(a==='minesweeper-mode'&&state.view==='minesweeper'){
+    const mode=el.dataset.minesweeperMode==='flag'?'flag':'reveal';
+    state.casual.inputMode=mode;state.casual.announcement=mode==='flag'?'已切换到插旗模式 · 点击未揭格标记':'已切换到揭开模式';render();focusMinesweeperInteraction();return;
+  }
+  if(a==='minesweeper-new'&&state.view==='minesweeper'){
+    const game=state.casual?.game;if(!game)return;
+    settleMinesweeperClock();
+    if(minesweeperHasProgress(state.casual.game)){
+      pauseMinesweeperClock();state.casual.confirmAction='new';state.casual.dialogReturnFocus='new';render();focusMinesweeperDialog();return;
+    }
+    newMinesweeperSession(game.difficulty);render();focusMinesweeperInteraction();return;
+  }
+  if(a==='minesweeper-difficulty'&&state.view==='minesweeper'){
+    const difficulty=el.dataset.minesweeperDifficulty;const game=state.casual?.game;
+    if(!game||!Object.hasOwn(MINESWEEPER_DIFFICULTIES,difficulty))return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个难度';render();document.querySelector(`[data-minesweeper-difficulty="${difficulty}"]`)?.focus({preventScroll:true});return;}
+    settleMinesweeperClock();
+    if(minesweeperHasProgress(state.casual.game)){
+      pauseMinesweeperClock();state.casual.confirmAction='difficulty';state.casual.pendingDifficulty=difficulty;state.casual.dialogReturnFocus=`difficulty:${difficulty}`;render();focusMinesweeperDialog();return;
+    }
+    newMinesweeperSession(difficulty);render();focusMinesweeperInteraction();return;
+  }
+  if(a==='minesweeper-cancel-confirm'&&state.view==='minesweeper'){
+    const returnFocus=state.casual.dialogReturnFocus;state.casual.confirmAction=null;state.casual.pendingDifficulty=null;state.casual.dialogReturnFocus=null;resumeMinesweeperClock();state.casual.announcement='继续当前雷区';render();focusMinesweeperReturnControl(returnFocus);return;
+  }
+  if(a==='minesweeper-confirm'&&state.view==='minesweeper'){
+    const difficulty=state.casual.confirmAction==='difficulty'?state.casual.pendingDifficulty:state.casual.game.difficulty;
+    newMinesweeperSession(difficulty);render();focusMinesweeperInteraction();return;
   }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     const casual=state.casual;
@@ -1085,7 +2497,6 @@ app.addEventListener('click', e => {
   if(a==='confirm-exit') act(async()=>{const current=state.game;const r=await api(`/v1/games/${current.id}/abandon`,{method:'POST',body:'{}'});stopGameSync();acceptGame(r.game,r.profile);state.exitConfirm=false;state.view='game';});
   if(a?.startsWith('preview-')) {
     const messages = {
-      'preview-xiangqi':'KAI 象棋正在设计中，当前页面只展示产品方向。',
       'preview-three':'三张竞技尚未开放，不包含现金下注或可提现筹码。',
       'preview-ai':'AI 挑战场即将开放，当前不会产生任何费用。',
       'preview-cloudpay':'该服务即将接入 CloudPay，目前没有支付或扣除卡时。'
@@ -1094,7 +2505,33 @@ app.addEventListener('click', e => {
   }
 });
 
+app.addEventListener('scroll', (event) => {
+  if (event.target?.matches?.('[data-world-strip]')) scheduleWorldCarouselStatus(event.target);
+}, true);
+
+app.addEventListener('contextmenu', (event) => {
+  const cell = event.target.closest?.('[data-minesweeper-cell]');
+  if (!cell || state.view !== 'minesweeper') return;
+  event.preventDefault();
+  const index = Number(cell.dataset.minesweeperCell);
+  if (minesweeperSuppressedClick?.index === index && Date.now() < minesweeperSuppressedClick.until) return;
+  performMinesweeperFlag(index);
+});
+
 app.addEventListener('pointerdown', (event) => {
+  const minesweeperCellNode = event.target.closest?.('[data-minesweeper-cell]');
+  if (minesweeperCellNode && state.view === 'minesweeper' && ['touch','pen'].includes(event.pointerType) && event.isPrimary) {
+    cancelMinesweeperLongPress();
+    const index = Number(minesweeperCellNode.dataset.minesweeperCell);
+    const casual = state.casual;
+    const timer = setTimeout(() => {
+      if (state.view !== 'minesweeper' || state.casual !== casual || state.casual?.confirmAction) return;
+      minesweeperSuppressedClick = { index, until:Date.now() + 900 };
+      minesweeperLongPress = null;
+      performMinesweeperFlag(index);
+    }, 520);
+    minesweeperLongPress = { pointerId:event.pointerId, index, x:event.clientX, y:event.clientY, timer };
+  }
   const mergeBoard = event.target.closest?.('[data-1048-board]');
   if (mergeBoard && state.view === '1048') {
     merge1048Pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -1107,7 +2544,15 @@ app.addEventListener('pointerdown', (event) => {
   carousel.setPointerCapture?.(event.pointerId);
 });
 
+app.addEventListener('pointermove', (event) => {
+  if (!minesweeperLongPress || minesweeperLongPress.pointerId !== event.pointerId) return;
+  const deltaX = event.clientX - minesweeperLongPress.x;
+  const deltaY = event.clientY - minesweeperLongPress.y;
+  if (Math.hypot(deltaX, deltaY) > 10) cancelMinesweeperLongPress();
+});
+
 app.addEventListener('pointerup', (event) => {
+  if (minesweeperLongPress?.pointerId === event.pointerId) cancelMinesweeperLongPress();
   if (merge1048Pointer && merge1048Pointer.id === event.pointerId) {
     const deltaX = event.clientX - merge1048Pointer.x;
     const deltaY = event.clientY - merge1048Pointer.y;
@@ -1126,9 +2571,149 @@ app.addEventListener('pointerup', (event) => {
   switchHero(nextGame, deltaX < 0 ? 'next' : 'previous');
 });
 
-app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; });
+app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
+  const minesweeperModalOpen = state.view === 'minesweeper' && state.casual?.confirmAction;
+  if (minesweeperModalOpen && event.key === 'Tab') {
+    trapMinesweeperDialogTab(event);
+    return;
+  }
+  if (minesweeperModalOpen && event.key === 'Escape') {
+    event.preventDefault();
+    const returnFocus = state.casual.dialogReturnFocus;
+    state.casual.confirmAction = null;
+    state.casual.pendingDifficulty = null;
+    state.casual.dialogReturnFocus = null;
+    resumeMinesweeperClock();
+    state.casual.announcement = '继续当前雷区';
+    render();focusMinesweeperReturnControl(returnFocus);
+    return;
+  }
+  if (minesweeperModalOpen && !event.target.closest?.('[data-minesweeper-confirm-dialog]')) {
+    event.preventDefault();focusMinesweeperDialog();return;
+  }
+  const xiangqiModalOpen = state.view === 'xiangqi' && (state.casual?.showRules || state.casual?.confirmAction);
+  if (xiangqiModalOpen && event.key === 'Tab') {
+    trapXiangqiDialogTab(event);
+    return;
+  }
+  if (xiangqiModalOpen && event.key === 'Escape') {
+    event.preventDefault();
+    const returnFocus = state.casual.dialogReturnFocus;
+    if (state.casual.showRules) state.casual.showRules = false;
+    state.casual.confirmAction = null;
+    state.casual.pendingDifficulty = null;
+    state.casual.dialogReturnFocus = null;
+    state.casual.xiangqiLastTick = Date.now();
+    state.casual.announcement = '继续当前棋局';
+    render();focusXiangqiReturnControl(returnFocus);queueXiangqiAiTurn();
+    return;
+  }
+  if (xiangqiModalOpen && !event.target.closest?.('[data-xiangqi-rules-dialog], [data-xiangqi-confirm-dialog]')) {
+    event.preventDefault();
+    focusXiangqiDialog();
+    return;
+  }
+  const xiangqiCellNode = event.target.closest?.('[data-xiangqi-cell]');
+  if (state.view === 'xiangqi' && xiangqiCellNode) {
+    const index = Number(xiangqiCellNode.dataset.xiangqiCell);
+    state.casual.focusedCell = index;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      document.querySelector('[data-action="xiangqi-undo"]')?.click();
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectXiangqiCell(index);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      state.casual.selectedCell = null;
+      state.casual.announcement = '已取消选择';
+      render();focusXiangqiInteraction(index);
+      return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const row = Math.floor(index / 9);
+      const column = index % 9;
+      const nextRow = event.key === 'ArrowUp' ? Math.max(0, row - 1) : event.key === 'ArrowDown' ? Math.min(9, row + 1) : row;
+      const nextColumn = event.key === 'ArrowLeft' ? Math.max(0, column - 1) : event.key === 'ArrowRight' ? Math.min(8, column + 1) : column;
+      const nextIndex = nextRow * 9 + nextColumn;
+      state.casual.focusedCell = nextIndex;
+      state.casual.announcement = `已移到第 ${nextRow + 1} 行第 ${nextColumn + 1} 列`;
+      render();focusXiangqiInteraction(nextIndex);
+      return;
+    }
+  }
+  const minesweeperCellNode = event.target.closest?.('[data-minesweeper-cell]');
+  if (state.view === 'minesweeper' && minesweeperCellNode) {
+    const index = Number(minesweeperCellNode.dataset.minesweeperCell);
+    state.casual.focusedCell = index;
+    if (event.key === 'f' || event.key === 'F') {
+      event.preventDefault();performMinesweeperFlag(index);return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();performMinesweeperReveal(index);return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();state.casual.inputMode='reveal';state.casual.announcement='已返回揭开模式';render();focusMinesweeperInteraction(index);return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const game=state.casual.game;const row=Math.floor(index/game.columns);const column=index%game.columns;
+      const nextRow=event.key==='ArrowUp'?Math.max(0,row-1):event.key==='ArrowDown'?Math.min(game.rows-1,row+1):row;
+      const nextColumn=event.key==='ArrowLeft'?Math.max(0,column-1):event.key==='ArrowRight'?Math.min(game.columns-1,column+1):column;
+      const nextIndex=nextRow*game.columns+nextColumn;
+      state.casual.focusedCell=nextIndex;state.casual.announcement=`已移到第 ${nextRow+1} 行第 ${nextColumn+1} 列`;render();focusMinesweeperInteraction(nextIndex);return;
+    }
+  }
+  const sudokuCell = event.target.closest?.('[data-sudoku6-cell]');
+  if (state.view === 'sudoku6' && sudokuCell) {
+    const index = Number(sudokuCell.dataset.sudoku6Cell);
+    state.casual.selectedCell = index;
+    if (/^[1-6]$/.test(event.key)) {
+      event.preventDefault();
+      performSudoku6Value(Number(event.key));
+      return;
+    }
+    if (['0', 'Backspace', 'Delete'].includes(event.key)) {
+      event.preventDefault();
+      performSudoku6Value(0);
+      return;
+    }
+    if (event.key === 'n' || event.key === 'N') {
+      event.preventDefault();
+      state.casual.noteMode = !state.casual.noteMode;
+      state.casual.announcement = state.casual.noteMode ? '已开启笔记模式' : '已返回填数模式';
+      render();
+      focusSudoku6Interaction();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      const game = state.casual.game;
+      settleSudoku6Clock();
+      const next = undoSudoku6(game);
+      if (next.undoStack.length !== game.undoStack.length) commitSudoku6Game(next, '已撤销上一步');
+      return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const row = Math.floor(index / 6);
+      const column = index % 6;
+      const nextRow = event.key === 'ArrowUp' ? Math.max(0, row - 1) : event.key === 'ArrowDown' ? Math.min(5, row + 1) : row;
+      const nextColumn = event.key === 'ArrowLeft' ? Math.max(0, column - 1) : event.key === 'ArrowRight' ? Math.min(5, column + 1) : column;
+      state.casual.selectedCell = nextRow * 6 + nextColumn;
+      state.casual.announcement = `已移到第 ${nextRow + 1} 行第 ${nextColumn + 1} 列`;
+      render();
+      focusSudoku6Interaction();
+      return;
+    }
+  }
   if (state.view === '1048' && event.target.closest?.('[data-1048-board]')) {
     const direction = ({ ArrowLeft:'left', a:'left', A:'left', ArrowRight:'right', d:'right', D:'right', ArrowUp:'up', w:'up', W:'up', ArrowDown:'down', s:'down', S:'down' })[event.key];
     if (direction) {
@@ -1153,4 +2738,48 @@ app.addEventListener('keydown', (event) => {
 bootstrap();
 setInterval(() => {
   updateTurnClock();
+  updateSudoku6Clock();
+  updateXiangqiClock();
+  updateMinesweeperClock();
 }, 1000);
+
+document.addEventListener('visibilitychange', () => {
+  if (!state.casual?.game) return;
+  if (state.view === 'xiangqi') {
+    if (document.visibilityState === 'hidden') {
+      settleXiangqiClock();
+      saveXiangqiSession();
+      return;
+    }
+    state.casual.xiangqiLastTick = Date.now();
+  }
+  if (state.view === 'sudoku6') {
+    if (document.visibilityState === 'hidden') {
+      settleAndSaveSudoku6();
+      return;
+    }
+    state.casual.sudokuLastTick = Date.now();
+  }
+  if (state.view === 'minesweeper') {
+    if (document.visibilityState === 'hidden') {
+      pauseMinesweeperClock();
+      if (state.casual?.game) saveMinesweeperGame(state.casual.game);
+      return;
+    }
+    if (!state.casual.confirmAction) resumeMinesweeperClock();
+  }
+});
+
+globalThis.addEventListener?.('storage', (event) => {
+  if ((event.key !== MINESWEEPER_SAVE_KEY && event.key !== null)
+    || state.view !== 'minesweeper'
+    || state.casual?.kind !== 'minesweeper'
+    || typeof state.casual.minesweeperPersistedSnapshot !== 'string'
+    || event.newValue === state.casual.minesweeperPersistedSnapshot) return;
+  state.casual.saveAvailable = false;
+  state.casual.saveConflict = true;
+  state.casual.announcement = '另一个标签页已更新这局，本页已停止写入';
+  render();
+  if (state.casual.confirmAction) focusMinesweeperDialog();
+  else focusMinesweeperInteraction();
+});

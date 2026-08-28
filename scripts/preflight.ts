@@ -31,7 +31,7 @@ for (const required of [
   'docs/DEPLOYMENT.md', 'docs/ENGINEERING_QUALITY.md', '.github/workflows/ci.yml',
   'mobile/package-lock.json', 'server/data/.gitignore', 'Dockerfile', 'docker-compose.yml', '.env.example',
   'scripts/benchmark-web.mjs',
-  'web/index.html', 'web/app.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
+  'web/index.html', 'web/app.js', 'web/sudoku6.js', 'web/xiangqi.js', 'web/minesweeper.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
 ]) assert.equal((await stat(resolve(root, required))).isFile(), true, `Required artifact missing: ${required}`);
 
 const engine = await read('core/engine.ts');
@@ -56,6 +56,12 @@ assert.match(compose, /DOUJOY_WEB_UPSTREAM_TIMEOUT_MS:\s*"\$\{DOUJOY_WEB_UPSTREA
 assert.match(compose, /DOUJOY_WEB_TRUST_PROXY:\s*"\$\{DOUJOY_WEB_TRUST_PROXY:-false\}"/, 'Web upstream trust must remain explicit and fail closed');
 const webDocker = await read('web/Dockerfile');
 assert.match(webDocker, /COPY web\/assets \.\/assets/, 'The Web production image must include all local visual assets');
+assert.match(webDocker, /web\/sudoku6\.js/, 'The Web production image must include the standalone Sudoku engine');
+assert.match(webDocker, /web\/xiangqi\.js/, 'The Web production image must include the standalone Xiangqi engine');
+assert.match(webDocker, /web\/minesweeper\.js/, 'The Web production image must include the standalone Minesweeper engine');
+const webApp = await read('web/app.js');
+assert.match(webApp, /from ['"]\.\/xiangqi\.js['"]/, 'The Web application must load the standalone Xiangqi engine');
+assert.match(webApp, /from ['"]\.\/minesweeper\.js['"]/, 'The Web application must load the standalone Minesweeper engine');
 const webServer = await read('web/serve.mjs');
 assert.match(webServer, /\.jpg':'image\/jpeg'/, 'JPEG table materials need the correct MIME type');
 assert.match(webServer, /createBrotliCompress/, 'Text assets must support Brotli transfer compression');
@@ -74,6 +80,8 @@ assert.match(ci, /docker compose build/, 'CI must build both configured containe
 assert.match(ci, /docker compose up --detach --no-build --wait/, 'CI must start and health-check the built stack');
 assert.match(ci, /127\.0\.0\.1:8081\/api\/health/, 'CI must smoke the complete Web-to-server proxy path');
 const rootPackage = JSON.parse(await read('package.json')) as { scripts: Record<string, string> };
+assert.match(rootPackage.scripts.build ?? '', /node --check web\/xiangqi\.js/, 'The build must syntax-check the Xiangqi engine');
+assert.match(rootPackage.scripts.build ?? '', /node --check web\/minesweeper\.js/, 'The build must syntax-check the Minesweeper engine');
 assert.match(rootPackage.scripts['test:coverage'] ?? '', /--test-coverage-lines=90/, 'Line coverage must have a release threshold');
 assert.match(rootPackage.scripts['test:coverage'] ?? '', /--test-coverage-branches=80/, 'Branch coverage must have a release threshold');
 assert.match(rootPackage.scripts.verify ?? '', /test:coverage/, 'The complete quality gate must enforce coverage thresholds');
@@ -81,7 +89,22 @@ assert.match(rootPackage.scripts.verify ?? '', /test:coverage/, 'The complete qu
 for (const asset of [
   'web/assets/kai-card-back.svg', 'web/assets/kai-court-j.svg', 'web/assets/kai-court-q.svg',
   'web/assets/kai-court-k.svg', 'web/assets/kai-joker-court.svg', 'web/assets/kai-bamboo-bird.svg',
+  'web/assets/kai-card-stock-6912c163.jpg',
   'web/assets/kai-felt-v5.jpg', 'web/assets/kai-leather-v5.jpg',
+  'web/assets/cards/kai-court-j-club-3152a7a5.svg',
+  'web/assets/cards/kai-court-j-diamond-1227624f.svg',
+  'web/assets/cards/kai-court-j-heart-59743a5f.svg',
+  'web/assets/cards/kai-court-j-spade-ef29a894.svg',
+  'web/assets/cards/kai-court-q-club-023d6c89.svg',
+  'web/assets/cards/kai-court-q-diamond-ff4c35ab.svg',
+  'web/assets/cards/kai-court-q-heart-b9086e1d.svg',
+  'web/assets/cards/kai-court-q-spade-6b8434bc.svg',
+  'web/assets/cards/kai-court-k-club-d3bbb664.svg',
+  'web/assets/cards/kai-court-k-diamond-d17bb7e9.svg',
+  'web/assets/cards/kai-court-k-heart-5cece963.svg',
+  'web/assets/cards/kai-court-k-spade-18b4c6ab.svg',
+  'web/assets/cards/kai-joker-big-65f2baa2.svg',
+  'web/assets/cards/kai-joker-small-3761b22b.svg',
 ]) assert.equal((await stat(resolve(root, asset))).isFile(), true, `Production Web asset missing: ${asset}`);
 
 console.log('KAI Play release preflight passed: SDK 57, package identity, play-only boundary, fairness, assets, proxy, and required docs.');

@@ -19,7 +19,7 @@
       <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#020b10" flood-opacity=".42"/>
     </filter>
   </defs>
-  <rect x="2" y="2" width="176" height="256" rx="16" fill="url(#base)" stroke="#f1eadc" stroke-width="4"/>
+  <rect width="180" height="260" rx="9" fill="url(#base)"/>
   <rect x="10" y="10" width="160" height="240" rx="11" fill="url(#kai-pattern)" stroke="#d7b36a" stroke-opacity=".72"/>
   <rect x="17" y="17" width="146" height="226" rx="8" fill="none" stroke="#ecf2e8" stroke-opacity=".24"/>
   <path d="M29 34h18M38 25v18M133 34h18M142 25v18M29 226h18M38 217v18M133 226h18M142 217v18" stroke="#d7b36a" stroke-width="1.5" stroke-linecap="round" opacity=".78"/>
