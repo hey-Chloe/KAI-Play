@@ -36,11 +36,23 @@ function assertPixelDeclarationAtLeast(source: string, selector: string, propert
   assert.ok(Number(match[1]) >= minimum, `${selector} ${property} must be at least ${minimum}px`);
 }
 
-function renderLobbyWithSaves({ minesweeper = null, sudoku6 = null, merge1048 = null, xiangqi = null, last = null }: {
+function renderLobbyWithSaves({
+  minesweeper = null,
+  sudoku6 = null,
+  merge1048 = null,
+  xiangqi = null,
+  gomoku = null,
+  memory = null,
+  snake = null,
+  last = null,
+}: {
   minesweeper?: Record<string, unknown> | null;
   sudoku6?: Record<string, unknown> | null;
   merge1048?: Record<string, unknown> | null;
   xiangqi?: Record<string, unknown> | null;
+  gomoku?: Record<string, unknown> | null;
+  memory?: Record<string, unknown> | null;
+  snake?: Record<string, unknown> | null;
   last?: string | null;
 } = {}) {
   return runInNewContext(`(${lobby})()`, {
@@ -51,9 +63,27 @@ function renderLobbyWithSaves({ minesweeper = null, sudoku6 = null, merge1048 = 
     loadSavedSudoku6Game: () => sudoku6,
     loadSaved1048Game: () => merge1048,
     loadSavedXiangqiSession: () => xiangqi,
+    loadGomokuGame: () => gomoku,
+    loadMemoryMatchSession: () => memory || {
+      restored:false,
+      game:null,
+      bestScores:{},
+      saveAvailable:true,
+    },
+    loadSavedSnakeGame: () => snake,
     MINESWEEPER_DIFFICULTIES: { beginner:{ label:'入门' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
     SUDOKU6_DIFFICULTIES: { easy:{ label:'入门' }, medium:{ label:'标准' }, hard:{ label:'挑战' } },
     XIANGQI_DIFFICULTIES: { beginner:{ label:'初学' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
+    MEMORY_MATCH_DIFFICULTIES: {
+      easy:{ label:'轻松', rows:3, columns:4 },
+      medium:{ label:'标准', rows:4, columns:4 },
+      hard:{ label:'挑战', rows:4, columns:6 },
+    },
+    SNAKE_DIFFICULTIES: {
+      relaxed:{ label:'舒缓', tickMs:220 },
+      normal:{ label:'标准', tickMs:150 },
+      swift:{ label:'疾速', tickMs:95 },
+    },
     tableFrame: () => '',
     mahjongTone: () => '',
     mahjongMark: () => '',
@@ -87,11 +117,15 @@ test('game discovery leads while room and record tools remain available later', 
 test('continuation uses real local state and has an honest first-time fallback', () => {
   for (const loader of [
     'loadSavedMinesweeperGame', 'loadSavedSudoku6Game', 'loadSaved1048Game', 'loadSavedXiangqiSession',
+    'loadGomokuGame', 'loadMemoryMatchSession', 'loadSavedSnakeGame',
   ]) assert.match(lobby, new RegExp(loader));
   assert.match(lobby, /revealedCount/);
   assert.match(lobby, /已填 \$\{completed\}\/\$\{blanks\} 格/);
   assert.match(lobby, /最高方块 \$\{saved1048\.bestTile\}/);
   assert.match(lobby, /已走 \$\{savedXiangqi\.game\.moveCount\} 手/);
+  assert.match(lobby, /已落 \$\{savedGomoku\.moveCount\} 手/);
+  assert.match(lobby, /已配对 \$\{savedMemory\.matchedPairs\}\/\$\{savedMemory\.pairCount\}/);
+  assert.match(lobby, /得分 \$\{savedSnake\.score\}/);
   assert.match(lobby, /新手推荐/);
   assert.match(lobby, /首击必安全/);
   assert.match(lobby, /role="progressbar"/);
@@ -104,6 +138,12 @@ test('continuation prefers the most recently opened game but only while it can r
   const playingSudoku = { status:'playing', puzzle:Array(36).fill(0), values:sudokuValues, difficulty:'medium' };
   const playing1048 = { status:'playing', bestTile:64, moves:18 };
   const playingXiangqi = { game:{ status:'playing', difficulty:'standard', moveCount:9 } };
+  const playingGomoku = { status:'playing', moveCount:7 };
+  const playingMemory = {
+    restored:true,
+    game:{ status:'playing', difficulty:'easy', moveCount:4, faceUp:[], matchedPairs:2, pairCount:6 },
+  };
+  const playingSnake = { status:'paused', difficulty:'normal', ticks:24, score:30, snake:[1, 2, 3, 4, 5] };
 
   const recentXiangqi = renderLobbyWithSaves({
     minesweeper:playingMinesweeper, sudoku6:playingSudoku, merge1048:playing1048, xiangqi:playingXiangqi, last:'xiangqi',
@@ -115,11 +155,27 @@ test('continuation prefers the most recently opened game but only while it can r
   });
   assert.match(fallbackSudoku, /继续游玩[\s\S]*KAI 数独/);
 
+  const recentGomoku = renderLobbyWithSaves({ gomoku:playingGomoku, last:'gomoku' });
+  assert.match(recentGomoku, /继续游玩[\s\S]*KAI 五子棋[\s\S]*已落 7 手/);
+  const recentMemory = renderLobbyWithSaves({ memory:playingMemory, last:'memory' });
+  assert.match(recentMemory, /继续游玩[\s\S]*KAI 记忆翻牌[\s\S]*已配对 2\/6/);
+  const recentSnake = renderLobbyWithSaves({ snake:playingSnake, last:'snake' });
+  assert.match(recentSnake, /继续游玩[\s\S]*KAI 贪吃蛇[\s\S]*得分 30/);
+
   const untouchedSudoku = renderLobbyWithSaves({
     sudoku6:{ ...playingSudoku, values:Array(36).fill(0) }, last:'sudoku6',
   });
   assert.match(untouchedSudoku, /新手推荐[\s\S]*先来一局扫雷/);
   assert.doesNotMatch(untouchedSudoku, /<span>继续游玩<\/span>/);
+
+  const untouchedNewGames = renderLobbyWithSaves({
+    gomoku:{ status:'playing', moveCount:0 },
+    memory:{ restored:true, game:{ status:'ready', difficulty:'easy', moveCount:0, faceUp:[], matchedPairs:0, pairCount:6 } },
+    snake:{ status:'ready', difficulty:'normal', ticks:0, score:0, snake:[1, 2, 3] },
+    last:'gomoku',
+  });
+  assert.match(untouchedNewGames, /新手推荐[\s\S]*先来一局扫雷/);
+  assert.doesNotMatch(untouchedNewGames, /<span>继续游玩<\/span>/);
 
   const terminalOnly = renderLobbyWithSaves({
     minesweeper:{ ...playingMinesweeper, status:'won' },
@@ -132,7 +188,7 @@ test('continuation prefers the most recently opened game but only while it can r
   assert.doesNotMatch(terminalOnly, /<span>继续游玩<\/span>/);
 });
 
-test('each resumable local game records itself as the most recently opened candidate', () => {
+test('each of the seven persisted local games records itself as the most recently opened candidate', () => {
   assert.match(appSource, /const LAST_LOCAL_GAME_KEY\s*=\s*'kai\.play\.last-local-game'/);
   assert.match(appSource, /function rememberLastLocalGame\(game\)[\s\S]{0,500}safeStorageSet\(LAST_LOCAL_GAME_KEY,\s*game\)/);
   for (const [start, end, game] of [
@@ -140,15 +196,18 @@ test('each resumable local game records itself as the most recently opened candi
     ['function open1048()', 'function focus1048Interaction(', '1048'],
     ['function openSudoku6()', 'function focusSudoku6Interaction(', 'sudoku6'],
     ['function openMinesweeper()', 'function newMinesweeperSession(', 'minesweeper'],
+    ['function openGomoku()', 'function newGomokuSession(', 'gomoku'],
+    ['function openMemoryMatch()', 'function newMemorySession(', 'memory'],
+    ['function openSnake()', 'function newSnakeSession(', 'snake'],
   ] as const) {
     assert.match(between(appSource, start, end), new RegExp(`rememberLastLocalGame\\('${game}'\\)`));
   }
 });
 
-test('the global trust row scopes local persistence to the four games that provide it', () => {
-  assert.match(lobby, /<span>4 款本地自动保存<\/span>/);
+test('the global trust row scopes local persistence to the seven games that provide it', () => {
+  assert.match(lobby, /<span>7 款本地自动保存<\/span>/);
   assert.doesNotMatch(lobby, /<span>本地自动保存<\/span>/);
-  assert.match(productSource, /4 款本地自动保存/);
+  assert.match(productSource, /7 款本地自动保存/);
 });
 
 test('mood shortcuts navigate only to known playable destinations', () => {
@@ -157,15 +216,15 @@ test('mood shortcuts navigate only to known playable destinations', () => {
     assert.match(lobby, new RegExp(`data-world-target="${target}"`));
   }
   const jump = between(appSource, 'function jumpToLobbyTarget(', "app.addEventListener('click'");
-  assert.match(jump, /new Set\(\['ddz','xiangqi','mahjong','1048','sudoku6','minesweeper','three','reels'\]\)/);
+  assert.match(jump, /new Set\(\['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','three','reels'\]\)/);
   assert.match(jump, /target==='friends'/);
   assert.match(appSource, /if\(a==='jump-world'\)\{jumpToLobbyTarget/);
 });
 
-test('all eight games use equal poster cards with one horizontal rail', () => {
-  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 8);
-  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 8);
-  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 8);
+test('all eleven games use equal poster cards with one horizontal rail', () => {
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 11);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 11);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 11);
   assert.match(lobby, /data-world-status/);
   assert.match(appSource, /function updateWorldCarouselStatus/);
   assert.match(v10Styles, /\.lobby-game-center \.game-world[\s\S]*flex:\s*0 0 clamp\(236px, 22vw, 274px\)/);

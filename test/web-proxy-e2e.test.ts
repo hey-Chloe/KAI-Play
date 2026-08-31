@@ -99,7 +99,10 @@ test('web preview serves cache-aware local assets and proxies a complete authent
     assert.equal(cachedCourt.headers.get('etag'), courtEtag);
     assert.equal(cachedCourt.headers.get('cache-control'), 'public, max-age=31536000, immutable');
 
-    for (const path of ['/styles.css', '/app.js', '/sudoku6.js']) {
+    for (const path of [
+      '/styles.css', '/app.js', '/sudoku6.js',
+      '/gomoku.js', '/memory-match.js', '/snake.js',
+    ]) {
       const compressed = await fetch(`${webOrigin}${path}`, { headers: { 'accept-encoding': 'br' } });
       assert.equal(compressed.status, 200);
       assert.equal(compressed.headers.get('content-encoding'), 'br', `${path} must use Brotli when the client accepts it`);

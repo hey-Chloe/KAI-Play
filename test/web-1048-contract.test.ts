@@ -23,8 +23,9 @@ test('the lobby exposes 1048 as a local game-world entry', () => {
   assert.match(catalog, /<h3>1048<\/h3>/);
   assert.match(catalog, /data-action="open-1048"/);
   assert.match(catalog, /数字合并 · 单机益智/);
-  assert.ok(catalog.indexOf('world-1048') < catalog.indexOf('world-three'), '1048 should be the second card in 全部玩法');
-  assert.match(readme, /1048 数字合并/);
+  assert.ok(catalog.indexOf('world-mahjong') < catalog.indexOf('world-1048'), '1048 should follow Mahjong');
+  assert.ok(catalog.indexOf('world-1048') < catalog.indexOf('world-sudoku6'), '1048 should precede Sudoku');
+  assert.match(readme, /四人基础麻将、1048、6×6 KAI 数独/);
   assert.match(product, /1048 数字合并/);
 });
 

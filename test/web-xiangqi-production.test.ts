@@ -42,19 +42,19 @@ function sourceBetween(source: string, start: string, end: string) {
 
 test('Xiangqi is part of the browser module graph and every production artifact', () => {
   assert.match(appSource, /from ['"]\.\/xiangqi\.js['"]/);
-  assert.match(indexSource, /八款即开即玩的牌桌与益智玩法/);
-  assert.match(indexSource, /中国象棋/);
+  assert.match(indexSource, /十一款即开即玩的牌桌、策略与益智玩法/);
+  assert.match(indexSource, /支持本地训练进度恢复/);
   assert.match(packageSource, /node --check web\/xiangqi\.js/);
   assert.match(dockerSource, /COPY[^\n]*web\/xiangqi\.js[^\n]*\.\//);
   assert.match(preflightSource, /['"]web\/xiangqi\.js['"]/);
   assert.match(preflightSource, /production image must include the standalone Xiangqi engine/);
 });
 
-test('the eight-card lobby opens the local Xiangqi route', () => {
+test('the eleven-card lobby opens the local Xiangqi route', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /8 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 7 款免费畅玩/);
-  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 8);
+  assert.match(lobby, /11 款玩法，即刻开局/);
+  assert.match(lobby, /1 款竞技 · 10 款免费畅玩/);
+  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 11);
   assert.match(lobby, /class="game-world world-xiangqi"/);
   assert.match(lobby, /data-action="open-xiangqi"/);
   assert.match(appSource, /if\(a===['"]open-xiangqi['"]\)/);
@@ -107,8 +107,8 @@ test('Xiangqi progress remains local and the mobile client does not advertise an
     assert.match(source, /KAI 象棋/);
     assert.match(source, /本地/);
   }
-  assert.match(product, /KAI 象棋与 KAI 扫雷本期只在 Web 交付/);
-  assert.match(productSpec, /KAI 象棋与 KAI 扫雷本期只在 Web 交付/);
+  assert.match(product, /新增本地玩法本期只在 Web 交付/);
+  assert.match(productSpec, /KAI 象棋、KAI 五子棋、KAI 扫雷、KAI 记忆翻牌与 KAI 贪吃蛇本期只在 Web 交付/);
 });
 
 async function unusedPort() {

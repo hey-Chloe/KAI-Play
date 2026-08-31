@@ -46,6 +46,32 @@ import {
   revealMinesweeperCell,
   toggleMinesweeperFlag,
 } from './minesweeper.js';
+import {
+  SNAKE_DIFFICULTIES,
+  advanceSnake,
+  newSnakeGame,
+  restoreSnakeGame,
+  setSnakeDirection,
+  toggleSnakePause,
+} from './snake.js';
+import {
+  GOMOKU_CELL_COUNT,
+  GOMOKU_SIZE,
+  loadGomokuGame,
+  newGomokuGame,
+  playGomokuHumanMove,
+  saveGomokuGame,
+} from './gomoku.js';
+import {
+  MEMORY_MATCH_DIFFICULTIES,
+  advanceMemoryMatchTime,
+  flipMemoryMatchCard,
+  getMemoryMatchCard,
+  loadMemoryMatchSession,
+  newMemoryMatchGame,
+  resolveMemoryMatchMismatch,
+  saveMemoryMatchSession,
+} from './memory-match.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -63,8 +89,11 @@ const XIANGQI_DIFFICULTY_KEY = 'kai.play.xiangqi.difficulty.v1';
 const XIANGQI_TUTORIAL_KEY = 'kai.play.xiangqi.tutorial.v1';
 const MINESWEEPER_SAVE_KEY = 'kai.play.minesweeper.game.v1';
 const MINESWEEPER_DIFFICULTY_KEY = 'kai.play.minesweeper.difficulty.v1';
+const SNAKE_SAVE_KEY = 'kai.play.snake.game.v1';
+const SNAKE_DIFFICULTY_KEY = 'kai.play.snake.difficulty.v1';
+const SNAKE_BEST_KEY = 'kai.play.snake.best.v1';
 const LAST_LOCAL_GAME_KEY = 'kai.play.last-local-game';
-const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper']);
+const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake']);
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
 function safeStorageGet(key) {
@@ -94,6 +123,9 @@ let mahjongBotTimer = null;
 let xiangqiAiTimer = null;
 let minesweeperLongPress = null;
 let minesweeperSuppressedClick = null;
+let snakeTimer = null;
+let memoryMismatchTimer = null;
+let snakePointer = null;
 let toastTimer = null;
 let threeRevealTimer = null;
 let slotSpinTimer = null;
@@ -215,6 +247,34 @@ function saveMinesweeperGame(game, casual = state.casual, { force = false } = {}
   casual.saveAvailable = gameSaved && difficultySaved;
   casual.saveConflict = false;
   if (gameSaved) casual.minesweeperPersistedSnapshot = serialized;
+  return casual.saveAvailable;
+}
+
+function loadSavedSnakeGame() {
+  try {
+    const raw = safeStorageGet(SNAKE_SAVE_KEY);
+    if (!raw) return null;
+    const game = restoreSnakeGame(JSON.parse(raw));
+    if (!game) safeStorageRemove(SNAKE_SAVE_KEY);
+    return game;
+  } catch {
+    safeStorageRemove(SNAKE_SAVE_KEY);
+    return null;
+  }
+}
+
+function loadSnakeBest() {
+  const value = Number(safeStorageGet(SNAKE_BEST_KEY));
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function saveSnakeGame(game, casual = state.casual) {
+  if (!game || casual?.kind !== 'snake') return false;
+  const gameSaved = safeStorageSet(SNAKE_SAVE_KEY, JSON.stringify(game));
+  const difficultySaved = safeStorageSet(SNAKE_DIFFICULTY_KEY, game.difficulty || 'normal');
+  const best = Math.max(loadSnakeBest(), safeLocalCounter(game.score));
+  const bestSaved = safeStorageSet(SNAKE_BEST_KEY, String(best));
+  casual.saveAvailable = gameSaved && difficultySaved && bestSaved;
   return casual.saveAvailable;
 }
 
@@ -390,16 +450,27 @@ function lobby() {
   const saved1048 = loadSaved1048Game();
   const savedSudoku6 = loadSavedSudoku6Game();
   const savedMinesweeper = loadSavedMinesweeperGame();
+  const savedGomoku = loadGomokuGame();
+  const memorySession = loadMemoryMatchSession() || { restored:false, game:null };
+  const savedMemory = memorySession.restored ? memorySession.game : null;
+  const savedSnake = loadSavedSnakeGame();
   const canContinueMinesweeper = savedMinesweeper?.status === 'playing' && Number(savedMinesweeper.revealedCount) > 0;
   const canContinueSudoku6 = savedSudoku6?.status === 'playing'
     && savedSudoku6.values.some((value, index) => savedSudoku6.puzzle[index] === 0 && value !== 0);
   const canContinue1048 = saved1048?.status === 'playing' && Number(saved1048.moves) > 0;
   const canContinueXiangqi = savedXiangqi?.game?.status === 'playing'
     && (Number(savedXiangqi.game.moveCount) > 0 || savedXiangqi.game.history?.length > 0);
+  const canContinueGomoku = savedGomoku?.status === 'playing' && Number(savedGomoku.moveCount) > 0;
+  const canContinueMemory = savedMemory?.status === 'playing'
+    && (Number(savedMemory.moveCount) > 0 || savedMemory.faceUp?.length > 0 || Number(savedMemory.matchedPairs) > 0);
+  const canContinueSnake = ['playing','paused'].includes(savedSnake?.status) && Number(savedSnake.ticks) > 0;
   const xiangqiAction = !savedXiangqi || (savedXiangqi.game.status === 'playing' && !canContinueXiangqi) ? '执红开局' : canContinueXiangqi ? '继续对局' : '查看战果';
   const merge1048Action = !saved1048 || (saved1048.status === 'playing' && !canContinue1048) ? '开始合并' : canContinue1048 ? '继续上局' : '查看上局';
   const sudoku6Action = !savedSudoku6 || (savedSudoku6.status === 'playing' && !canContinueSudoku6) ? '开始数独' : canContinueSudoku6 ? '继续上局' : '查看成绩';
   const minesweeperAction = !savedMinesweeper || !canContinueMinesweeper && ['ready','playing'].includes(savedMinesweeper.status) ? '开始排雷' : canContinueMinesweeper ? '继续排雷' : '查看上局';
+  const gomokuAction = !savedGomoku || (savedGomoku.status === 'playing' && !canContinueGomoku) ? '执黑开局' : canContinueGomoku ? '继续对局' : '查看战果';
+  const memoryAction = !savedMemory || (savedMemory.status === 'ready' && !canContinueMemory) ? '开始配对' : canContinueMemory ? '继续配对' : '查看成绩';
+  const snakeAction = !savedSnake || !canContinueSnake && ['ready','playing','paused'].includes(savedSnake.status) ? '开始穿行' : canContinueSnake ? '继续穿行' : '查看上轮';
   const minesweeperPreview = ['covered','covered','covered','covered','covered','covered','covered','one','one','one','covered','covered','covered','one','empty','two','flag','covered','covered','one','one','two','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered']
     .map((cell) => `<i class="${cell}">${cell === 'one' ? '1' : cell === 'two' ? '2' : cell === 'flag' ? '⚑' : ''}</i>`).join('');
   const resumeCandidates = [];
@@ -443,19 +514,37 @@ function lobby() {
       action:'open-xiangqi', label:xiangqiAction, glyph:'帅',
     });
   }
+  if (canContinueGomoku) {
+    resumeCandidates.push({
+      id:'gomoku', accent:'gomoku', eyebrow:'继续游玩', title:'KAI 五子棋',
+      meta:`已落 ${savedGomoku.moveCount} 手 · 轮到你执黑`,
+      progress:null, note:'棋局已保存，可从当前落点继续',
+      action:'open-gomoku', label:gomokuAction, glyph:'五',
+    });
+  }
+  if (canContinueMemory) {
+    resumeCandidates.push({
+      id:'memory', accent:'memory', eyebrow:'继续游玩', title:'KAI 记忆翻牌',
+      meta:`${MEMORY_MATCH_DIFFICULTIES[savedMemory.difficulty].label}牌阵 · 已配对 ${savedMemory.matchedPairs}/${savedMemory.pairCount}`,
+      progress:savedMemory.pairCount ? Math.round(savedMemory.matchedPairs / savedMemory.pairCount * 100) : 0,
+      action:'open-memory', label:memoryAction, glyph:'◫',
+    });
+  }
+  if (canContinueSnake) {
+    resumeCandidates.push({
+      id:'snake', accent:'snake', eyebrow:'继续游玩', title:'KAI 贪吃蛇',
+      meta:`${SNAKE_DIFFICULTIES[savedSnake.difficulty].label}速度 · 得分 ${savedSnake.score}`,
+      progress:null, note:`长度 ${savedSnake.snake.length} · 已前进 ${savedSnake.ticks} 格`,
+      action:'open-snake', label:snakeAction, glyph:'S',
+    });
+  }
   const recentLocalGame = safeStorageGet(LAST_LOCAL_GAME_KEY);
   const resumeGame = resumeCandidates.find((game) => game.id === recentLocalGame) || resumeCandidates[0] || {
     accent:'minesweeper', eyebrow:'新手推荐', title:'先来一局扫雷',
     meta:'首击必安全 · 从 10 颗雷的入门盘开始',
     progress:null, note:'无需规则准备，点开就能玩', action:'open-minesweeper', label:'开始排雷', glyph:'⚑',
   };
-  const resumeButton = resumeGame.action === 'open-sudoku6'
-    ? `<button class="btn primary" data-action="open-sudoku6">${resumeGame.label} <b>→</b></button>`
-    : resumeGame.action === 'open-1048'
-      ? `<button class="btn primary" data-action="open-1048">${resumeGame.label} <b>→</b></button>`
-      : resumeGame.action === 'open-xiangqi'
-        ? `<button class="btn primary" data-action="open-xiangqi">${resumeGame.label} <b>→</b></button>`
-        : `<button class="btn primary" data-action="open-minesweeper">${resumeGame.label} <b>→</b></button>`;
+  const resumeButton = `<button class="btn primary" data-action="${esc(resumeGame.action)}">${resumeGame.label} <b>→</b></button>`;
   const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
   const ddzActive = heroGame === 'ddz';
   const previewWall = '<i></i>'.repeat(17);
@@ -476,8 +565,8 @@ function lobby() {
   return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
-        <div><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>8 款即开即玩的牌桌与益智游戏，无需下载，点开就能玩。</p></div>
-        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>4 款本地自动保存</span></div>
+        <div><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>11 款即开即玩的牌桌、策略与益智游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>7 款本地自动保存</span></div>
         <nav class="mood-rail" aria-label="按心情选择玩法">
           <button data-action="jump-world" data-world-target="minesweeper"><i>⚑</i>短局放松</button>
           <button data-action="jump-world" data-world-target="sudoku6"><i>6</i>动脑解谜</button>
@@ -518,7 +607,7 @@ function lobby() {
         </section>
 
         <aside class="hub-side">
-          <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div><span class="hub-side-count">8 款可玩</span></div>
+          <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div><span class="hub-side-count">11 款可玩</span></div>
           <article class="resume-card resume-${resumeGame.accent}">
             <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
             <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
@@ -535,15 +624,18 @@ function lobby() {
       </section>
 
       <section class="section-block game-catalog" id="game-selection">
-        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>8 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 7 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 8</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>11 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 10 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 11</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
         <p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，下一款游戏已经露出来了</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
           <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
           <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
+          <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>
           <article class="game-world world-mahjong" data-world-card data-world-id="mahjong"><span class="world-badge">牌桌经典</span><div class="world-cover"><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div><i class="world-cover-mark" aria-hidden="true">東</i></div><div class="world-copy"><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>摸牌、理牌、听牌，和三位 KAI 牌友打到结算。</p><button class="btn" data-action="open-mahjong">开始麻将 <b>→</b></button></div></article>
           <article class="game-world world-1048" data-world-card data-world-id="1048"><span class="world-badge">${canContinue1048?'可继续':saved1048?.status==='playing'?'等待开局':saved1048?'上局已保存':'稀有目标'}</span><div class="world-cover"><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div><i class="world-cover-mark" aria-hidden="true">＋</i></div><div class="world-copy"><span>数字合并 · 单机益智 · 冲击 1048</span><h3>1048</h3><p>逐级合并数字，让最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action} <b>→</b></button></div></article>
           <article class="game-world world-sudoku6" data-world-card data-world-id="sudoku6"><span class="world-badge">${canContinueSudoku6?'可继续':savedSudoku6?.status==='playing'?'待你开题':savedSudoku6?'成绩已保存':'每日一局'}</span><div class="world-cover"><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">6×6</i></div><div class="world-copy"><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>填满盘面，用一局让思路重新清晰，支持随手记笔记。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action} <b>→</b></button></div></article>
           <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
+          <article class="game-world world-memory" data-world-card data-world-id="memory"><span class="world-badge">${canContinueMemory?'可继续':savedMemory?.status==='won'?'成绩已保存':'轻松短局'}</span><div class="world-cover"><div class="world-memory-cards" aria-hidden="true"><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i></div><i class="world-cover-mark" aria-hidden="true">PAIR</i></div><div class="world-copy"><span>翻开配对 · 三档牌阵</span><h3>KAI 记忆翻牌</h3><p>记住每张卡的位置，用更少步数找齐所有相同图案。</p><button class="btn" data-action="open-memory">${memoryAction} <b>→</b></button></div></article>
+          <article class="game-world world-snake" data-world-card data-world-id="snake"><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
           <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">免费比牌</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三张定胜负 · 单机训练</span><h3>炸金花训练</h3><p>一眼判断牌型强弱，翻开这一手就见分晓。</p><button class="btn" data-action="open-three">翻开这一手 <b>→</b></button></div></article>
           <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>轻点一次，看三枚符号能否同频连线。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">试转一次 <b>→</b></button></div></article>
         </div>
@@ -1295,6 +1387,137 @@ function minesweeperGame() {
   </main><p class="casual-disclaimer">${saveConflict ? '检测到其他标签页的更新，本页已停止写入以保护最新存档；返回大厅后重新进入即可载入。' : saveUnavailable ? '本浏览器当前无法写入本地存档；本局仍可继续，但刷新后可能无法恢复。' : '本局完全在当前浏览器运行并自动保存；'}不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>${minesweeperConfirmDialog(casual)}</div>`;
 }
 
+function gomokuCell(game, index, casual) {
+  const row = Math.floor(index / GOMOKU_SIZE);
+  const column = index % GOMOKU_SIZE;
+  const side = game.board[index];
+  const winning = game.winningLine?.includes(index);
+  const last = game.lastMove?.index === index;
+  const focused = casual.focusedCell === index;
+  const classes = ['gomoku-cell'];
+  if (side) classes.push(`is-${side}`);
+  if (winning) classes.push('is-winning');
+  if (last) classes.push('is-last');
+  const content = side ? '<i aria-hidden="true"></i>' : '';
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${side === 'black' ? '黑棋' : side === 'white' ? '白棋' : '空位'}${last ? '，最后一步' : ''}${winning ? '，胜利连线' : ''}`;
+  return `<button type="button" class="${classes.join(' ')}" data-gomoku-cell="${index}" role="gridcell" aria-label="${label}" aria-selected="${last}" aria-disabled="${Boolean(side || game.status !== 'playing')}" tabindex="${focused ? '0' : '-1'}">${content}</button>`;
+}
+
+function gomokuResult(game) {
+  if (game.status !== 'finished') return '';
+  const won = game.winner === 'black';
+  const draw = !game.winner;
+  return `<section class="gomoku-result ${won ? 'is-win' : draw ? 'is-draw' : 'is-loss'}" data-gomoku-result role="status" aria-live="polite" tabindex="-1"><span>本地人机对弈完成</span><h2>${draw ? '棋盘落满 · 和棋' : won ? '黑棋连成五子' : 'KAI 白棋连成五子'}</h2><p>共落 ${game.moveCount} 手 · ${draw ? '势均力敌' : won ? '你赢下了这局' : '再来一局扳回来'}</p><div><button class="btn primary" data-action="gomoku-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function gomokuGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'gomoku') return lobby();
+  const persistenceAvailable = casual.saveAvailable !== false;
+  const status = game.status === 'finished' ? (game.winner === 'black' ? '你已连成五子' : game.winner === 'white' ? 'KAI 已连成五子' : '本局和棋')
+    : casual.announcement || (game.moveCount ? '轮到你落黑棋' : '你执黑先行 · 从中心附近开始');
+  return `<div class="shell casual-shell gomoku-route">${casualHeader('KAI 五子棋','GOMOKU',`15×15 · 你执黑先行`)}<main class="gomoku-stage">
+    <section class="gomoku-copy"><div><span>本地人机对弈 · ${persistenceAvailable ? '自动保存' : '仅本轮可玩'}</span><h1>落下一子<br><b>连成五子</b></h1><p>你执黑棋先行。横、竖或斜线率先连成五颗棋子即可获胜，KAI 会在每次落子后立即回应。</p></div><ol><li><i>1</i><span><b>抢占中心</b><small>越靠近中心，延展方向越多</small></span></li><li><i>2</i><span><b>制造活线</b><small>同时保留两端更难防守</small></span></li><li><i>3</i><span><b>及时封堵</b><small>看到对手四连要马上阻断</small></span></li></ol><button class="btn" data-action="gomoku-new">重新开局</button></section>
+    <section class="gomoku-play"><div class="gomoku-metrics" aria-label="本局数据"><div><small>你的黑棋</small><strong>${game.board.filter((cell) => cell === 'black').length}</strong></div><div><small>KAI 白棋</small><strong>${game.board.filter((cell) => cell === 'white').length}</strong></div><div><small>总手数</small><strong>${game.moveCount}</strong></div></div>
+      <div class="gomoku-status ${game.status === 'finished' ? 'is-finished' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status === 'playing' ? '黑方 · 你' : '对局结束'}</b></div>
+      <div class="gomoku-board-scroll"><div class="gomoku-board" data-gomoku-board role="grid" aria-label="15 乘 15 五子棋棋盘，方向键移动，回车或空格落子" aria-rowcount="15" aria-colcount="15" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Home End">${Array.from({ length:GOMOKU_CELL_COUNT }, (_, index) => gomokuCell(game, index, casual)).join('')}</div></div>
+      <p class="gomoku-key-hint">键盘：方向键移动 · Enter / 空格落子 · Home / End 跳到首尾</p>${gomokuResult(game)}
+    </section>
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本局在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本局仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function formatMemoryTime(totalSeconds) {
+  const seconds = safeLocalCounter(totalSeconds);
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function memoryMatchCard(game, index, focused) {
+  const card = getMemoryMatchCard(game, index);
+  const hidden = card.state === 'hidden';
+  const matched = card.state === 'matched';
+  const label = hidden ? `第 ${index + 1} 张牌，未翻开` : `第 ${index + 1} 张牌，${card.label}${matched ? '，已匹配' : '，已翻开'}`;
+  return `<button type="button" class="memory-card is-${card.state}" data-memory-card="${index}" role="gridcell" aria-label="${label}" aria-pressed="${!hidden}" aria-disabled="${matched || game.pendingMismatch}" tabindex="${focused ? '0' : '-1'}"><span class="memory-card-inner"><i class="memory-card-back" aria-hidden="true"><b>K</b><small>KAI</small></i><i class="memory-card-front" aria-hidden="true"><b>${card.glyph || ''}</b><small>${card.label || ''}</small></i></span></button>`;
+}
+
+function memoryMatchResult(casual) {
+  const game = casual.game;
+  if (game.status !== 'won') return '';
+  const best = casual.bestScores?.scores?.[game.difficulty];
+  const isBest = best?.moveCount === game.moveCount && best?.elapsedSeconds === game.elapsedSeconds;
+  return `<section class="memory-result is-win" data-memory-result role="status" aria-live="polite" tabindex="-1"><span>${isBest ? '本难度最佳' : '全部配对完成'}</span><h2>记忆拼图归位</h2><p>${game.moveCount} 步 · ${formatMemoryTime(game.elapsedSeconds)} · ${game.pairCount} 对全部找到</p><div><button class="btn primary" data-action="memory-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function memoryMatchGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'memory-match') return lobby();
+  const persistenceAvailable = casual.saveAvailable !== false;
+  const definition = MEMORY_MATCH_DIFFICULTIES[game.difficulty];
+  const best = casual.bestScores?.scores?.[game.difficulty];
+  const status = game.status === 'won' ? '全部配对完成'
+    : game.pendingMismatch ? '图案不同，稍后自动翻回'
+      : casual.announcement || (game.faceUp.length ? '再翻一张，寻找相同图案' : '翻开两张牌，找出相同图案');
+  const difficulties = Object.values(MEMORY_MATCH_DIFFICULTIES).map((entry) => `<button type="button" data-action="memory-difficulty" data-memory-difficulty="${entry.key}" class="${entry.key === game.difficulty ? 'active' : ''}" aria-pressed="${entry.key === game.difficulty}"><b>${entry.label}</b><small>${entry.rows}×${entry.columns}</small></button>`).join('');
+  return `<div class="shell casual-shell memory-route">${casualHeader('KAI 记忆翻牌','MEMORY MATCH',`${definition.label} · ${game.pairCount} 对图案`)}<main class="memory-stage">
+    <section class="memory-copy"><div><span>短局记忆训练 · ${persistenceAvailable ? '自动保存' : '仅本轮可玩'}</span><h1>翻开卡片<br><b>找出成对记忆</b></h1><p>每次翻开两张卡片；图案相同就会保留，不同则自动盖回。用更少步数完成整盘。</p></div><div class="memory-difficulties" aria-label="选择记忆翻牌难度">${difficulties}</div><button class="btn" data-action="memory-new">重新洗牌</button></section>
+    <section class="memory-play"><div class="memory-metrics" aria-label="本局数据"><div><small>已配对</small><strong>${game.matchedPairs}/${game.pairCount}</strong></div><div><small>步数</small><strong>${game.moveCount}</strong></div><div><small>用时</small><strong data-memory-time>${formatMemoryTime(game.elapsedSeconds)}</strong></div><div><small>最佳</small><strong>${best ? `${best.moveCount}步` : '--'}</strong></div></div>
+      <div class="memory-status ${game.pendingMismatch ? 'is-warning' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${definition.label}</b></div>
+      <div class="memory-board" data-memory-board role="grid" aria-label="${definition.rows} 行 ${definition.columns} 列记忆翻牌棋盘，使用方向键移动，回车或空格翻牌" aria-rowcount="${definition.rows}" aria-colcount="${definition.columns}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space" style="--memory-columns:${definition.columns}">${game.deck.map((_, index) => memoryMatchCard(game, index, casual.focusedCard === index)).join('')}</div>
+      <p class="memory-key-hint">键盘：方向键移动 · Enter / 空格翻牌</p>${memoryMatchResult(casual)}
+    </section>
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本局完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本局仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function snakeCellVisual(game, index) {
+  const bodyIndex = game.snake.indexOf(index);
+  const food = game.food === index;
+  const classes = ['snake-cell'];
+  if (bodyIndex === 0) classes.push('is-head');
+  else if (bodyIndex > 0) classes.push(bodyIndex === game.snake.length - 1 ? 'is-tail' : 'is-body');
+  if (food) classes.push('is-food');
+  return {
+    className:classes.join(' '),
+    content:food ? '<b>◆</b>' : bodyIndex === 0 ? '<b></b>' : '',
+  };
+}
+
+function snakeCell(game, index) {
+  const visual = snakeCellVisual(game, index);
+  return `<i class="${visual.className}" data-snake-cell="${index}" aria-hidden="true">${visual.content}</i>`;
+}
+
+function snakeResult(game) {
+  if (!['over', 'won'].includes(game.status)) return '';
+  const won = game.status === 'won';
+  return `<section class="snake-result ${won ? 'is-win' : 'is-over'}" role="status" aria-live="polite" tabindex="-1" data-snake-result><span>${won ? '全盘完成' : '本轮结束'}</span><h2>${won ? '整座能量场已点亮' : '碰到边界或自己了'}</h2><p>得分 ${game.score} · 收集 ${game.foodsEaten} 枚能量 · 前进 ${game.ticks} 格</p><div><button class="btn primary" data-action="snake-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function snakeGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'snake') return lobby();
+  const persistenceAvailable = casual.saveAvailable !== false;
+  const difficulty = SNAKE_DIFFICULTIES[game.difficulty] || SNAKE_DIFFICULTIES.normal;
+  const best = Math.max(loadSnakeBest(), safeLocalCounter(game.score));
+  const status = game.status === 'ready' ? '按方向键或点击方向开始'
+    : game.status === 'paused' ? '已暂停 · 随时继续'
+      : game.status === 'playing' ? casual.announcement || '保持节奏，继续收集能量'
+        : game.status === 'won' ? '能量场全部点亮' : '本轮结束';
+  const toggleLabel = game.status === 'ready' ? '开始' : game.status === 'paused' ? '继续' : game.status === 'playing' ? '暂停' : '重新开始';
+  const difficulties = Object.values(SNAKE_DIFFICULTIES).map((entry) => `<button type="button" data-action="snake-difficulty" data-snake-difficulty="${entry.key}" class="${entry.key === game.difficulty ? 'active' : ''}" aria-pressed="${entry.key === game.difficulty}"><b>${entry.label}</b><small>${entry.tickMs} ms</small></button>`).join('');
+  return `<div class="shell casual-shell snake-route">${casualHeader('KAI 贪吃蛇','NEON SNAKE',`${difficulty.label}速度 · ${persistenceAvailable ? '本地自动保存' : '仅本轮可玩'}`)}<main class="snake-stage">
+    <section class="snake-copy"><div><span>即时操作 · 手机触控友好</span><h1>穿过光栅<br><b>收集能量</b></h1><p>控制蛇头吃到发光能量，身体会逐渐变长。撞到边界或自己的身体，本轮就结束。</p></div><div class="snake-difficulties" aria-label="选择贪吃蛇速度">${difficulties}</div><ol><li><i>1</i><span><b>选择方向</b><small>点击方向键即可开始</small></span></li><li><i>2</i><span><b>收集能量</b><small>每枚能量增加 10 分</small></span></li><li><i>3</i><span><b>避免碰撞</b><small>不能立即反向移动</small></span></li></ol></section>
+    <section class="snake-play"><div class="snake-metrics" aria-label="本轮数据"><div><small>得分</small><strong data-snake-score>${game.score}</strong></div><div><small>最佳</small><strong data-snake-best>${best}</strong></div><div><small>长度</small><strong data-snake-length>${game.snake.length}</strong></div></div>
+      <div class="snake-status ${game.status === 'playing' ? 'is-live' : ''}" data-snake-status role="status" aria-live="${game.status === 'playing' && casual.announcement === '保持节奏' ? 'off' : 'polite'}"><i aria-hidden="true"></i><span data-snake-status-text>${esc(status)}</span><b>${difficulty.label}</b></div>
+      <div class="snake-board" data-snake-board role="application" aria-roledescription="贪吃蛇游戏棋盘" aria-label="${game.rows} 乘 ${game.columns} 贪吃蛇，使用方向键或 WASD 控制" aria-describedby="snake-key-hint" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D Space" tabindex="0" style="--snake-columns:${game.columns}">${Array.from({ length:game.rows * game.columns }, (_, index) => snakeCell(game, index)).join('')}</div>
+      <div class="snake-controls" aria-label="贪吃蛇方向控制"><span></span><button type="button" data-action="snake-direction" data-snake-direction="up" aria-label="向上">↑</button><span></span><button type="button" data-action="snake-direction" data-snake-direction="left" aria-label="向左">←</button><button type="button" data-action="snake-direction" data-snake-direction="down" aria-label="向下">↓</button><button type="button" data-action="snake-direction" data-snake-direction="right" aria-label="向右">→</button></div>
+      <div class="snake-actions"><button class="btn primary" data-action="snake-toggle">${toggleLabel}</button><button class="btn" data-action="snake-new">重新开始</button></div>
+      <p class="snake-key-hint" id="snake-key-hint">键盘：方向键 / WASD 控制 · 空格暂停或继续</p>${snakeResult(game)}
+    </section>
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本轮完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本轮仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
 function historyMatchWon(match) {
   if (match.role === 'landlord') return match.winner === 'landlord';
   if (match.role === 'farmer') return match.winner === 'farmers';
@@ -1355,10 +1578,10 @@ function history() {
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；炸金花、麻将、1048、数独与扫雷按各自规则生成内容；KAI 象棋由本地规则引擎判定每一步合法走法。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、炸金花、麻将、1048、数独、扫雷和算力转轮当前是免费训练场，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局或关卡，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -1375,9 +1598,13 @@ function stopCasualTimers() {
   if (threeRevealTimer) clearTimeout(threeRevealTimer);
   if (slotSpinTimer) clearTimeout(slotSpinTimer);
   if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
+  if (snakeTimer) clearTimeout(snakeTimer);
+  if (memoryMismatchTimer) clearTimeout(memoryMismatchTimer);
   threeRevealTimer = null;
   slotSpinTimer = null;
   xiangqiAiTimer = null;
+  snakeTimer = null;
+  memoryMismatchTimer = null;
   cancelMinesweeperLongPress();
   minesweeperSuppressedClick = null;
 }
@@ -2019,6 +2246,270 @@ function cancelMinesweeperLongPress() {
   minesweeperLongPress = null;
 }
 
+function firstOpenGomokuCell(game) {
+  const center = Math.floor(GOMOKU_CELL_COUNT / 2);
+  if (!game.board[center]) return center;
+  const first = game.board.findIndex((cell) => cell === null);
+  return first >= 0 ? first : center;
+}
+
+function focusGomokuInteraction(index = state.casual?.focusedCell) {
+  const result = document.querySelector('[data-gomoku-result]');
+  if (result) { result.focus({ preventScroll:true }); result.scrollIntoView?.({ block:'nearest' }); return; }
+  const target = document.querySelector(`[data-gomoku-cell="${Number.isInteger(index) ? index : Math.floor(GOMOKU_CELL_COUNT / 2)}"]`);
+  target?.focus({ preventScroll:true });
+  target?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function startGomokuSession(game, announcement = '你执黑先行') {
+  stopCasualTimers();
+  state.casual = { kind:'gomoku', game, focusedCell:firstOpenGomokuCell(game), announcement, saveAvailable:true };
+  state.view = 'gomoku';
+  state.casual.saveAvailable = saveGomokuGame(game);
+  if (!state.casual.saveAvailable) state.casual.announcement = '本浏览器无法保存进度 · 仍可继续对弈';
+}
+
+function openGomoku() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const saved = loadGomokuGame();
+  const announcement = !saved ? '你执黑先行' : saved.status === 'finished' ? '上局战果已保留' : Number(saved.moveCount) > 0 ? '已恢复本地棋局' : '你执黑先行';
+  startGomokuSession(saved || newGomokuGame(), announcement);
+  rememberLastLocalGame('gomoku');
+}
+
+function newGomokuSession() {
+  startGomokuSession(newGomokuGame(), '新棋局已开始 · 你执黑先行');
+}
+
+function confirmLocalGameReplacement(hasProgress, message) {
+  if (!hasProgress) return true;
+  return typeof globalThis.confirm === 'function' ? globalThis.confirm(message) : false;
+}
+
+function performGomokuMove(index) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'gomoku' || casual?.kind !== 'gomoku' || game?.status !== 'playing' || !Number.isInteger(index)) return;
+  casual.focusedCell = index;
+  try {
+    const next = playGomokuHumanMove(game, index);
+    casual.game = next;
+    const aiMove = next.lastMove?.side === 'white' ? next.lastMove : null;
+    casual.announcement = next.status === 'finished' ? (next.winner === 'black' ? '你连成了五子' : next.winner === 'white' ? 'KAI 连成了五子' : '棋盘已满，本局和棋')
+      : aiMove ? `KAI 落在第 ${aiMove.row + 1} 行第 ${aiMove.column + 1} 列 · 轮到你` : '轮到你继续落黑棋';
+    casual.saveAvailable = saveGomokuGame(next);
+    if (!casual.saveAvailable) casual.announcement += ' · 当前进度无法保存';
+    render();focusGomokuInteraction(index);
+  } catch (error) {
+    casual.announcement = error?.message === 'GOMOKU_CELL_OCCUPIED' ? '这里已经有棋子' : '这一步暂时不能落子';
+    render();focusGomokuInteraction(index);
+  }
+}
+
+function focusMemoryInteraction(index = state.casual?.focusedCard) {
+  const result = document.querySelector('[data-memory-result]');
+  if (result) { result.focus({ preventScroll:true }); result.scrollIntoView?.({ block:'nearest' }); return; }
+  const target = document.querySelector(`[data-memory-card="${Number.isInteger(index) ? index : 0}"]`);
+  target?.focus({ preventScroll:true });
+  target?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function saveCurrentMemorySession(casual = state.casual) {
+  if (casual?.kind !== 'memory' || !casual.game) return false;
+  const result = saveMemoryMatchSession(undefined, casual.game, casual.bestScores);
+  casual.bestScores = result.bestScores;
+  casual.saveAvailable = result.saved;
+  return result.saved;
+}
+
+function queueMemoryMismatchResolution() {
+  if (memoryMismatchTimer) clearTimeout(memoryMismatchTimer);
+  memoryMismatchTimer = null;
+  const casual = state.casual;
+  if (state.view !== 'memory' || casual?.kind !== 'memory' || !casual.game?.pendingMismatch) return;
+  memoryMismatchTimer = setTimeout(() => {
+    memoryMismatchTimer = null;
+    if (state.view !== 'memory' || state.casual !== casual || !casual.game?.pendingMismatch) return;
+    casual.game = resolveMemoryMatchMismatch(casual.game);
+    casual.announcement = '卡片已盖回 · 继续寻找相同图案';
+    if (!saveCurrentMemorySession(casual)) casual.announcement += ' · 当前进度无法保存';
+    render();focusMemoryInteraction();
+  }, 780);
+}
+
+function startMemorySession(session, announcement = '翻开两张牌，寻找相同图案') {
+  stopCasualTimers();
+  const firstAvailable = session.game.matched.findIndex((matched) => !matched);
+  state.casual = {
+    kind:'memory', game:session.game, bestScores:session.bestScores,
+    focusedCard:firstAvailable >= 0 ? firstAvailable : 0,
+    announcement, saveAvailable:session.saveAvailable,
+  };
+  state.view = 'memory';
+  if (!saveCurrentMemorySession()) state.casual.announcement = `${announcement} · 当前进度无法保存`;
+  queueMemoryMismatchResolution();
+}
+
+function openMemoryMatch() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const session = loadMemoryMatchSession();
+  const announcement = !session.restored || session.game.status === 'ready' ? '翻开两张牌，寻找相同图案'
+    : session.game.status === 'won' ? '上局成绩已保留' : '已恢复本地翻牌进度';
+  startMemorySession(session, announcement);
+  rememberLastLocalGame('memory');
+}
+
+function newMemorySession(difficulty = state.casual?.game?.difficulty || 'easy') {
+  const normalized = Object.hasOwn(MEMORY_MATCH_DIFFICULTIES, difficulty) ? difficulty : 'easy';
+  const game = newMemoryMatchGame({ difficulty:normalized });
+  const bestScores = state.casual?.kind === 'memory' ? state.casual.bestScores : loadMemoryMatchSession().bestScores;
+  startMemorySession({ game, bestScores, restored:false, saveAvailable:true }, `已生成${MEMORY_MATCH_DIFFICULTIES[normalized].label}牌阵`);
+}
+
+function performMemoryFlip(index) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'memory' || casual?.kind !== 'memory' || !game || !Number.isInteger(index)) return;
+  casual.focusedCard = index;
+  try {
+    const next = flipMemoryMatchCard(game, index);
+    if (next === game) return;
+    casual.game = next;
+    casual.announcement = next.status === 'won' ? '全部配对完成'
+      : next.pendingMismatch ? '图案不同，稍后自动翻回'
+        : next.matchedPairs > game.matchedPairs ? '配对成功' : '再翻一张寻找配对';
+    if (!saveCurrentMemorySession(casual)) casual.announcement += ' · 当前进度无法保存';
+    render();focusMemoryInteraction(index);queueMemoryMismatchResolution();
+  } catch (error) {
+    casual.announcement = error?.message || '这张牌暂时不能翻开';
+    render();focusMemoryInteraction(index);
+  }
+}
+
+function updateMemoryMatchClock() {
+  const casual = state.casual;
+  if (document.visibilityState === 'hidden' || state.view !== 'memory' || casual?.kind !== 'memory' || casual.game?.status !== 'playing') return;
+  casual.game = advanceMemoryMatchTime(casual.game, 1);
+  const clock = document.querySelector('[data-memory-time]');
+  if (clock) clock.textContent = formatMemoryTime(casual.game.elapsedSeconds);
+  if (casual.game.elapsedSeconds % 5 === 0) saveCurrentMemorySession(casual);
+}
+
+function focusSnakeInteraction() {
+  const result = document.querySelector('[data-snake-result]');
+  if (result) { result.focus({ preventScroll:true }); result.scrollIntoView?.({ block:'nearest' }); return; }
+  const board = document.querySelector('[data-snake-board]');
+  board?.focus({ preventScroll:true });
+  board?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function startSnakeSession(game, announcement = '选择方向开始') {
+  stopCasualTimers();
+  state.casual = { kind:'snake', game, announcement, saveAvailable:true };
+  state.view = 'snake';
+  if (!saveSnakeGame(game)) state.casual.announcement = '本浏览器无法保存进度 · 仍可继续游玩';
+  queueSnakeTick();
+}
+
+function openSnake() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const saved = loadSavedSnakeGame();
+  const storedDifficulty = safeStorageGet(SNAKE_DIFFICULTY_KEY);
+  const difficulty = Object.hasOwn(SNAKE_DIFFICULTIES, storedDifficulty) ? storedDifficulty : 'normal';
+  const game = saved ? { ...saved, status:saved.status === 'playing' ? 'paused' : saved.status } : newSnakeGame({ difficulty });
+  const announcement = !saved || Number(game.ticks) === 0 ? '选择方向开始' : ['over','won'].includes(game.status) ? '上轮结果已保留' : '已恢复本地进度';
+  startSnakeSession(game, announcement);
+  rememberLastLocalGame('snake');
+}
+
+function newSnakeSession(difficulty = state.casual?.game?.difficulty || 'normal') {
+  const normalized = Object.hasOwn(SNAKE_DIFFICULTIES, difficulty) ? difficulty : 'normal';
+  startSnakeSession(newSnakeGame({ difficulty:normalized }), `已切换到${SNAKE_DIFFICULTIES[normalized].label}速度 · 选择方向开始`);
+}
+
+function updateSnakeFrame(game, announcement, previous) {
+  const board = document.querySelector('[data-snake-board]');
+  if (!board) return false;
+  const changedCells = new Set([...(previous?.snake || []), previous?.food, ...game.snake, game.food]);
+  for (const index of changedCells) {
+    if (!Number.isInteger(index)) continue;
+    const cell = board.children.item(index);
+    if (!cell) return false;
+    const visual = snakeCellVisual(game, index);
+    cell.className = visual.className;
+    cell.innerHTML = visual.content;
+  }
+  const score = document.querySelector('[data-snake-score]');
+  const best = document.querySelector('[data-snake-best]');
+  const length = document.querySelector('[data-snake-length]');
+  if (score) score.textContent = String(game.score);
+  if (best) best.textContent = String(Math.max(loadSnakeBest(), safeLocalCounter(game.score)));
+  if (length) length.textContent = String(game.snake.length);
+  const status = document.querySelector('[data-snake-status]');
+  const statusText = document.querySelector('[data-snake-status-text]');
+  const quietTick = announcement === '保持节奏';
+  if (status) status.setAttribute('aria-live', quietTick ? 'off' : 'polite');
+  if (statusText) statusText.textContent = quietTick ? '保持节奏，继续收集能量' : announcement;
+  return true;
+}
+
+function queueSnakeTick() {
+  if (snakeTimer) clearTimeout(snakeTimer);
+  snakeTimer = null;
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'snake' || casual?.kind !== 'snake' || game?.status !== 'playing') return;
+  const delay = SNAKE_DIFFICULTIES[game.difficulty]?.tickMs || SNAKE_DIFFICULTIES.normal.tickMs;
+  snakeTimer = setTimeout(() => {
+    snakeTimer = null;
+    if (state.view !== 'snake' || state.casual !== casual || casual.game?.status !== 'playing') return;
+    const previous = casual.game;
+    const next = advanceSnake(previous);
+    casual.game = next;
+    casual.announcement = next.status === 'won' ? '全部能量已经收集'
+      : next.status === 'over' ? '发生碰撞，本轮结束'
+        : next.foodsEaten > previous.foodsEaten ? `收集成功 · 得分 ${next.score}` : '保持节奏';
+    const saveWasAvailable = casual.saveAvailable !== false;
+    const shouldSave = next.status !== 'playing' || next.foodsEaten > previous.foodsEaten || next.ticks % 5 === 0;
+    const persistenceFailed = shouldSave && !saveSnakeGame(next) && saveWasAvailable;
+    if (persistenceFailed) casual.announcement = '当前进度无法保存 · 游戏仍可继续';
+    if (['over','won'].includes(next.status) || persistenceFailed || !updateSnakeFrame(next, casual.announcement, previous)) {
+      render();
+      focusSnakeInteraction();
+    }
+    queueSnakeTick();
+  }, delay);
+}
+
+function performSnakeDirection(direction) {
+  if (state.view !== 'snake' || state.casual?.kind !== 'snake') return;
+  try {
+    const previous = state.casual.game;
+    const next = setSnakeDirection(previous, direction);
+    state.casual.game = next;
+    if (next !== previous) state.casual.announcement = '方向已切换';
+    if (!saveSnakeGame(next)) state.casual.announcement = '方向已切换 · 当前进度无法保存';
+    render();focusSnakeInteraction();queueSnakeTick();
+  } catch (error) {
+    state.casual.announcement = error?.message || '暂时无法切换方向';
+    render();focusSnakeInteraction();
+  }
+}
+
+function toggleSnakeSession() {
+  if (state.view !== 'snake' || state.casual?.kind !== 'snake') return;
+  const game = state.casual.game;
+  if (['over','won'].includes(game.status)) { newSnakeSession(game.difficulty); return; }
+  const next = game.status === 'ready' ? setSnakeDirection(game, game.direction) : toggleSnakePause(game);
+  state.casual.game = next;
+  state.casual.announcement = next.status === 'paused' ? '已暂停' : '继续前进';
+  saveSnakeGame(next);
+  render();focusSnakeInteraction();queueSnakeTick();
+}
+
 function openSlots() {
   stopGameSync();
   stopRoomSync();
@@ -2204,7 +2695,7 @@ function jumpToLobbyTarget(target) {
     globalThis.setTimeout?.(()=>document.querySelector('#room-code')?.focus({preventScroll:true}),reduceMotion?0:420);
     return;
   }
-  const allowed=new Set(['ddz','xiangqi','mahjong','1048','sudoku6','minesweeper','three','reels']);
+  const allowed=new Set(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','three','reels']);
   if(!allowed.has(target))return;
   const strip=document.querySelector('[data-world-strip]');
   const card=strip?.querySelector(`[data-world-id="${target}"]`);
@@ -2239,6 +2730,14 @@ app.addEventListener('click', e => {
     minesweeperSuppressedClick=null;
     if(state.view!=='minesweeper'||!state.casual?.game)return;
     if(state.casual.inputMode==='flag')performMinesweeperFlag(index);else performMinesweeperReveal(index);
+    return;
+  }
+  if(el.dataset.gomokuCell!==undefined){
+    performGomokuMove(Number(el.dataset.gomokuCell));
+    return;
+  }
+  if(el.dataset.memoryCard!==undefined){
+    performMemoryFlip(Number(el.dataset.memoryCard));
     return;
   }
   if(el.dataset.sudoku6Cell!==undefined){
@@ -2292,6 +2791,9 @@ app.addEventListener('click', e => {
   if(a==='open-1048'){open1048();render();globalThis.scrollTo?.(0,0);focus1048Interaction();}
   if(a==='open-sudoku6'){openSudoku6();render();globalThis.scrollTo?.(0,0);focusSudoku6Interaction();}
   if(a==='open-minesweeper'){openMinesweeper();render();globalThis.scrollTo?.(0,0);focusMinesweeperInteraction();}
+  if(a==='open-gomoku'){openGomoku();render();globalThis.scrollTo?.(0,0);focusGomokuInteraction();}
+  if(a==='open-memory'){openMemoryMatch();render();globalThis.scrollTo?.(0,0);focusMemoryInteraction();}
+  if(a==='open-snake'){openSnake();render();globalThis.scrollTo?.(0,0);focusSnakeInteraction();}
   if(a==='open-slots'){openSlots();render();}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
@@ -2300,6 +2802,12 @@ app.addEventListener('click', e => {
     if(state.view==='xiangqi'){settleXiangqiClock();saveXiangqiSession();}
     if(state.view==='sudoku6')settleAndSaveSudoku6();
     if(state.view==='minesweeper')settleAndSaveMinesweeper();
+    if(state.view==='gomoku'&&state.casual?.game)saveGomokuGame(state.casual.game);
+    if(state.view==='memory')saveCurrentMemorySession();
+    if(state.view==='snake'&&state.casual?.game){
+      if(state.casual.game.status==='playing')state.casual.game=toggleSnakePause(state.casual.game);
+      saveSnakeGame(state.casual.game);
+    }
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
   if(a==='three-new'){stopCasualTimers();state.casual={kind:'three',round:newThreeCardRound(),revealed:false,thinking:false};render();}
@@ -2462,6 +2970,43 @@ app.addEventListener('click', e => {
     const difficulty=state.casual.confirmAction==='difficulty'?state.casual.pendingDifficulty:state.casual.game.difficulty;
     newMinesweeperSession(difficulty);render();focusMinesweeperInteraction();return;
   }
+  if(a==='gomoku-new'&&state.view==='gomoku'){
+    const game=state.casual?.game;
+    if(!confirmLocalGameReplacement(game?.status==='playing'&&Number(game.moveCount)>0,'当前五子棋尚未结束，确定重新开局吗？'))return;
+    newGomokuSession();render();focusGomokuInteraction();return;
+  }
+  if(a==='memory-new'&&state.view==='memory'){
+    const game=state.casual?.game;
+    const hasProgress=game?.status==='playing'&&(Number(game.moveCount)>0||game.faceUp?.length>0||Number(game.matchedPairs)>0);
+    if(!confirmLocalGameReplacement(hasProgress,'当前翻牌进度尚未完成，确定重新洗牌吗？'))return;
+    newMemorySession();render();focusMemoryInteraction();return;
+  }
+  if(a==='memory-difficulty'&&state.view==='memory'){
+    const difficulty=el.dataset.memoryDifficulty;
+    const game=state.casual?.game;
+    if(!Object.hasOwn(MEMORY_MATCH_DIFFICULTIES,difficulty)||!game)return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个难度';render();focusMemoryInteraction();return;}
+    const hasProgress=game.status==='playing'&&(Number(game.moveCount)>0||game.faceUp?.length>0||Number(game.matchedPairs)>0);
+    if(!confirmLocalGameReplacement(hasProgress,'切换难度会开始新牌阵，确定继续吗？'))return;
+    newMemorySession(difficulty);
+    render();focusMemoryInteraction();return;
+  }
+  if(a==='snake-direction'&&state.view==='snake'){performSnakeDirection(el.dataset.snakeDirection);return;}
+  if(a==='snake-toggle'&&state.view==='snake'){toggleSnakeSession();return;}
+  if(a==='snake-new'&&state.view==='snake'){
+    const game=state.casual?.game;
+    if(!confirmLocalGameReplacement(['playing','paused'].includes(game?.status)&&Number(game.ticks)>0,'当前贪吃蛇进度尚未结束，确定重新开始吗？'))return;
+    newSnakeSession();render();focusSnakeInteraction();return;
+  }
+  if(a==='snake-difficulty'&&state.view==='snake'){
+    const difficulty=el.dataset.snakeDifficulty;
+    const game=state.casual?.game;
+    if(!Object.hasOwn(SNAKE_DIFFICULTIES,difficulty)||!game)return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个速度';render();focusSnakeInteraction();return;}
+    if(!confirmLocalGameReplacement(['playing','paused'].includes(game.status)&&Number(game.ticks)>0,'切换速度会重新开始本轮，确定继续吗？'))return;
+    newSnakeSession(difficulty);
+    render();focusSnakeInteraction();return;
+  }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     const casual=state.casual;
     casual.spinning=true;casual.last=null;render();
@@ -2532,6 +3077,12 @@ app.addEventListener('pointerdown', (event) => {
     }, 520);
     minesweeperLongPress = { pointerId:event.pointerId, index, x:event.clientX, y:event.clientY, timer };
   }
+  const snakeBoard = event.target.closest?.('[data-snake-board]');
+  if (snakeBoard && state.view === 'snake') {
+    snakePointer = { id:event.pointerId, x:event.clientX, y:event.clientY };
+    snakeBoard.setPointerCapture?.(event.pointerId);
+    return;
+  }
   const mergeBoard = event.target.closest?.('[data-1048-board]');
   if (mergeBoard && state.view === '1048') {
     merge1048Pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -2553,6 +3104,13 @@ app.addEventListener('pointermove', (event) => {
 
 app.addEventListener('pointerup', (event) => {
   if (minesweeperLongPress?.pointerId === event.pointerId) cancelMinesweeperLongPress();
+  if (snakePointer && snakePointer.id === event.pointerId) {
+    const deltaX=event.clientX-snakePointer.x;const deltaY=event.clientY-snakePointer.y;
+    snakePointer=null;
+    const horizontal=Math.abs(deltaX)>=Math.abs(deltaY);const distance=horizontal?Math.abs(deltaX):Math.abs(deltaY);
+    if(distance>=24)performSnakeDirection(horizontal?(deltaX<0?'left':'right'):(deltaY<0?'up':'down'));
+    return;
+  }
   if (merge1048Pointer && merge1048Pointer.id === event.pointerId) {
     const deltaX = event.clientX - merge1048Pointer.x;
     const deltaY = event.clientY - merge1048Pointer.y;
@@ -2571,7 +3129,7 @@ app.addEventListener('pointerup', (event) => {
   switchHero(nextGame, deltaX < 0 ? 'next' : 'previous');
 });
 
-app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; cancelMinesweeperLongPress(); });
+app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
   const minesweeperModalOpen = state.view === 'minesweeper' && state.casual?.confirmAction;
@@ -2614,6 +3172,44 @@ app.addEventListener('keydown', (event) => {
     event.preventDefault();
     focusXiangqiDialog();
     return;
+  }
+  const gomokuCellNode = event.target.closest?.('[data-gomoku-cell]');
+  if (state.view === 'gomoku' && gomokuCellNode) {
+    const index = Number(gomokuCellNode.dataset.gomokuCell);
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();performGomokuMove(index);return;
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const nextIndex = event.key === 'Home' ? 0 : GOMOKU_CELL_COUNT - 1;
+      state.casual.focusedCell = nextIndex;render();focusGomokuInteraction(nextIndex);return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const row=Math.floor(index/GOMOKU_SIZE);const column=index%GOMOKU_SIZE;
+      const nextRow=event.key==='ArrowUp'?Math.max(0,row-1):event.key==='ArrowDown'?Math.min(GOMOKU_SIZE-1,row+1):row;
+      const nextColumn=event.key==='ArrowLeft'?Math.max(0,column-1):event.key==='ArrowRight'?Math.min(GOMOKU_SIZE-1,column+1):column;
+      const nextIndex=nextRow*GOMOKU_SIZE+nextColumn;
+      state.casual.focusedCell=nextIndex;state.casual.announcement=`已移到第 ${nextRow+1} 行第 ${nextColumn+1} 列`;render();focusGomokuInteraction(nextIndex);return;
+    }
+  }
+  const memoryCardNode = event.target.closest?.('[data-memory-card]');
+  if (state.view === 'memory' && memoryCardNode) {
+    const index=Number(memoryCardNode.dataset.memoryCard);
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const columns=state.casual.game.columns;const rows=state.casual.game.rows;
+      const row=Math.floor(index/columns);const column=index%columns;
+      const nextRow=event.key==='ArrowUp'?Math.max(0,row-1):event.key==='ArrowDown'?Math.min(rows-1,row+1):row;
+      const nextColumn=event.key==='ArrowLeft'?Math.max(0,column-1):event.key==='ArrowRight'?Math.min(columns-1,column+1):column;
+      const nextIndex=nextRow*columns+nextColumn;
+      state.casual.focusedCard=nextIndex;render();focusMemoryInteraction(nextIndex);return;
+    }
+  }
+  if (state.view === 'snake' && event.target.closest?.('[data-snake-board]')) {
+    const direction=({ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'up',w:'up',W:'up',ArrowDown:'down',s:'down',S:'down'})[event.key];
+    if(direction){event.preventDefault();performSnakeDirection(direction);return;}
+    if(event.key===' '){event.preventDefault();toggleSnakeSession();return;}
   }
   const xiangqiCellNode = event.target.closest?.('[data-xiangqi-cell]');
   if (state.view === 'xiangqi' && xiangqiCellNode) {
@@ -2741,6 +3337,7 @@ setInterval(() => {
   updateSudoku6Clock();
   updateXiangqiClock();
   updateMinesweeperClock();
+  updateMemoryMatchClock();
 }, 1000);
 
 document.addEventListener('visibilitychange', () => {
@@ -2767,6 +3364,21 @@ document.addEventListener('visibilitychange', () => {
       return;
     }
     if (!state.casual.confirmAction) resumeMinesweeperClock();
+  }
+  if (state.view === 'gomoku' && document.visibilityState === 'hidden') saveGomokuGame(state.casual.game);
+  if (state.view === 'memory') {
+    if (document.visibilityState === 'hidden') {
+      if (memoryMismatchTimer) clearTimeout(memoryMismatchTimer);
+      memoryMismatchTimer = null;
+      saveCurrentMemorySession();
+    }
+    else queueMemoryMismatchResolution();
+  }
+  if (state.view === 'snake' && document.visibilityState === 'hidden') {
+    if (state.casual.game.status === 'playing') state.casual.game = toggleSnakePause(state.casual.game);
+    state.casual.announcement = '页面已隐藏，游戏自动暂停';
+    saveSnakeGame(state.casual.game);
+    stopCasualTimers();
   }
 });
 

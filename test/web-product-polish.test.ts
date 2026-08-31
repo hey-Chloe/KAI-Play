@@ -62,16 +62,16 @@ test('the game center puts discovery before room and history utilities', () => {
 
 test('poster cards keep one real action and a truthful benefit promise', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
-  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 8);
-  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 8);
-  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 8);
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 11);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 11);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 11);
   assert.match(lobby, /首击必安全/);
   assert.match(lobby, /三档 KAI 对手/);
   assert.match(lobby, /无现金下注 · 无提现/);
   assert.doesNotMatch(lobby, /\d+\s*人在线|五星|好评率|今日热门/);
 });
 
-test('all eight games form one horizontally sliding card carousel', () => {
+test('all eleven games form one horizontally sliding card carousel', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /data-world-strip/);
   assert.match(lobby, /全部玩法卡片轮播/);

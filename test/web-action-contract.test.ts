@@ -14,12 +14,28 @@ function sourceBetween(start: string, end: string) {
 }
 
 test('every statically rendered button action has a reachable click handler', () => {
-  const declared = new Set([...appSource.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]!));
+  const declared = new Set(
+    [...appSource.matchAll(/data-action="([^"]+)"/g)]
+      .map((match) => match[1]!)
+      .filter((action) => !action.includes('$' + '{')),
+  );
   const handled = new Set([...appSource.matchAll(/if\s*\(a===['"]([^'"]+)['"]/g)].map((match) => match[1]!));
   const missing = [...declared].filter((action) => !handled.has(action));
+  const resumeCandidates = sourceBetween('const resumeCandidates = [];', 'const recentLocalGame');
+  const resumeActions = [...new Set(
+    [...resumeCandidates.matchAll(/action:['"]([^'"]+)['"]/g)].map((match) => match[1]!),
+  )];
 
   assert.ok(declared.size >= 30, `expected the full interaction surface, found only ${declared.size} actions`);
   assert.deepEqual(missing, []);
+  assert.deepEqual(resumeActions, [
+    'open-minesweeper', 'open-sudoku6', 'open-1048', 'open-xiangqi',
+    'open-gomoku', 'open-memory', 'open-snake',
+  ]);
+  for (const action of resumeActions) {
+    assert.match(action, /^open-/);
+    assert.ok(handled.has(action), 'resume action ' + action + ' must have a reachable click handler');
+  }
   assert.match(appSource, /if\(el\.dataset\.view\)/, 'navigation buttons need the generic data-view handler');
   assert.match(appSource, /if\(el\.dataset\.bid!==undefined\)/, 'bid buttons need the generic data-bid handler');
 });

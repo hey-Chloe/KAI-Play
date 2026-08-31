@@ -81,8 +81,8 @@ test('the Hero actions remain real while unavailable daily puzzles stay out of t
   }
   assert.match(appSource, /\/v1\/games\/quick/);
   assert.match(appSource, /\/v1\/rooms(?:\/join)?/);
-  assert.match(lobbySource, /8 款玩法，即刻开局/);
-  assert.match(lobbySource, /1 款竞技 · 7 款免费畅玩/);
+  assert.match(lobbySource, /11 款玩法，即刻开局/);
+  assert.match(lobbySource, /1 款竞技 · 10 款免费畅玩/);
   assert.doesNotMatch(lobbySource, /每日残局|筹备中/);
   assert.doesNotMatch(lobbySource, /在线牌桌|好友正在玩|\d+\s*人在线|已入桌|正在进行/);
 });
