@@ -10297,6 +10297,7 @@ body:has(.lobby-game-center) {
 .lobby-game-center > .nav,
 .page-shell > .nav,
 .friends-page > .nav {
+  top:auto;
   right:auto;
   bottom:max(8px,env(safe-area-inset-bottom));
   left:50%;
