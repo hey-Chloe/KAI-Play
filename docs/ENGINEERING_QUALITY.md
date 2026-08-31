@@ -8,7 +8,7 @@
 - `server/src/platform.ts`：身份、房间、对局、幂等动作与结算用例编排。
 - `server/src/server.ts`：HTTP 输入验证、限流、长轮询和优雅停机。
 - `server/src/store.ts`：带校验和、原子替换和滚动备份的单进程 JSON 快照。
-- `web/`：零第三方运行时依赖的浏览器客户端及同源代理；数独、象棋、扫雷、五子棋、记忆翻牌、贪吃蛇和 KAI 农场分别由独立规则模块承载生成、合法行动、终局或成熟与恢复状态转移。
+- `web/`：零第三方运行时依赖的浏览器客户端及同源代理；数独、象棋、扫雷、五子棋、记忆翻牌、贪吃蛇和 KAI 农场分别由独立规则模块承载生成、合法行动、终局或成熟与恢复状态转移；`catalog-carousel.js` 以纯函数承载筛选后索引、滚动目标、拖拽与释放吸附边界。
 - `mobile/`：Expo SDK 57 客户端，消费同一套服务端权威接口。
 
 斗地主竞技局的规则状态只由服务端推进。客户端倒计时使用响应里的权威 `turn.deadline`，动作携带 `expectedSequence` 和请求 ID；相同请求 ID 只有在载荷指纹一致时才可重放。返回的玩家视图和幂等缓存均与内部权威状态隔离。Web 共交付十二款玩法：斗地主是唯一服务端竞技局，其余十一款是明确隔离的本地免费训练，不请求服务端竞技结算。1048、数独、象棋、扫雷、五子棋、记忆翻牌、贪吃蛇和 KAI 农场共八款支持当前浏览器本地自动保存。
@@ -27,7 +27,7 @@ npm run test:coverage
 
 `npm run verify` 顺序执行 `build → test:coverage → check → preflight`；覆盖率命令本身已经运行全部测试。`build` 在当前阶段表示服务端/Web Node 可执行语法检查与移动端 TypeScript 检查，不表示 core/server 已完成 TypeScript 编译或生成发布产物。GitHub Actions 配置会在提交与拉取请求中安装 `mobile/package-lock.json` 锁定依赖、运行完整门禁、校验 Compose、构建两个容器镜像，并启动整套服务冒烟 API、Web 代理与视觉资产。发布预检还会校验安全边界、视觉资源、受信代理配置、文档和 CI 文件未被遗漏。
 
-当前自动化测试覆盖规则单元测试、平台/存储集成测试、真实 HTTP 服务测试、Web 同源代理端到端测试，以及 1048、6×6 数独、KAI 象棋、KAI 扫雷、KAI 五子棋、KAI 记忆翻牌、KAI 贪吃蛇和 KAI 农场的规则与产品交互契约。新增模块覆盖确定性 AI、配对锁定、计步计时、连续转向、碰撞、暂停、离线成熟与防御性恢复。生产契约还会验证独立玩法模块的 Brotli、JavaScript MIME、CSP 与 ETag。
+当前自动化测试覆盖规则单元测试、平台/存储集成测试、真实 HTTP 服务测试、Web 同源代理端到端测试，以及 1048、6×6 数独、KAI 象棋、KAI 扫雷、KAI 五子棋、KAI 记忆翻牌、KAI 贪吃蛇和 KAI 农场的规则与产品交互契约。新增目录模块覆盖筛选后的可见顺序、不等宽卡片、首尾钳制、距离/速度翻页、纵向手势排除与 LTR/RTL 滚动模型；产品契约同时约束十二款玩法内容源、三手牌型判断和转轮会话统计。生产契约还会验证独立玩法模块的 Brotli、JavaScript MIME、CSP 与 ETag。
 
 下表保留扫雷合流时最近一次可完整监听端口环境的覆盖率基线，当时 `npm run verify` 共执行 218 个测试且全部通过；它不是本次新增三款玩法后的最新覆盖率，也未使用单文件覆盖率替代：
 
@@ -39,7 +39,7 @@ npm run test:coverage
 
 表中只记录加入扫雷计时、多标签存档冲突、无障碍交互与生产传输契约后的历史结果。本次工作区测试已扩展到 278 项；受限沙箱内有 270 项通过，剩余 8 项均因不允许监听本地端口而无法运行，最终发布结果必须以 GitHub Actions 在正常网络命名空间中执行完整 `npm run verify` 为准。并发 HTTP/超时测试可能令 Node 原生覆盖率出现轻微时序差异，发布判断以每次 `npm run verify` 是否同时满足三项门槛为准。
 
-发布门槛固定为行覆盖率 90%、分支覆盖率 80%、函数覆盖率 90%；低于任一阈值时 `npm run test:coverage` 和 CI 会直接失败。当前 Node 报告覆盖被测试进程加载的 `core/*`、`server/*`、`web/casual-games.js`、`web/sudoku6.js`、`web/xiangqi.js`、`web/minesweeper.js`、`web/gomoku.js`、`web/memory-match.js`、`web/snake.js`、`web/farm.js`、`web/serve.mjs` 及测试文件；不包含主要通过源码契约和真实浏览器回归验证的 `web/app.js`，也不包含 React Native UI。因此表中数字不能表述为全项目覆盖率，后续仍需迁移到能合并浏览器与移动端结果的工具。
+发布门槛固定为行覆盖率 90%、分支覆盖率 80%、函数覆盖率 90%；低于任一阈值时 `npm run test:coverage` 和 CI 会直接失败。当前 Node 报告覆盖被测试进程加载的 `core/*`、`server/*`、`web/casual-games.js`、`web/catalog-carousel.js`、`web/sudoku6.js`、`web/xiangqi.js`、`web/minesweeper.js`、`web/gomoku.js`、`web/memory-match.js`、`web/snake.js`、`web/farm.js`、`web/serve.mjs` 及测试文件；不包含主要通过源码契约和真实浏览器回归验证的 `web/app.js`，也不包含 React Native UI。因此表中数字不能表述为全项目覆盖率，后续仍需迁移到能合并浏览器与移动端结果的工具。
 
 覆盖率相对较低的剩余区域是机器人启发式的低概率分支和 CloudPay 沙盒提供方异常分支。当前环境没有真实 React Native 设备自动化；移动端通过类型检查、接口契约测试与共享 HTTP 集成测试覆盖，正式发布前仍应在 iOS/Android 真机执行冒烟回归。
 

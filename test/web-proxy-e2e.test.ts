@@ -100,7 +100,7 @@ test('web preview serves cache-aware local assets and proxies a complete authent
     assert.equal(cachedCourt.headers.get('cache-control'), 'public, max-age=31536000, immutable');
 
     for (const path of [
-      '/styles.css', '/app.js', '/sudoku6.js',
+      '/styles.css', '/app.js', '/catalog-carousel.js', '/sudoku6.js',
       '/gomoku.js', '/memory-match.js', '/snake.js', '/farm.js',
     ]) {
       const compressed = await fetch(`${webOrigin}${path}`, { headers: { 'accept-encoding': 'br' } });

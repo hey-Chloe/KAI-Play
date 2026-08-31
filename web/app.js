@@ -87,6 +87,15 @@ import {
   resolveMemoryMatchMismatch,
   saveMemoryMatchSession,
 } from './memory-match.js';
+import {
+  carouselDragScrollPosition,
+  carouselReleaseDecision,
+  carouselScrollBounds,
+  nearestCarouselIndex,
+  stepCarouselIndex,
+  targetCarouselScrollPosition,
+  visibleCarouselItems,
+} from './catalog-carousel.js';
 
 const API = '/api';
 const app = document.querySelector('#app');
@@ -123,6 +132,93 @@ const CATALOG_DISCOVERY = Object.freeze({
   farm: { categories:['quick','save'], search:'KAI 农场 QQ农场 qq farm farming 种菜 收菜 种植 经营 养成 休闲 自动保存 离线成长' },
   three: { categories:['card','quick'], search:'炸金花 zha jin hua three card poker 三张牌 扑克 牌桌 比牌 短局' },
   reels: { categories:['arcade','quick'], search:'算力转轮 转轮 reels slots spin 轻娱乐 街机 短局' },
+});
+const CATALOG_GAME_IDS = Object.freeze(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels']);
+const GAME_CONTENT = Object.freeze({
+  ddz: {
+    name:'斗地主', eyebrow:'竞技牌桌', duration:'约 5–10 分钟', mode:'3 人 · 两位智能牌友', persistence:'服务端战绩与断线恢复',
+    goal:'判断牌势、竞叫身份，率先让自己或同阵营牌友出完手牌。',
+    loop:'竞叫地主 → 选择合法牌型 → 压牌或过牌 → 轮流出牌',
+    finish:'地主先出完则地主胜；任一农民先出完则农民阵营胜。',
+    limits:'唯一计入竞技分的玩法；发牌、回合与结算由服务端统一判定。', action:'quick', actionLabel:'快速开局',
+  },
+  xiangqi: {
+    name:'KAI 象棋', eyebrow:'棋桌策略', duration:'约 8–20 分钟', mode:'单人 · 三档 KAI 对手', persistence:'本地自动保存',
+    goal:'你执红先行，通过将军、吃子与布局把对方将帅逼入绝境。',
+    loop:'选中己方棋子 → 查看合法落点 → 落子 → KAI 回应',
+    finish:'将死对方获胜；被将死则本局结束，可同难度再战。',
+    limits:'支持悔棋、键盘操作和规则提示；局面只保存在当前浏览器。', action:'open-xiangqi', actionLabel:'进入象棋',
+  },
+  gomoku: {
+    name:'KAI 五子棋', eyebrow:'连五对弈', duration:'约 3–8 分钟', mode:'单人 · 固定标准对手', persistence:'本地自动保存',
+    goal:'你执黑先行，在横、竖或斜线方向率先连成五子。',
+    loop:'选择空位落黑子 → KAI 落白子 → 兼顾进攻与封堵',
+    finish:'任一方连成五子立即结束；棋盘落满且无人连五则和棋。',
+    limits:'当前为固定强度的人机对手，不宣称在线匹配或多档难度。', action:'open-gomoku', actionLabel:'进入五子棋',
+  },
+  mahjong: {
+    name:'KAI 麻将', eyebrow:'四人牌桌', duration:'约 6–12 分钟', mode:'1 人 + 3 位智能牌友', persistence:'单局不保存',
+    goal:'通过摸牌与弃牌整理手牌，先组成可和牌型。',
+    loop:'摸一张 → 选择一张弃牌 → 三位牌友依次摸打',
+    finish:'自摸、荣和或牌墙耗尽流局后结算。',
+    limits:'支持常规和牌、七对和国士无双；暂不含吃碰杠与完整番型计分。', action:'open-mahjong', actionLabel:'开始麻将',
+  },
+  '1048': {
+    name:'1048', eyebrow:'数字合并', duration:'约 3–8 分钟', mode:'单人 · 4×4 棋盘', persistence:'本地自动保存',
+    goal:'推动整张棋盘，让相同数字合并并冲击稀有目标 1048。',
+    loop:'滑动或按方向键 → 同值方块合并 → 新方块出现',
+    finish:'两枚 512 特别融合成 1048 即达成；无处可移动则结束。',
+    limits:'达成目标后可以继续冲分；规则与普通 2048 的终局目标不同。', action:'open-1048', actionLabel:'开始合并',
+  },
+  sudoku6: {
+    name:'KAI 数独', eyebrow:'逻辑填数', duration:'约 4–12 分钟', mode:'单人 · 三档难度 / 每日题', persistence:'本地自动保存',
+    goal:'在 6×6 盘面填入 1–6，让每行、每列和每个 2×3 宫不重复。',
+    loop:'选格 → 填数或记笔记 → 检查冲突 → 必要时撤销或提示',
+    finish:'所有空格正确填满即完成，并记录本地用时与表现。',
+    limits:'每日题与练习题均在本地生成和判定，不提供在线排行榜。', action:'open-sudoku6', actionLabel:'开始数独',
+  },
+  minesweeper: {
+    name:'KAI 扫雷', eyebrow:'雷区推理', duration:'约 2–10 分钟', mode:'单人 · 三档雷区', persistence:'本地自动保存',
+    goal:'根据数字推断地雷位置，揭开所有非雷格。',
+    loop:'安全揭格 → 读取邻雷数字 → 插旗标记 → 和弦展开',
+    finish:'揭开全部安全格获胜；点中地雷则本局结束。',
+    limits:'首击必安全；触屏可切换揭开/插旗，长按格子也可插旗。', action:'open-minesweeper', actionLabel:'开始排雷',
+  },
+  memory: {
+    name:'KAI 记忆翻牌', eyebrow:'图案配对', duration:'约 2–6 分钟', mode:'单人 · 三档牌阵', persistence:'本地自动保存',
+    goal:'记住卡片位置，用尽量少的步数找齐所有相同图案。',
+    loop:'翻开第一张 → 翻开第二张 → 配对保留 / 不同则盖回',
+    finish:'全部图案完成配对即结束，并记录本地最佳成绩。',
+    limits:'支持键盘与触控；计时、步数和未完成牌阵只在当前浏览器保存。', action:'open-memory', actionLabel:'开始配对',
+  },
+  snake: {
+    name:'KAI 贪吃蛇', eyebrow:'即时反应', duration:'约 1–5 分钟', mode:'单人 · 三档速度', persistence:'本地自动保存',
+    goal:'操控光蛇收集能量，在身体变长后继续保持安全路线。',
+    loop:'改变方向 → 吃到能量得分 → 身体增长 → 规划下一条路线',
+    finish:'撞到边界或自身则结束；暂停后可继续当前一轮。',
+    limits:'支持方向键、WASD、滑动和屏幕方向按钮；最高分保存在本地。', action:'open-snake', actionLabel:'开始穿行',
+  },
+  farm: {
+    name:'KAI 农场', eyebrow:'轻松经营', duration:'首获约 20 秒', mode:'单人 · 6 块田 / 3 种作物', persistence:'本地自动保存',
+    goal:'循环播种、浇水和收获，积累金币与经验并解锁种子。',
+    loop:'选种子 → 播种 → 浇水加速 → 成熟收获 → 投入下一季',
+    finish:'持续经营玩法没有强制终局，以升级和累计收获作为阶段目标。',
+    limits:'作物会按本地时间继续成熟；无好友偷菜、跨设备同步或现金兑换。', action:'open-farm', actionLabel:'进入农场',
+  },
+  three: {
+    name:'炸金花训练', eyebrow:'牌型判断', duration:'约 3 分钟 / 3 手', mode:'单人训练 · 两位牌友', persistence:'单局不保存',
+    goal:'先判断自己的三张牌型，再揭晓三家结果，练习牌型强弱。',
+    loop:'观察手牌 → 选择牌型 → 揭晓比牌 → 查看判断正确率',
+    finish:'完成三手后给出本次训练的判断正确数、胜手与并列。',
+    limits:'仅做牌型训练，无筹码、下注、现金或可兑换奖励。', action:'open-three', actionLabel:'开始三手训练',
+  },
+  reels: {
+    name:'算力转轮', eyebrow:'大厅彩蛋', duration:'每次约 1 秒', mode:'单人 · 自由次数', persistence:'仅本次会话统计',
+    goal:'旋转三枚符号，发现对子与三连组合，积累本次会话的共振值。',
+    loop:'免费旋转 → 三轮停止 → 记录组合 → 继续发现新组合',
+    finish:'没有输赢终局，可随时结束；页面持续显示本次会话真实统计。',
+    limits:'纯视觉娱乐，不支付、不下注、不发放任何可兑换奖励。', action:'open-slots', actionLabel:'免费试转',
+  },
 });
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
@@ -162,6 +258,8 @@ let threeRevealTimer = null;
 let slotSpinTimer = null;
 let worldCarouselStatusFramePending = false;
 let worldCarouselPendingStrip = null;
+let worldPointer = null;
+let worldPointerSuppressClickUntil = 0;
 
 const SYNC_TERMINAL_STATUSES = new Set([401, 403, 404]);
 
@@ -520,6 +618,40 @@ function tierName(profile) {
   return '启航段位';
 }
 
+function gameContent(gameId) {
+  return GAME_CONTENT[gameId] || GAME_CONTENT.ddz;
+}
+
+function catalogPlaybookMarkup(gameId = 'ddz') {
+  const content = gameContent(gameId);
+  return `<aside class="catalog-playbook" data-catalog-playbook data-world-id="${esc(gameId)}" aria-labelledby="catalog-playbook-title">
+    <div class="catalog-playbook-copy"><span>当前玩法 · ${esc(content.eyebrow)}</span><h3 id="catalog-playbook-title">${esc(content.name)}</h3><p>${esc(content.goal)}</p></div>
+    <dl><div><dt>核心循环</dt><dd>${esc(content.loop)}</dd></div><div><dt>完成条件</dt><dd>${esc(content.finish)}</dd></div></dl>
+    <div class="catalog-playbook-foot"><div class="catalog-playbook-meta" aria-label="玩法信息"><span>${esc(content.duration)}</span><span>${esc(content.mode)}</span><span>${esc(content.persistence)}</span></div><button class="btn primary" data-action="${esc(content.action)}">${esc(content.actionLabel)} <b aria-hidden="true">→</b></button></div>
+  </aside>`;
+}
+
+function updateCatalogPlaybook(gameId) {
+  const current = document.querySelector('[data-catalog-playbook]');
+  if (!current || current.dataset.worldId === gameId) return;
+  current.outerHTML = catalogPlaybookMarkup(gameId);
+}
+
+function rulesGameGuide() {
+  const cards = CATALOG_GAME_IDS.map((gameId, index) => {
+    const content=gameContent(gameId);
+    return `<article class="rules-game-card">
+    <header><span>${String(index + 1).padStart(2, '0')}</span><div><small>${esc(content.eyebrow)}</small><h3>${esc(content.name)}</h3></div></header>
+    <p>${esc(content.goal)}</p>
+    <dl><div><dt>怎么玩</dt><dd>${esc(content.loop)}</dd></div><div><dt>如何结束</dt><dd>${esc(content.finish)}</dd></div></dl>
+    <div class="rules-game-meta"><span>${esc(content.duration)}</span><span>${esc(content.mode)}</span><span>${esc(content.persistence)}</span></div>
+    <small class="rules-game-limit">${esc(content.limits)}</small>
+    <button class="btn" data-action="${esc(content.action)}">${esc(content.actionLabel)} <b aria-hidden="true">→</b></button>
+  </article>`;
+  }).join('');
+  return `<section class="rules-game-guide" aria-labelledby="rules-game-guide-title"><div class="section-head"><div><span class="section-kicker">GAME PLAYBOOK</span><h2 id="rules-game-guide-title">12 款玩法，一次看懂</h2></div><p>目标、循环、终局与保存范围均以当前版本为准</p></div><div class="rules-game-index">${cards}</div></section>`;
+}
+
 function lobby() {
   const p = state.profile || {games:0,wins:0,winRate:0,name:'游客'};
   const firstGame = (Number(p.games) || 0) === 0;
@@ -746,16 +878,17 @@ function lobby() {
           <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
           <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"${canContinueXiangqi?' data-world-resumable="true"':''}><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
           <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"${canContinueGomoku?' data-world-resumable="true"':''}><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>
-          <article class="game-world world-mahjong" data-world-card data-world-id="mahjong"><span class="world-badge">牌桌经典</span><div class="world-cover"><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div><i class="world-cover-mark" aria-hidden="true">東</i></div><div class="world-copy"><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>摸牌、理牌、听牌，和三位 KAI 牌友打到结算。</p><button class="btn" data-action="open-mahjong">开始麻将 <b>→</b></button></div></article>
+          <article class="game-world world-mahjong" data-world-card data-world-id="mahjong"><span class="world-badge">牌桌经典</span><div class="world-cover"><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div><i class="world-cover-mark" aria-hidden="true">東</i></div><div class="world-copy"><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>摸牌、理牌、弃牌，和三位 KAI 牌友打到结算。</p><button class="btn" data-action="open-mahjong">开始麻将 <b>→</b></button></div></article>
           <article class="game-world world-1048" data-world-card data-world-id="1048"${canContinue1048?' data-world-resumable="true"':''}><span class="world-badge">${canContinue1048?'可继续':saved1048?.status==='playing'?'等待开局':saved1048?'上局已保存':'稀有目标'}</span><div class="world-cover"><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div><i class="world-cover-mark" aria-hidden="true">＋</i></div><div class="world-copy"><span>数字合并 · 单机益智 · 冲击 1048</span><h3>1048</h3><p>逐级合并数字，让最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action} <b>→</b></button></div></article>
           <article class="game-world world-sudoku6" data-world-card data-world-id="sudoku6"${canContinueSudoku6?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSudoku6?'可继续':savedSudoku6?.status==='playing'?'待你开题':savedSudoku6?'成绩已保存':'每日一局'}</span><div class="world-cover"><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">6×6</i></div><div class="world-copy"><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>填满盘面，用一局让思路重新清晰，支持随手记笔记。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action} <b>→</b></button></div></article>
           <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"${canContinueMinesweeper?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
           <article class="game-world world-memory" data-world-card data-world-id="memory"${canContinueMemory?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMemory?'可继续':savedMemory?.status==='won'?'成绩已保存':'轻松短局'}</span><div class="world-cover"><div class="world-memory-cards" aria-hidden="true"><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i></div><i class="world-cover-mark" aria-hidden="true">PAIR</i></div><div class="world-copy"><span>翻开配对 · 三档牌阵</span><h3>KAI 记忆翻牌</h3><p>记住每张卡的位置，用更少步数找齐所有相同图案。</p><button class="btn" data-action="open-memory">${memoryAction} <b>→</b></button></div></article>
           <article class="game-world world-snake" data-world-card data-world-id="snake"${canContinueSnake?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
           <article class="game-world world-farm" data-world-card data-world-id="farm"${canContinueFarm?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFarm?'可继续':'新上线'}</span><div class="world-cover"><div class="world-farm-field" aria-hidden="true"><i class="crop-wheat stage-ready"><b>麦</b></i><i class="crop-carrot stage-growing"><b>萝</b></i><i></i><i class="crop-strawberry stage-ready"><b>莓</b></i><i class="crop-wheat stage-growing"><b>麦</b></i><i></i></div><i class="world-cover-mark" aria-hidden="true">丰</i></div><div class="world-copy"><span>经典农场经营 · 20 秒首获</span><h3>KAI 农场</h3><p>播种、浇水、等待成熟，再把收获投入下一季。</p><button class="btn" data-action="open-farm">${farmAction} <b>→</b></button></div></article>
-          <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">免费比牌</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三张定胜负 · 单机训练</span><h3>炸金花训练</h3><p>一眼判断牌型强弱，翻开这一手就见分晓。</p><button class="btn" data-action="open-three">翻开这一手 <b>→</b></button></div></article>
-          <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>轻点一次，看三枚符号能否同频连线。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">试转一次 <b>→</b></button></div></article>
+          <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">牌型训练</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三手判断训练 · 单机免费</span><h3>炸金花训练</h3><p>先判断自己的牌型，再揭晓三家结果与本次正确率。</p><button class="btn" data-action="open-three">开始三手训练 <b>→</b></button></div></article>
+          <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>发现对子与三连组合，记录本次会话的共振值。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">免费试转 <b>→</b></button></div></article>
         </div>
+        ${catalogPlaybookMarkup('ddz')}
         <div class="catalog-empty" data-catalog-empty hidden role="status"><i aria-hidden="true">⌕</i><div><b>没有找到相关玩法</b><span>换个关键词，或者重新查看全部游戏。</span></div><button class="btn" data-action="catalog-reset">显示全部</button></div>
       </section>
 
@@ -1006,16 +1139,47 @@ function cardBackStack() {
   return `<div class="pod-card-stack" aria-hidden="true"><i class="kai-card-back"></i><i class="kai-card-back"></i><i class="kai-card-back"></i></div>`;
 }
 
+const THREE_CARD_LABELS = Object.freeze(['豹子','顺金','金花','顺子','对子','高牌']);
+
+function newThreeCardTrainingSession() {
+  return {
+    kind:'three', round:newThreeCardRound(), revealed:false, thinking:false, guess:null,
+    roundNumber:1, roundsTotal:3, correct:0, wins:0, ties:0, sessionFinished:false, lastOutcome:null,
+  };
+}
+
+function threeCardRoundOutcome(round) {
+  const scored = round.players.map((player, index) => ({ player, index, score:evaluateThreeCard(player.hand) }));
+  let bestIndex = 0;
+  for (let index = 1; index < scored.length; index += 1) {
+    if (compareThreeCard(scored[index].player.hand, scored[bestIndex].player.hand) > 0) bestIndex = index;
+  }
+  const leaders = scored.filter((entry) => compareThreeCard(entry.player.hand, scored[bestIndex].player.hand) === 0);
+  const playerAmongLeaders = leaders.some((entry) => entry.index === 0);
+  return {
+    scored,
+    leaders,
+    tie:leaders.length > 1,
+    playerWon:playerAmongLeaders && leaders.length === 1,
+    playerTied:playerAmongLeaders && leaders.length > 1,
+  };
+}
+
 function threeCardGame() {
-  const round = state.casual?.round;
+  const casual = state.casual;
+  const round = casual?.round;
   if (!round) return lobby();
-  const revealed = state.casual.revealed;
-  const ranked = round.players.map((player, index) => ({ player, index, score: evaluateThreeCard(player.hand) }))
-    .sort((a, b) => compareThreeCard(b.player.hand, a.player.hand));
-  const winner = ranked[0];
-  const result = revealed ? `<div class="training-result ${winner.index===0?'win':'lose'}"><span>${winner.index===0?'本轮获胜':'本轮结果'}</span><b>${esc(winner.player.name)} · ${esc(winner.score.label)}</b><small>免费训练局，不影响竞技分</small></div>` : '';
+  const revealed = casual.revealed;
+  const outcome = threeCardRoundOutcome(round);
+  const playerScore = evaluateThreeCard(round.players[0].hand);
+  const leaderText = outcome.leaders.map((entry) => entry.player.name).join('、');
+  const resultTone = outcome.playerWon ? 'win' : outcome.playerTied ? 'tie' : 'lose';
+  const resultTitle = outcome.tie ? `${leaderText}并列 · ${outcome.leaders[0].score.label}` : `${leaderText} · ${outcome.leaders[0].score.label}`;
+  const result = revealed ? `<div class="training-result ${resultTone}"><span>${casual.lastOutcome?.correct?'判断正确':'判断待加强'} · ${outcome.playerWon?'本手获胜':outcome.playerTied?'本手并列':'本手结果'}</span><b>${esc(resultTitle)}</b><small>你判断「${esc(casual.guess)}」，实际为「${esc(playerScore.label)}」</small>${casual.sessionFinished?`<div class="three-session-summary"><strong>三手训练完成</strong><span>判断 ${casual.correct}/3 · 胜手 ${casual.wins} · 并列 ${casual.ties}</span></div>`:''}</div>` : '';
   const seats = round.players.slice(1).map((player) => `<article class="three-opponent ${revealed?'is-revealed':''}"><div class="training-avatar">${esc(player.name.slice(0,1))}</div><b>${esc(player.name)}</b><div class="three-hand">${revealed ? player.hand.map((card) => poker(card,false)).join('') : player.hand.map(() => cardBack(false)).join('')}</div>${revealed?`<span>${esc(evaluateThreeCard(player.hand).label)}</span>`:'<span>等待比牌</span>'}</article>`).join('');
-  return `<div class="shell casual-shell">${casualHeader('炸金花','THREE CARD','免费训练 · 不计竞技分')}<section class="casual-stage three-stage">${result}<div class="three-how"><span>1 看自己的三张牌</span><i>→</i><span>2 点击翻开并比牌</span><i>→</i><span>3 最大牌型获胜</span></div><div class="three-opponents">${seats}</div><div class="three-center"><span>本局免费</span><b>${state.casual.thinking?'两位牌友正在思考…':revealed?'三家牌面已揭晓':'三张牌，一次定胜负'}</b><small>无筹码 · 无下注</small></div><article class="three-player"><div class="training-avatar">你</div><div><b>你的手牌</b><span>${esc(evaluateThreeCard(round.players[0].hand).label)}</span></div><div class="three-hand">${round.players[0].hand.map((card) => poker(card,false)).join('')}</div></article><div class="casual-actions"><button class="btn primary" data-action="three-reveal" ${state.casual.thinking||revealed?'disabled':''}>${state.casual.thinking?'牌友思考中…':'翻开并比牌'}</button><button class="btn" data-action="three-new">换一手牌</button></div></section><p class="casual-disclaimer">牌型顺序：豹子 ＞ 顺金 ＞ 金花 ＞ 顺子 ＞ 对子 ＞ 高牌。当前为单机训练，不使用现金、Token 或卡时。</p></div>`;
+  const guesses = THREE_CARD_LABELS.map((label) => `<button type="button" data-action="three-guess" data-three-guess="${esc(label)}" aria-pressed="${casual.guess===label}" ${casual.thinking||revealed?'disabled':''}>${esc(label)}</button>`).join('');
+  const nextLabel = casual.sessionFinished ? '再练三手' : revealed ? '下一手' : '换一道题';
+  return `<div class="shell casual-shell">${casualHeader('炸金花','THREE CARD',`第 ${casual.roundNumber}/${casual.roundsTotal} 手 · 判断 ${casual.correct} 题`)}<section class="casual-stage three-stage">${result}<div class="three-session-metrics" aria-label="本次训练进度"><div><small>当前</small><strong>${casual.roundNumber}/${casual.roundsTotal}</strong></div><div><small>判断正确</small><strong>${casual.correct}</strong></div><div><small>胜手</small><strong>${casual.wins}</strong></div><div><small>并列</small><strong>${casual.ties}</strong></div></div><div class="three-how"><span>1 观察三张牌</span><i>→</i><span>2 判断自己的牌型</span><i>→</i><span>3 揭晓三家比牌</span></div><div class="three-opponents">${seats}</div><div class="three-center"><span>免费三手训练</span><b>${casual.thinking?'两位牌友正在思考…':revealed?'本手已经揭晓':casual.guess?`已选择：${esc(casual.guess)}`:'先判断自己的牌型'}</b><small>无筹码 · 无下注</small></div><article class="three-player"><div class="training-avatar">你</div><div><b>你的手牌</b><span>${revealed?esc(playerScore.label):'等待判断'}</span></div><div class="three-hand">${round.players[0].hand.map((card) => poker(card,false)).join('')}</div></article><div class="three-guess" role="group" aria-label="选择你的牌型">${guesses}</div><div class="casual-actions"><button class="btn primary" data-action="three-reveal" ${casual.thinking||revealed||!casual.guess?'disabled':''}>${casual.thinking?'牌友思考中…':revealed?'本手已揭晓':'提交判断并比牌'}</button><button class="btn" data-action="three-new">${nextLabel}</button></div></section><p class="casual-disclaimer">牌型顺序：豹子 ＞ 顺金 ＞ 金花 ＞ 顺子 ＞ 对子 ＞ 高牌。当前为单机判断训练，不使用现金、Token 或卡时。</p></div>`;
 }
 
 function mahjongTone(tile) {
@@ -1330,7 +1494,8 @@ function slotsGame() {
   if (!casual) return lobby();
   const result = casual.last?.result;
   const resultCopy = result?.tier==='jackpot' ? '三个图标完全相同' : result?.tier==='pair' ? '其中两个图标相同' : result ? '三个图标各不相同' : '点击按钮，等待三个转轮依次停止';
-  return `<div class="shell casual-shell">${casualHeader('算力转轮','COMPUTE REELS',`已旋转 ${casual.spins} 次`)}<section class="casual-stage slots-stage"><div class="slot-guide"><b>怎么玩？</b><span><i>1</i>点击免费旋转</span><span><i>2</i>三个转轮停止</span><span><i>3</i>查看图标组合</span></div><div class="slot-machine"><div class="slot-crown"><span>KAI PLAY</span><b>算力转轮</b><small>免费娱乐 · 零消耗</small></div><div class="slot-reels ${casual.spinning?'spinning':''}">${casual.reels.map((symbol,index)=>`<div class="slot-reel" style="--reel:${index}"><small>◆</small><span class="slot-symbol symbol-${symbol==='7'?'seven':'kai'}">${esc(symbol)}</span><small>★</small></div>`).join('')}</div><div class="slot-paytable"><span><b>三枚相同</b><small>三连共振</small></span><span><b>两枚相同</b><small>双核同频</small></span><span><b>各不相同</b><small>继续挑战</small></span></div><div class="slot-result ${result?.tier||''}"><b>${casual.spinning?'转轮依次停止中…':result?.label||'准备好了吗？'}</b><small>${resultCopy}</small></div><button class="slot-lever" data-action="slots-spin" ${casual.spinning?'disabled':''}><i></i><span>${casual.spinning?'正在旋转…':'免费旋转一次'}</span></button></div></section><p class="casual-disclaimer">纯视觉娱乐，不支付、不下注、不发放可兑换奖励，不会扣除竞技分、Token 或 KAI 卡时。</p></div>`;
+  const bestLabel = ({jackpot:'三连共振',pair:'双核同频',none:'继续发现'})[casual.bestTier] || '继续发现';
+  return `<div class="shell casual-shell">${casualHeader('算力转轮','COMPUTE REELS',`本次会话 · 已发现 ${casual.discoveries.length} 种组合`)}<section class="casual-stage slots-stage"><div class="slot-guide"><b>怎么玩？</b><span><i>1</i>点击免费旋转</span><span><i>2</i>三个转轮停止</span><span><i>3</i>收集不同组合</span></div><div class="slot-machine"><div class="slot-crown"><span>KAI PLAY</span><b>算力转轮</b><small>免费娱乐 · 零消耗</small></div><div class="slot-session-metrics" aria-label="本次会话统计"><div><small>旋转</small><strong>${casual.spins}</strong></div><div><small>共振值</small><strong>${casual.resonance}</strong></div><div><small>最佳组合</small><strong>${bestLabel}</strong></div><div><small>已见符号</small><strong>${casual.seenSymbols.length}/5</strong></div></div><div class="slot-reels ${casual.spinning?'spinning':''}">${casual.reels.map((symbol,index)=>`<div class="slot-reel" style="--reel:${index}"><small>◆</small><span class="slot-symbol symbol-${symbol==='7'?'seven':'kai'}">${esc(symbol)}</span><small>★</small></div>`).join('')}</div><div class="slot-paytable"><span><b>三枚相同</b><small>共振值 +3</small></span><span><b>两枚相同</b><small>共振值 +1</small></span><span><b>各不相同</b><small>发现新组合</small></span></div><div class="slot-result ${result?.tier||''}"><b>${casual.spinning?'转轮依次停止中…':result?.label||'准备发现第一种组合'}</b><small>${resultCopy}${result?` · 当前共振值 ${casual.resonance}`:''}</small></div><button class="slot-lever" data-action="slots-spin" ${casual.spinning?'disabled':''}><i></i><span>${casual.spinning?'正在旋转…':'免费旋转一次'}</span></button></div></section><p class="casual-disclaimer">共振值与组合收集仅为本次页面会话的娱乐记录，不支付、不下注、不发放可兑换奖励，也不会扣除竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
 function sudoku6Cell(game, index, context) {
@@ -1760,10 +1925,11 @@ function history() {
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}${nav('rules')}</div>`; }
 
 function render() {
   app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  if(state.view==='lobby')updateWorldCarouselStatus(app.querySelector('[data-world-strip]'));
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -1878,7 +2044,7 @@ function openThreeCard() {
   stopRoomSync();
   stopMahjongBotSequence();
   stopCasualTimers();
-  state.casual = { kind: 'three', round: newThreeCardRound(), revealed: false, thinking: false };
+  state.casual = newThreeCardTrainingSession();
   state.view = 'three';
 }
 function openMahjong() {
@@ -2841,7 +3007,7 @@ function openSlots() {
   stopRoomSync();
   stopMahjongBotSequence();
   stopCasualTimers();
-  state.casual = { kind: 'slots', reels: ['7', 'KAI', '⚡'], last: null, spins: 0, spinning: false };
+  state.casual = { kind:'slots', reels:['7','KAI','⚡'], last:null, spins:0, spinning:false, resonance:0, bestTier:'none', seenSymbols:[], discoveries:[] };
   state.view = 'slots';
 }
 
@@ -2991,9 +3157,31 @@ function selectCatalogFilter(filter) {
   }
 }
 
+function worldCarouselGeometry(strip) {
+  const cards=visibleCarouselItems(strip?.querySelectorAll?.('[data-world-card]'));
+  if(!strip)return {cards:[],positions:[],bounds:{min:0,max:0},index:-1};
+  const bounds=carouselScrollBounds(strip.scrollWidth,strip.clientWidth);
+  const firstStart=cards[0]?.offsetLeft||0;
+  const positions=cards.map((card)=>card.offsetLeft-firstStart);
+  let index=nearestCarouselIndex(positions,strip.scrollLeft,bounds);
+  if(strip.scrollLeft<=bounds.min+2)index=cards.length?0:-1;
+  else if(strip.scrollLeft>=bounds.max-2)index=cards.length-1;
+  return {cards,positions,bounds,index};
+}
+
+function scrollWorldCarouselToIndex(strip,index,{behavior='smooth'}={}) {
+  const geometry=worldCarouselGeometry(strip);
+  if(!geometry.cards.length)return;
+  const target=targetCarouselScrollPosition(geometry.positions,index,geometry.bounds);
+  strip.scrollTo({left:target,behavior});
+  if(behavior==='auto')updateWorldCarouselStatus(strip);
+  else scheduleWorldCarouselStatus(strip);
+}
+
 function applyCatalogDiscovery() {
   const strip=document.querySelector('[data-world-strip]');
   if(!strip)return;
+  const preferredId=strip.querySelector('.game-world.is-current:not([hidden])')?.dataset.worldId;
   const query=normalizeCatalogText(document.querySelector('[data-catalog-search]')?.value);
   const terms=query.split(/\s+/).filter(Boolean);
   const filter=activeCatalogFilter();
@@ -3022,8 +3210,12 @@ function applyCatalogDiscovery() {
   if(hint)hint.hidden=cannotPage;
   for(const control of document.querySelectorAll('[data-action="world-prev"],[data-action="world-next"]'))control.disabled=cannotPage;
   strip.classList.toggle('is-filtered',Boolean(query)||filter!=='all');
-  strip.scrollLeft=0;
-  updateWorldCarouselStatus(strip);
+  const visibleCards=visibleCarouselItems(cards);
+  const preferredIndex=Math.max(0,visibleCards.findIndex((card)=>card.dataset.worldId===preferredId));
+  const playbook=document.querySelector('[data-catalog-playbook]');
+  if(playbook)playbook.hidden=visibleCount===0;
+  if(visibleCards.length)scrollWorldCarouselToIndex(strip,preferredIndex,{behavior:'auto'});
+  else updateWorldCarouselStatus(strip);
 }
 
 function resetCatalogDiscovery({focusSearch=false}={}) {
@@ -3059,29 +3251,39 @@ function showContinuableGames() {
 
 function scrollWorldCarousel(direction) {
   const strip=document.querySelector('[data-world-strip]');
-  const card=strip?.querySelector('.game-world:not([hidden])');
-  if(!strip||!card)return;
-  const gap=Number.parseFloat(globalThis.getComputedStyle?.(strip).columnGap||'0')||16;
-  const step=card.getBoundingClientRect().width+gap;
+  if(!strip||!strip.querySelector('.game-world:not([hidden])'))return;
+  const geometry=worldCarouselGeometry(strip);
+  const targetIndex=stepCarouselIndex(geometry.index,direction,geometry.cards.length);
+  if(targetIndex<0)return;
   const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  strip.scrollBy({left:direction*step,behavior:reduceMotion?'auto':'smooth'});
+  scrollWorldCarouselToIndex(strip,targetIndex,{behavior:reduceMotion?'auto':'smooth'});
 }
 
 function updateWorldCarouselStatus(strip = document.querySelector('[data-world-strip]')) {
-  if (!strip) return;
-  const cards=[...strip.querySelectorAll('.game-world:not([hidden])')];
+  if (!strip?.isConnected) return;
+  const geometry=worldCarouselGeometry(strip);
+  const {cards,index,bounds}=geometry;
   const status=document.querySelector('[data-world-status]');
   if (!cards.length) {
     if(status)status.textContent='0 / 0';
+    strip.classList.add('is-at-start','is-at-end');
+    for(const card of strip.querySelectorAll('.game-world'))card.classList.remove('is-current');
     return;
   }
-  const stripLeft=strip.getBoundingClientRect().left;
-  const current=cards.reduce((closest,card,index)=>{
-    const distance=Math.abs(card.getBoundingClientRect().left-stripLeft);
-    return distance<closest.distance?{index,distance}:closest;
-  },{index:0,distance:Number.POSITIVE_INFINITY});
-  const nextText=`${current.index+1} / ${cards.length}`;
+  const currentCard=cards[index];
+  for(const card of strip.querySelectorAll('.game-world'))card.classList.toggle('is-current',card===currentCard);
+  const atStart=index<=0||strip.scrollLeft<=bounds.min+2;
+  const atEnd=index>=cards.length-1||strip.scrollLeft>=bounds.max-2;
+  strip.classList.toggle('is-at-start',atStart);
+  strip.classList.toggle('is-at-end',atEnd);
+  const previous=document.querySelector('[data-action="world-prev"]');
+  const next=document.querySelector('[data-action="world-next"]');
+  if(previous)previous.disabled=cards.length<=1||atStart;
+  if(next)next.disabled=cards.length<=1||atEnd;
+  const content=gameContent(currentCard.dataset.worldId);
+  const nextText=`${index+1} / ${cards.length} · ${content.name}`;
   if(status&&status.textContent!==nextText)status.textContent=nextText;
+  updateCatalogPlaybook(currentCard.dataset.worldId);
 }
 
 function scheduleWorldCarouselStatus(strip) {
@@ -3098,6 +3300,28 @@ function scheduleWorldCarouselStatus(strip) {
   else globalThis.setTimeout?.(update,16);
 }
 
+function finishWorldCarouselPointer(event,{cancelled=false}={}) {
+  if(!worldPointer||event.pointerId!==worldPointer.id)return false;
+  const pointer=worldPointer;
+  worldPointer=null;
+  pointer.strip.releasePointerCapture?.(event.pointerId);
+  pointer.strip.classList.remove('is-dragging');
+  if(!pointer.dragging)return false;
+  worldPointerSuppressClickUntil=Date.now()+450;
+  const geometry=worldCarouselGeometry(pointer.strip);
+  const deltaX=event.clientX-pointer.x;
+  const deltaY=event.clientY-pointer.y;
+  const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const targetIndex=cancelled
+    ? geometry.index
+    : carouselReleaseDecision({
+      currentIndex:pointer.startIndex,itemCount:geometry.cards.length,deltaX,deltaY,
+      elapsedMs:Math.max(1,event.timeStamp-pointer.startedAt),velocityX:pointer.velocityX,
+    }).index;
+  scrollWorldCarouselToIndex(pointer.strip,targetIndex,{behavior:reduceMotion?'auto':'smooth'});
+  return true;
+}
+
 function jumpToLobbyTarget(target) {
   const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   if(target==='friends'){
@@ -3112,9 +3336,9 @@ function jumpToLobbyTarget(target) {
   const strip=document.querySelector('[data-world-strip]');
   const card=strip?.querySelector(`[data-world-id="${target}"]`);
   if(!strip||!card)return;
-  const left=card.offsetLeft-strip.offsetLeft;
-  card.scrollIntoView({block:'center',inline:'nearest',behavior:reduceMotion?'auto':'smooth'});
-  strip.scrollTo({left,behavior:reduceMotion?'auto':'smooth'});
+  const cards=visibleCarouselItems(strip.querySelectorAll('[data-world-card]'));
+  scrollWorldCarouselToIndex(strip,cards.indexOf(card),{behavior:reduceMotion?'auto':'smooth'});
+  document.getElementById('game-selection')?.scrollIntoView({block:'start',behavior:reduceMotion?'auto':'smooth'});
   card.classList.add('is-highlighted');
   globalThis.setTimeout?.(()=>{
     card.classList.remove('is-highlighted');
@@ -3124,6 +3348,10 @@ function jumpToLobbyTarget(target) {
 }
 
 app.addEventListener('click', e => {
+  if(Date.now()<worldPointerSuppressClickUntil&&e.target.closest?.('[data-world-card]')){
+    e.preventDefault();
+    return;
+  }
   const el=e.target.closest('button');
   if(!el){
     const worldCard=e.target.closest?.('[data-world-card]');
@@ -3209,7 +3437,7 @@ app.addEventListener('click', e => {
   if(a==='catalog-reset'){resetCatalogDiscovery({focusSearch:true});return;}
   if(a==='clear-selection'){state.selected.clear();render();return;}
   if(a==='quick') act(startQuickGame);
-  if(a==='open-three'){openThreeCard();render();}
+  if(a==='open-three'){openThreeCard();render();globalThis.scrollTo?.(0,0);}
   if(a==='open-mahjong'){openMahjong();render();globalThis.scrollTo?.(0,0);}
   if(a==='open-xiangqi'){openXiangqi();render();globalThis.scrollTo?.(0,0);focusXiangqiInteraction();queueXiangqiAiTurn();}
   if(a==='open-1048'){open1048();render();globalThis.scrollTo?.(0,0);focus1048Interaction();}
@@ -3219,7 +3447,7 @@ app.addEventListener('click', e => {
   if(a==='open-memory'){openMemoryMatch();render();globalThis.scrollTo?.(0,0);focusMemoryInteraction();}
   if(a==='open-snake'){openSnake();render();globalThis.scrollTo?.(0,0);focusSnakeInteraction();}
   if(a==='open-farm'){openFarm();render();globalThis.scrollTo?.(0,0);focusFarmInteraction();queueFarmTick();}
-  if(a==='open-slots'){openSlots();render();}
+  if(a==='open-slots'){openSlots();render();globalThis.scrollTo?.(0,0);}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
       stopMahjongBotSequence();state.casual.confirmAction='home';render();return;
@@ -3236,15 +3464,33 @@ app.addEventListener('click', e => {
     if(state.view==='farm'&&state.casual?.game)saveFarmGame(state.casual.game);
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
-  if(a==='three-new'){stopCasualTimers();state.casual={kind:'three',round:newThreeCardRound(),revealed:false,thinking:false};render();}
-  if(a==='three-reveal'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed){
+  if(a==='three-guess'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed&&THREE_CARD_LABELS.includes(el.dataset.threeGuess)){
+    state.casual.guess=el.dataset.threeGuess;render();return;
+  }
+  if(a==='three-new'){
+    stopCasualTimers();
+    const casual=state.casual;
+    if(!casual||casual.sessionFinished){state.casual=newThreeCardTrainingSession();}
+    else state.casual={...casual,round:newThreeCardRound(),revealed:false,thinking:false,guess:null,lastOutcome:null,roundNumber:casual.revealed?casual.roundNumber+1:casual.roundNumber};
+    render();return;
+  }
+  if(a==='three-reveal'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed&&state.casual?.guess){
     const casual=state.casual;
     casual.thinking=true;
     render();
     threeRevealTimer=setTimeout(()=>{
       threeRevealTimer=null;
       if(state.view!=='three'||state.casual!==casual)return;
-      casual.thinking=false;casual.revealed=true;render();
+      const outcome=threeCardRoundOutcome(casual.round);
+      const correct=casual.guess===evaluateThreeCard(casual.round.players[0].hand).label;
+      casual.thinking=false;
+      casual.revealed=true;
+      casual.correct+=Number(correct);
+      casual.wins+=Number(outcome.playerWon);
+      casual.ties+=Number(outcome.playerTied);
+      casual.lastOutcome={correct,playerWon:outcome.playerWon,playerTied:outcome.playerTied};
+      casual.sessionFinished=casual.roundNumber>=casual.roundsTotal;
+      render();
     },1_400);
   }
   if(a==='mahjong-new'){
@@ -3466,7 +3712,18 @@ app.addEventListener('click', e => {
     slotSpinTimer=setTimeout(()=>{
       slotSpinTimer=null;
       if(state.view!=='slots'||state.casual!==casual)return;
-      const next=spinSlots();casual.reels=next.reels;casual.last=next;casual.spins+=1;casual.spinning=false;render();
+      const next=spinSlots();
+      const tierRank={none:0,pair:1,jackpot:2};
+      const signature=next.reels.join('|');
+      casual.reels=next.reels;
+      casual.last=next;
+      casual.spins+=1;
+      casual.resonance+=(next.result.tier==='jackpot'?3:next.result.tier==='pair'?1:0);
+      if(tierRank[next.result.tier]>tierRank[casual.bestTier])casual.bestTier=next.result.tier;
+      casual.seenSymbols=[...new Set([...casual.seenSymbols,...next.reels])];
+      if(!casual.discoveries.includes(signature))casual.discoveries.push(signature);
+      casual.spinning=false;
+      render();
     },850);
   }
   if(a==='retry-history') act(loadHistoryData);
@@ -3546,6 +3803,16 @@ app.addEventListener('pointerdown', (event) => {
     mergeBoard.setPointerCapture?.(event.pointerId);
     return;
   }
+  const worldStrip = event.target.closest?.('[data-world-strip]');
+  if(worldStrip&&state.view==='lobby'&&event.isPrimary&&event.button===0&&['mouse','pen'].includes(event.pointerType)&&!event.target.closest?.('button, input, a')){
+    const geometry=worldCarouselGeometry(worldStrip);
+    worldPointer={
+      id:event.pointerId,strip:worldStrip,x:event.clientX,y:event.clientY,startScroll:worldStrip.scrollLeft,
+      startIndex:geometry.index,startedAt:event.timeStamp,lastX:event.clientX,lastAt:event.timeStamp,velocityX:0,dragging:false,
+    };
+    worldStrip.setPointerCapture?.(event.pointerId);
+    return;
+  }
   const carousel = event.target.closest?.('[data-hero-carousel]');
   if (!carousel || event.target.closest?.('button, input, a')) return;
   heroPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -3553,10 +3820,29 @@ app.addEventListener('pointerdown', (event) => {
 });
 
 app.addEventListener('pointermove', (event) => {
-  if (!minesweeperLongPress || minesweeperLongPress.pointerId !== event.pointerId) return;
-  const deltaX = event.clientX - minesweeperLongPress.x;
-  const deltaY = event.clientY - minesweeperLongPress.y;
-  if (Math.hypot(deltaX, deltaY) > 10) cancelMinesweeperLongPress();
+  if (minesweeperLongPress?.pointerId === event.pointerId) {
+    const deltaX = event.clientX - minesweeperLongPress.x;
+    const deltaY = event.clientY - minesweeperLongPress.y;
+    if (Math.hypot(deltaX, deltaY) > 10) cancelMinesweeperLongPress();
+  }
+  if(!worldPointer||worldPointer.id!==event.pointerId)return;
+  const deltaX=event.clientX-worldPointer.x;
+  const deltaY=event.clientY-worldPointer.y;
+  if(!worldPointer.dragging&&Math.abs(deltaY)>Math.abs(deltaX)*1.12&&Math.abs(deltaY)>8){
+    worldPointer.strip.releasePointerCapture?.(event.pointerId);
+    worldPointer=null;
+    return;
+  }
+  if(!worldPointer.dragging&&Math.abs(deltaX)<5)return;
+  worldPointer.dragging=true;
+  worldPointer.strip.classList.add('is-dragging');
+  const elapsed=Math.max(1,event.timeStamp-worldPointer.lastAt);
+  worldPointer.velocityX=(event.clientX-worldPointer.lastX)/elapsed;
+  worldPointer.lastX=event.clientX;
+  worldPointer.lastAt=event.timeStamp;
+  const bounds=carouselScrollBounds(worldPointer.strip.scrollWidth,worldPointer.strip.clientWidth);
+  worldPointer.strip.scrollLeft=carouselDragScrollPosition(worldPointer.startScroll,deltaX,{minScroll:bounds.min,maxScroll:bounds.max});
+  event.preventDefault();
 });
 
 app.addEventListener('pointerup', (event) => {
@@ -3577,6 +3863,7 @@ app.addEventListener('pointerup', (event) => {
     if (distance >= 28) perform1048Move(horizontal ? (deltaX < 0 ? 'left' : 'right') : (deltaY < 0 ? 'up' : 'down'));
     return;
   }
+  if(finishWorldCarouselPointer(event))return;
   if (!heroPointer || heroPointer.id !== event.pointerId) return;
   const deltaX = event.clientX - heroPointer.x;
   const deltaY = event.clientY - heroPointer.y;
@@ -3586,7 +3873,7 @@ app.addEventListener('pointerup', (event) => {
   switchHero(nextGame, deltaX < 0 ? 'next' : 'previous');
 });
 
-app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
+app.addEventListener('pointercancel', (event) => { finishWorldCarouselPointer(event,{cancelled:true});heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
   if(state.view==='lobby'){
@@ -3817,6 +4104,13 @@ app.addEventListener('keydown', (event) => {
   if (worldStrip && event.target === worldStrip && ['ArrowLeft','ArrowRight'].includes(event.key)) {
     event.preventDefault();
     scrollWorldCarousel(event.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
+  if(worldStrip&&event.target===worldStrip&&['Home','End'].includes(event.key)){
+    event.preventDefault();
+    const geometry=worldCarouselGeometry(worldStrip);
+    const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    scrollWorldCarouselToIndex(worldStrip,event.key==='Home'?0:geometry.cards.length-1,{behavior:reduceMotion?'auto':'smooth'});
     return;
   }
   const carousel = event.target.closest?.('[data-hero-carousel]');

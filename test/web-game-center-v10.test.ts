@@ -104,6 +104,7 @@ function renderLobbyWithSaves({
     mahjongFace: () => '',
     previewPoker: () => '',
     cardBack: () => '',
+    catalogPlaybookMarkup: () => '',
     header: () => '',
     nav: () => '',
     esc: (value: unknown) => String(value ?? ''),

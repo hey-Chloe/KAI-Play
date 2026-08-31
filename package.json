@@ -9,7 +9,7 @@
   "scripts": {
     "server": "node --experimental-strip-types server/src/server.ts",
     "web": "node web/serve.mjs",
-    "build": "node --experimental-strip-types --check server/src/server.ts && node --check web/app.js && node --check web/casual-games.js && node --check web/sudoku6.js && node --check web/xiangqi.js && node --check web/minesweeper.js && node --check web/gomoku.js && node --check web/memory-match.js && node --check web/snake.js && node --check web/farm.js && node --check web/serve.mjs && npm --prefix mobile run typecheck",
+    "build": "node --experimental-strip-types --check server/src/server.ts && node --check web/app.js && node --check web/casual-games.js && node --check web/catalog-carousel.js && node --check web/sudoku6.js && node --check web/xiangqi.js && node --check web/minesweeper.js && node --check web/gomoku.js && node --check web/memory-match.js && node --check web/snake.js && node --check web/farm.js && node --check web/serve.mjs && npm --prefix mobile run typecheck",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "test:coverage": "node --experimental-strip-types --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=90 --test test/*.test.ts",
     "check": "node --experimental-strip-types scripts/check.ts",

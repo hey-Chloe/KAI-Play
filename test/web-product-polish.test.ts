@@ -78,9 +78,10 @@ test('all twelve games form one horizontally sliding card carousel', () => {
   assert.match(lobby, /data-action="world-prev"/);
   assert.match(lobby, /data-action="world-next"/);
   assert.match(appSource, /function scrollWorldCarousel\(direction\)/);
-  assert.match(appSource, /strip\.scrollBy\(\{left:direction\*step/);
-  assert.match(stylesSource, /\.world-strip\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow-x:\s*auto;[\s\S]*?scroll-snap-type:\s*inline mandatory/);
-  assert.match(stylesSource, /\.game-world\s*\{[\s\S]*?flex:\s*0 0 clamp\([\s\S]*?scroll-snap-align:\s*start/);
+  assert.match(appSource, /targetCarouselScrollPosition/);
+  assert.match(appSource, /carouselReleaseDecision/);
+  assert.match(stylesSource, /\.lobby-game-center \.world-strip\s*\{[\s\S]*?scroll-snap-type:inline proximity/);
+  assert.match(stylesSource, /\.lobby-game-center \.world-strip \.game-world\s*\{[\s\S]*?scroll-snap-align:start/);
 });
 
 test('1048 local progress is restored, saved after moves, and described honestly', () => {
