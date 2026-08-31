@@ -122,6 +122,47 @@ import {
   saveMemoryMatchSession,
 } from './memory-match.js';
 import {
+  FALLING_BLOCKS_CELL_COUNT,
+  FALLING_BLOCKS_COLUMNS,
+  FALLING_BLOCKS_ROWS,
+  FALLING_BLOCKS_STORAGE_KEY,
+  advanceFallingBlocks,
+  getFallingBlocksActiveIndexes,
+  getFallingBlocksDropInterval,
+  getFallingBlocksGhost,
+  getFallingBlocksNextPieces,
+  hardDropFallingBlocks,
+  loadFallingBlocksGame,
+  moveFallingBlocks,
+  newFallingBlocksGame,
+  restartFallingBlocksGame,
+  rotateFallingBlocks,
+  saveFallingBlocksGame,
+  softDropFallingBlocks,
+  toggleFallingBlocksPause,
+} from './falling-blocks.js';
+import {
+  MATCH_THREE_CELL_COUNT,
+  MATCH_THREE_COLUMNS,
+  MATCH_THREE_SYMBOLS,
+  newMatchThreeGame,
+  restoreMatchThreeGame,
+  shuffleMatchThreeGame,
+  swapMatchThree,
+} from './match-three.js';
+import {
+  MAZE_DIFFICULTIES,
+  getMazeCells,
+  getMazeHintPath,
+  mazeDirectionFromKey,
+  moveMaze,
+  newMazeForGame,
+  newMazeGame,
+  restartMazeGame,
+  restoreMazeGame,
+  toggleMazeHint,
+} from './maze.js';
+import {
   carouselDragScrollPosition,
   carouselReleaseDecision,
   carouselScrollBounds,
@@ -153,8 +194,10 @@ const SNAKE_BEST_KEY = 'kai.play.snake.best.v1';
 const FARM_SAVE_KEY = 'kai.play.farm.game.v1';
 const SOKOBAN_SAVE_KEY = 'kai.play.sokoban.game.v1';
 const SLIDING_PUZZLE_SAVE_KEY = 'kai.play.sliding-puzzle.game.v1';
+const MATCH_THREE_SAVE_KEY = 'kai.play.match-three.game.v1';
+const MAZE_SAVE_KEY = 'kai.play.maze.game.v1';
 const LAST_LOCAL_GAME_KEY = 'kai.play.last-local-game';
-const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'reversi', 'sokoban', 'sliding', 'memory', 'snake', 'farm']);
+const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'reversi', 'sokoban', 'sliding', 'memory', 'match3', 'falling', 'snake', 'maze', 'farm']);
 const CATALOG_DISCOVERY = Object.freeze({
   ddz: { categories:['card','competitive'], search:'斗地主 ddz dou dizhu fighting the landlord 扑克 牌桌 三人 竞技 快速人机' },
   xiangqi: { categories:['board','save'], search:'KAI 象棋 中国象棋 xiangqi chinese chess 棋类 策略 人机 自动保存' },
@@ -167,12 +210,15 @@ const CATALOG_DISCOVERY = Object.freeze({
   sokoban: { categories:['puzzle','quick','save'], search:'KAI 推箱子 sokoban 仓库 箱子 关卡 空间 益智 短局 自动保存' },
   sliding: { categories:['puzzle','quick','save'], search:'KAI 数字华容道 sliding puzzle 华容道 数字 拼图 益智 短局 自动保存' },
   memory: { categories:['puzzle','quick','save'], search:'KAI 记忆翻牌 memory match 配对 记忆 益智 短局 自动保存' },
+  match3: { categories:['puzzle','arcade','quick','save'], search:'KAI 三消 match three 消除 宝石 连线 益智 街机 短局 自动保存' },
+  falling: { categories:['arcade','quick','save'], search:'KAI 方块 falling blocks 俄罗斯方块 tetris 下落 消行 街机 反应 短局 自动保存' },
   snake: { categories:['arcade','quick','save'], search:'KAI 贪吃蛇 snake 反应 街机 即时 短局 自动保存' },
+  maze: { categories:['puzzle','quick','save'], search:'KAI 迷宫 maze 路线 寻路 空间 益智 短局 自动保存' },
   farm: { categories:['quick','save'], search:'KAI 农场 QQ农场 qq farm farming 种菜 收菜 种植 经营 养成 休闲 自动保存 离线成长' },
   three: { categories:['card','quick'], search:'炸金花 zha jin hua three card poker 三张牌 扑克 牌桌 比牌 短局' },
   reels: { categories:['arcade','quick'], search:'算力转轮 转轮 reels slots spin 轻娱乐 街机 短局' },
 });
-const CATALOG_GAME_IDS = Object.freeze(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','snake','farm','three','reels']);
+const CATALOG_GAME_IDS = Object.freeze(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','match3','falling','snake','maze','farm','three','reels']);
 const GAME_CONTENT = Object.freeze({
   ddz: {
     name:'斗地主', eyebrow:'竞技牌桌', duration:'约 5–10 分钟', mode:'3 人 · 两位智能牌友', persistence:'服务端战绩与断线恢复',
@@ -251,12 +297,33 @@ const GAME_CONTENT = Object.freeze({
     finish:'全部图案完成配对即结束，并记录本地最佳成绩。',
     limits:'支持键盘与触控；计时、步数和未完成牌阵只在当前浏览器保存。', action:'open-memory', actionLabel:'开始配对',
   },
+  match3: {
+    name:'KAI 三消', eyebrow:'缤纷消除', duration:'约 3–6 分钟', mode:'单人 · 8×8 宝石盘', persistence:'本地自动保存',
+    goal:'交换相邻宝石，连成三个或更多同色图案，在限定步数内达到目标分数。',
+    loop:'选择宝石 → 交换相邻位置 → 连线消除 → 连锁掉落补充',
+    finish:'达到目标分数即获胜；用完全部步数仍未达标则本局结束。',
+    limits:'只有能形成消除的相邻交换才会生效；无解盘面会自动重排。', action:'open-match3', actionLabel:'开始三消',
+  },
+  falling: {
+    name:'KAI 方块', eyebrow:'下落消行', duration:'约 2–8 分钟', mode:'单人 · 10×20 经典场', persistence:'本地自动保存',
+    goal:'移动与旋转七种方块，填满横行完成消除，在速度提升后继续生存。',
+    loop:'判断落点 → 移动旋转 → 软降或直落 → 消行升级',
+    finish:'方块堆到出生区域时结束；分数、消行与等级构成本局成绩。',
+    limits:'支持键盘、触控按钮、暂停与落点影子；页面隐藏时会自动暂停。', action:'open-falling', actionLabel:'开始堆叠',
+  },
   snake: {
     name:'KAI 贪吃蛇', eyebrow:'即时反应', duration:'约 1–5 分钟', mode:'单人 · 三档速度', persistence:'本地自动保存',
     goal:'操控光蛇收集能量，在身体变长后继续保持安全路线。',
     loop:'改变方向 → 吃到能量得分 → 身体增长 → 规划下一条路线',
     finish:'撞到边界或自身则结束；暂停后可继续当前一轮。',
     limits:'支持方向键、WASD、滑动和屏幕方向按钮；最高分保存在本地。', action:'open-snake', actionLabel:'开始穿行',
+  },
+  maze: {
+    name:'KAI 迷宫', eyebrow:'路线探索', duration:'约 1–6 分钟', mode:'单人 · 三档迷宫', persistence:'本地自动保存',
+    goal:'从左上角出发，在交错通道中规划路线，抵达右下角出口。',
+    loop:'观察通路 → 方向移动 → 修正路线 → 抵达终点',
+    finish:'到达出口即完成，并对比实际步数与最短路径。',
+    limits:'每张盘面都保证唯一连通且可解；可随时显示当前位置到出口的提示路线。', action:'open-maze', actionLabel:'进入迷宫',
   },
   farm: {
     name:'KAI 农场', eyebrow:'轻松经营', duration:'首获约 20 秒', mode:'单人 · 6 块田 / 3 种作物', persistence:'本地自动保存',
@@ -279,6 +346,11 @@ const GAME_CONTENT = Object.freeze({
     finish:'没有输赢终局，可随时结束；页面持续显示本次会话真实统计。',
     limits:'纯视觉娱乐，不支付、不下注、不发放任何可兑换奖励。', action:'open-slots', actionLabel:'免费试转',
   },
+});
+const FALLING_BLOCK_LABELS = Object.freeze({ I:'长条', J:'蓝钩', L:'橙钩', O:'方块', S:'绿折', T:'紫丁', Z:'红折' });
+const MATCH_THREE_GEMS = Object.freeze({
+  ruby:{ glyph:'◆', label:'红宝石' }, sun:{ glyph:'●', label:'金日石' }, leaf:{ glyph:'♠', label:'绿叶石' },
+  wave:{ glyph:'≈', label:'蓝浪石' }, moon:{ glyph:'☾', label:'月光石' }, star:{ glyph:'★', label:'星辉石' },
 });
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
@@ -312,6 +384,7 @@ let minesweeperSuppressedClick = null;
 let snakeTimer = null;
 let memoryMismatchTimer = null;
 let farmTimer = null;
+let fallingTimer = null;
 let snakePointer = null;
 let toastTimer = null;
 let threeRevealTimer = null;
@@ -546,6 +619,49 @@ function saveSlidingPuzzleGame(game, casual = state.casual) {
   return saved;
 }
 
+function loadSavedFallingBlocksGame() {
+  const game = loadFallingBlocksGame();
+  if (!game && safeStorageGet(FALLING_BLOCKS_STORAGE_KEY)) safeStorageRemove(FALLING_BLOCKS_STORAGE_KEY);
+  return game;
+}
+
+function persistFallingBlocksGame(game, casual = state.casual) {
+  if (!game || casual?.kind !== 'falling') return false;
+  const saved = saveFallingBlocksGame(game);
+  casual.saveAvailable = saved;
+  return saved;
+}
+
+function loadSavedMatchThreeGame() {
+  const raw = safeStorageGet(MATCH_THREE_SAVE_KEY);
+  if (!raw) return null;
+  const game = restoreMatchThreeGame(raw);
+  if (!game) safeStorageRemove(MATCH_THREE_SAVE_KEY);
+  return game;
+}
+
+function saveMatchThreeGame(game, casual = state.casual) {
+  if (!game || casual?.kind !== 'match3') return false;
+  const saved = safeStorageSet(MATCH_THREE_SAVE_KEY, JSON.stringify(game));
+  casual.saveAvailable = saved;
+  return saved;
+}
+
+function loadSavedMazeGame() {
+  const raw = safeStorageGet(MAZE_SAVE_KEY);
+  if (!raw) return null;
+  const game = restoreMazeGame(raw);
+  if (!game) safeStorageRemove(MAZE_SAVE_KEY);
+  return game;
+}
+
+function saveMazeGame(game, casual = state.casual) {
+  if (!game || casual?.kind !== 'maze') return false;
+  const saved = safeStorageSet(MAZE_SAVE_KEY, JSON.stringify(game));
+  casual.saveAvailable = saved;
+  return saved;
+}
+
 function localDateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -577,6 +693,19 @@ function isResumableSokobanGame(game) {
 
 function isResumableSlidingPuzzleGame(game) {
   return game?.status === 'playing' && safeLocalCounter(game.moveCount) > 0;
+}
+
+function isResumableFallingBlocksGame(game) {
+  return ['playing','paused'].includes(game?.status)
+    && (safeLocalCounter(game.pieces) > 0 || safeLocalCounter(game.ticks) > 0 || safeLocalCounter(game.score) > 0);
+}
+
+function isResumableMatchThreeGame(game) {
+  return game?.status === 'playing' && (safeLocalCounter(game.moveCount) > 0 || safeLocalCounter(game.shuffleCount) > 0);
+}
+
+function isResumableMazeGame(game) {
+  return ['ready','playing'].includes(game?.status) && safeLocalCounter(game.stepCount) > 0;
 }
 
 function loadSavedSudoku6Game(mode = null) {
@@ -771,7 +900,7 @@ function rulesGameGuide() {
     <button class="btn" data-action="${esc(content.action)}">${esc(content.actionLabel)} <b aria-hidden="true">→</b></button>
   </article>`;
   }).join('');
-  return `<section class="rules-game-guide" aria-labelledby="rules-game-guide-title"><div class="section-head"><div><span class="section-kicker">GAME PLAYBOOK</span><h2 id="rules-game-guide-title">15 款玩法，一次看懂</h2></div><p>目标、循环、终局与保存范围均以当前版本为准</p></div><div class="rules-game-index">${cards}</div></section>`;
+  return `<section class="rules-game-guide" aria-labelledby="rules-game-guide-title"><div class="section-head"><div><span class="section-kicker">GAME PLAYBOOK</span><h2 id="rules-game-guide-title">18 款玩法，一次看懂</h2></div><p>目标、循环、终局与保存范围均以当前版本为准</p></div><div class="rules-game-index">${cards}</div></section>`;
 }
 
 function lobby() {
@@ -787,7 +916,10 @@ function lobby() {
   const savedSliding = loadSavedSlidingPuzzleGame();
   const memorySession = loadMemoryMatchSession() || { restored:false, game:null };
   const savedMemory = memorySession.restored ? memorySession.game : null;
+  const savedMatchThree = loadSavedMatchThreeGame();
+  const savedFalling = loadSavedFallingBlocksGame();
   const savedSnake = loadSavedSnakeGame();
+  const savedMaze = loadSavedMazeGame();
   const savedFarm = loadSavedFarmGame();
   const canContinueMinesweeper = isResumableMinesweeperGame(savedMinesweeper);
   const canContinueSudoku6 = isResumableSudoku6Game(savedSudoku6);
@@ -800,7 +932,10 @@ function lobby() {
   const canContinueSliding = isResumableSlidingPuzzleGame(savedSliding);
   const canContinueMemory = savedMemory?.status === 'playing'
     && (Number(savedMemory.moveCount) > 0 || savedMemory.faceUp?.length > 0 || Number(savedMemory.matchedPairs) > 0);
+  const canContinueMatchThree = isResumableMatchThreeGame(savedMatchThree);
+  const canContinueFalling = isResumableFallingBlocksGame(savedFalling);
   const canContinueSnake = ['playing','paused'].includes(savedSnake?.status) && Number(savedSnake.ticks) > 0;
+  const canContinueMaze = isResumableMazeGame(savedMaze);
   const canContinueFarm = farmHasProgress(savedFarm);
   const xiangqiAction = !savedXiangqi || (savedXiangqi.game.status === 'playing' && !canContinueXiangqi) ? '执红开局' : canContinueXiangqi ? '继续对局' : '查看战果';
   const merge1048Action = !saved1048 || (saved1048.status === 'playing' && !canContinue1048) ? '开始合并' : canContinue1048 ? '继续上局' : '查看上局';
@@ -811,7 +946,10 @@ function lobby() {
   const sokobanAction = !savedSokoban || (savedSokoban.status === 'playing' && !canContinueSokoban) ? '开始闯关' : canContinueSokoban ? '继续本关' : '查看通关';
   const slidingAction = !savedSliding || (savedSliding.status === 'ready' && !canContinueSliding) ? '开始拼图' : canContinueSliding ? '继续拼图' : '查看成绩';
   const memoryAction = !savedMemory || (savedMemory.status === 'ready' && !canContinueMemory) ? '开始配对' : canContinueMemory ? '继续配对' : '查看成绩';
+  const matchThreeAction = !savedMatchThree || !canContinueMatchThree && savedMatchThree.status === 'playing' ? '开始三消' : canContinueMatchThree ? '继续消除' : '查看成绩';
+  const fallingAction = !savedFalling || !canContinueFalling && ['playing','paused'].includes(savedFalling.status) ? '开始堆叠' : canContinueFalling ? '继续堆叠' : '查看成绩';
   const snakeAction = !savedSnake || !canContinueSnake && ['ready','playing','paused'].includes(savedSnake.status) ? '开始穿行' : canContinueSnake ? '继续穿行' : '查看上轮';
+  const mazeAction = !savedMaze || !canContinueMaze && ['ready','playing'].includes(savedMaze.status) ? '进入迷宫' : canContinueMaze ? '继续探索' : '查看成绩';
   const farmAction = canContinueFarm ? '继续经营' : '开始种植';
   const minesweeperPreview = ['covered','covered','covered','covered','covered','covered','covered','one','one','one','covered','covered','covered','one','empty','two','flag','covered','covered','one','one','two','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered']
     .map((cell) => `<i class="${cell}">${cell === 'one' ? '1' : cell === 'two' ? '2' : cell === 'flag' ? '⚑' : ''}</i>`).join('');
@@ -900,12 +1038,37 @@ function lobby() {
       action:'open-memory', label:memoryAction, glyph:'◫',
     });
   }
+  if (canContinueMatchThree) {
+    const progress = Math.min(100, Math.round(savedMatchThree.score / savedMatchThree.targetScore * 100));
+    resumeCandidates.push({
+      id:'match3', accent:'match3', eyebrow:'继续消除', title:'KAI 三消',
+      meta:`得分 ${savedMatchThree.score}/${savedMatchThree.targetScore} · 剩余 ${savedMatchThree.moveLimit - savedMatchThree.moveCount} 步`,
+      progress,
+      action:'open-match3', label:matchThreeAction, glyph:'◆',
+    });
+  }
+  if (canContinueFalling) {
+    resumeCandidates.push({
+      id:'falling', accent:'falling', eyebrow:'继续堆叠', title:'KAI 方块',
+      meta:`等级 ${savedFalling.level} · 已消 ${savedFalling.lines} 行 · 得分 ${savedFalling.score}`,
+      progress:null, note:`已落下 ${savedFalling.pieces} 个方块 · 进度已保存`,
+      action:'open-falling', label:fallingAction, glyph:'▦',
+    });
+  }
   if (canContinueSnake) {
     resumeCandidates.push({
       id:'snake', accent:'snake', eyebrow:'继续游玩', title:'KAI 贪吃蛇',
       meta:`${SNAKE_DIFFICULTIES[savedSnake.difficulty].label}速度 · 得分 ${savedSnake.score}`,
       progress:null, note:`长度 ${savedSnake.snake.length} · 已前进 ${savedSnake.ticks} 格`,
       action:'open-snake', label:snakeAction, glyph:'S',
+    });
+  }
+  if (canContinueMaze) {
+    resumeCandidates.push({
+      id:'maze', accent:'maze', eyebrow:'继续探索', title:'KAI 迷宫',
+      meta:`${MAZE_DIFFICULTIES[savedMaze.difficulty].label}迷宫 · 已走 ${savedMaze.stepCount} 步`,
+      progress:null, note:`最短路线 ${savedMaze.bestPathLength} 步 · 当前位置已保存`,
+      action:'open-maze', label:mazeAction, glyph:'迷',
     });
   }
   if (canContinueFarm) {
@@ -945,7 +1108,7 @@ function lobby() {
   ];
   const previewRivers = ['north','east','south','west'].map((position,index)=>`<div class="preview-river preview-river--${position}">${previewRiverData[index].map((tile)=>mahjongFace(tile,'preview-river-tile')).join('')}</div>`).join('');
   const hubSide = `<aside class="hub-side">
-    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">15 款可玩</span>'}</div>
+    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">18 款可玩</span>'}</div>
     <article class="resume-card resume-${resumeGame.accent}">
       <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
       <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
@@ -962,7 +1125,7 @@ function lobby() {
   return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby','lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
-        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>15 款即开即玩的牌桌、策略、益智与经营游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>18 款即开即玩的牌桌、策略、益智与经营游戏，无需下载，点开就能玩。</p></div>
         <div class="catalog-search-wrap">
           <label class="catalog-search" for="catalog-search-input">
             <i aria-hidden="true">⌕</i>
@@ -972,7 +1135,7 @@ function lobby() {
           </label>
           <button class="catalog-search-jump" type="button" data-action="catalog-show-results" hidden><span data-catalog-search-feedback aria-live="polite">查看搜索结果</span><b aria-hidden="true">↓</b></button>
         </div>
-        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>11 款本地自动保存</span></div>
+        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>14 款本地自动保存</span></div>
         <nav class="mood-rail" aria-label="按心情选择玩法">
           <button data-action="jump-world" data-world-target="minesweeper"><i aria-hidden="true">⚑</i>短局放松</button>
           <button data-action="jump-world" data-world-target="sudoku6"><i aria-hidden="true">6</i>动脑解谜</button>
@@ -1016,7 +1179,7 @@ function lobby() {
       </section>
 
       <section class="section-block game-catalog" id="game-selection">
-        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>15 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 14 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 15</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>18 款游戏，一眼找到</h2></div><div class="icon-wall-summary"><span>小图标排列 · 点击即玩</span><span><b>14</b> 款可自动保存</span></div></div>
         <div class="catalog-command" aria-label="筛选全部玩法">
           <div class="catalog-filters" role="group" aria-label="按玩法类型筛选">
             <button class="is-active" data-action="catalog-filter" data-catalog-filter="all" aria-pressed="true">全部</button>
@@ -1028,10 +1191,9 @@ function lobby() {
             <button data-action="catalog-filter" data-catalog-filter="arcade" aria-pressed="false">街机</button>
             <button data-action="catalog-filter" data-catalog-filter="save" aria-pressed="false">自动保存</button>
           </div>
-          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 15 款</span>
+          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 18 款</span>
         </div>
-        <p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，下一款游戏已经露出来了</p>
-        <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
+        <div class="world-strip game-icon-grid" data-world-strip role="region" aria-label="全部 18 款玩法，小图标网格排列">
           <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
           <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"${canContinueXiangqi?' data-world-resumable="true"':''}><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
           <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"${canContinueGomoku?' data-world-resumable="true"':''}><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>
@@ -1043,12 +1205,14 @@ function lobby() {
           <article class="game-world world-sokoban" data-world-card data-world-id="sokoban"${canContinueSokoban?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSokoban?'可继续':savedSokoban?.status==='won'?'本关已通':'6 个关卡'}</span><div class="world-cover"><div class="world-sokoban-board" aria-hidden="true">${['wall','wall','wall','wall','wall','wall','wall','wall','','target','','','wall','wall','','box','','player','wall','wall','','','target','','wall','wall','wall','wall','wall','wall'].map((cell)=>`<i class="${cell}">${cell==='box'?'箱':cell==='player'?'人':''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">仓</i></div><div class="world-copy"><span>原创关卡 · 可逐步撤销</span><h3>KAI 推箱子</h3><p>绕到箱子后方再推动，避开死角，把每只箱子送进目标点。</p><button class="btn" data-action="open-sokoban">${sokobanAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-sliding" data-world-card data-world-id="sliding"${canContinueSliding?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSliding?'可继续':savedSliding?.status==='won'?'成绩已保存':'三档盘面'}</span><div class="world-cover"><div class="world-sliding-board" aria-hidden="true">${[1,2,3,4,5,6,7,0,8].map((value)=>`<i class="${value?'':'blank'}">${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">15</i></div><div class="world-copy"><span>3×3 至 5×5 · 保证可解</span><h3>KAI 数字华容道</h3><p>利用空位移动数字，把打乱的顺序一步步重新拼回完整。</p><button class="btn" data-action="open-sliding">${slidingAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-memory" data-world-card data-world-id="memory"${canContinueMemory?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMemory?'可继续':savedMemory?.status==='won'?'成绩已保存':'轻松短局'}</span><div class="world-cover"><div class="world-memory-cards" aria-hidden="true"><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i></div><i class="world-cover-mark" aria-hidden="true">PAIR</i></div><div class="world-copy"><span>翻开配对 · 三档牌阵</span><h3>KAI 记忆翻牌</h3><p>记住每张卡的位置，用更少步数找齐所有相同图案。</p><button class="btn" data-action="open-memory">${memoryAction} <b>→</b></button></div></article>
+          <article class="game-world world-match3" data-world-card data-world-id="match3"${canContinueMatchThree?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMatchThree?'可继续':savedMatchThree?.status==='won'?'目标达成':savedMatchThree?.status==='lost'?'成绩已保存':'缤纷新作'}</span><div class="world-cover"><i class="world-cover-mark" aria-hidden="true">◆</i></div><div class="world-copy"><span>8×8 宝石盘 · 连锁消除</span><h3>KAI 三消</h3><p>交换相邻宝石，制造三连与连锁，在步数用完前达到目标。</p><button class="btn" data-action="open-match3">${matchThreeAction} <b aria-hidden="true">→</b></button></div></article>
+          <article class="game-world world-falling" data-world-card data-world-id="falling"${canContinueFalling?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFalling?'可继续':savedFalling?.status==='over'?'成绩已保存':'经典街机'}</span><div class="world-cover"><i class="world-cover-mark" aria-hidden="true">▦</i></div><div class="world-copy"><span>七种方块 · 消行升级</span><h3>KAI 方块</h3><p>移动、旋转与直落，填满横行，在加速中继续堆叠。</p><button class="btn" data-action="open-falling">${fallingAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-snake" data-world-card data-world-id="snake"${canContinueSnake?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
+          <article class="game-world world-maze" data-world-card data-world-id="maze"${canContinueMaze?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMaze?'可继续':savedMaze?.status==='won'?'路线已完成':'三档迷宫'}</span><div class="world-cover"><i class="world-cover-mark" aria-hidden="true">迷</i></div><div class="world-copy"><span>唯一通路 · 三档尺寸</span><h3>KAI 迷宫</h3><p>从左上角走到右下角，需要时点亮当前位置的最短提示路线。</p><button class="btn" data-action="open-maze">${mazeAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-farm" data-world-card data-world-id="farm"${canContinueFarm?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFarm?'可继续':'新上线'}</span><div class="world-cover"><div class="world-farm-field" aria-hidden="true"><i class="crop-wheat stage-ready"><b>麦</b></i><i class="crop-carrot stage-growing"><b>萝</b></i><i></i><i class="crop-strawberry stage-ready"><b>莓</b></i><i class="crop-wheat stage-growing"><b>麦</b></i><i></i></div><i class="world-cover-mark" aria-hidden="true">丰</i></div><div class="world-copy"><span>经典农场经营 · 20 秒首获</span><h3>KAI 农场</h3><p>播种、浇水、等待成熟，再把收获投入下一季。</p><button class="btn" data-action="open-farm">${farmAction} <b>→</b></button></div></article>
           <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">牌型训练</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三手判断训练 · 单机免费</span><h3>炸金花训练</h3><p>先判断自己的牌型，再揭晓三家结果与本次正确率。</p><button class="btn" data-action="open-three">开始三手训练 <b>→</b></button></div></article>
           <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>发现对子与三连组合，记录本次会话的共振值。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">免费试转 <b>→</b></button></div></article>
         </div>
-        ${catalogPlaybookMarkup('ddz')}
         <div class="catalog-empty" data-catalog-empty hidden role="status"><i aria-hidden="true">⌕</i><div><b>没有找到相关玩法</b><span>换个关键词，或者重新查看全部游戏。</span></div><button class="btn" data-action="catalog-reset">显示全部</button></div>
       </section>
 
@@ -2225,6 +2389,98 @@ function slidingPuzzleGame() {
   </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '盘面、步数与用时在当前浏览器自动保存'}。每次洗牌都保证可解且不会直接完成；本玩法不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
+function fallingBlocksGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'falling-blocks') return lobby();
+  const cellClasses = fallingBlocksCellClasses(game);
+  const cells = cellClasses.map((classes) => `<i class="${classes}" aria-hidden="true"></i>`).join('');
+  const nextPieces = fallingBlocksNextMarkup(game);
+  const status = game.status === 'over' ? '出生区域被占满，本轮结束'
+    : game.status === 'paused' ? '已暂停 · 点击继续或按 P 恢复'
+      : game.lastClear ? `漂亮！刚刚消除 ${game.lastClear} 行` : casual.announcement || '用方向键移动，↑ 旋转，空格直落';
+  return `<div class="shell casual-shell falling-route">${casualHeader('KAI 方块','FALLING BLOCKS',`等级 ${game.level} · 本地自动保存`)}<main class="local-puzzle-stage falling-stage">
+    <section class="local-puzzle-copy"><div><span>七种经典方块 · 速度逐级提升</span><h2>旋转落点<br><b>填满整行</b></h2><p>判断方块形状和落点，把横行完整填满即可消除。软降每格加 1 分，直落每格加 2 分，连续消行得分更高。</p></div><div class="falling-next" aria-label="接下来四个方块"><span>接下来</span><div data-falling-next>${nextPieces}</div></div><ol><li><i>1</i><span><b>预留空间</b><small>避免过早封住深坑</small></span></li><li><i>2</i><span><b>旋转贴边</b><small>墙边也会自动微调</small></span></li><li><i>3</i><span><b>直落锁定</b><small>确认位置后快速得分</small></span></li></ol></section>
+    <section class="local-puzzle-play"><div class="local-puzzle-metrics" data-falling-metrics aria-label="本局数据"><div><small>得分</small><strong>${game.score}</strong></div><div><small>消行</small><strong>${game.lines}</strong></div><div><small>等级</small><strong>${game.level}</strong></div></div>
+      <div class="local-puzzle-status ${game.status === 'over' ? 'is-finished' : ''}" data-falling-status role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status === 'playing' ? `${getFallingBlocksDropInterval(game)}ms / 格` : game.status === 'paused' ? '已暂停' : '已结束'}</b></div>
+      <div class="falling-board" data-falling-board role="grid" aria-label="${FALLING_BLOCKS_ROWS} 行 ${FALLING_BLOCKS_COLUMNS} 列下落方块棋盘，当前得分 ${game.score}，已消除 ${game.lines} 行" aria-rowcount="${FALLING_BLOCKS_ROWS}" aria-colcount="${FALLING_BLOCKS_COLUMNS}" aria-keyshortcuts="ArrowLeft ArrowRight ArrowDown ArrowUp Space Z P" tabindex="0">${cells}${game.status === 'paused' ? '<span class="falling-board-mask" aria-hidden="true">暂停</span>' : ''}</div>
+      <div class="falling-controls" aria-label="方块操作"><button type="button" data-action="falling-left" aria-label="向左移动" ${game.status !== 'playing' ? 'disabled' : ''}>←</button><button type="button" data-action="falling-rotate" aria-label="顺时针旋转" ${game.status !== 'playing' ? 'disabled' : ''}>↻</button><button type="button" data-action="falling-right" aria-label="向右移动" ${game.status !== 'playing' ? 'disabled' : ''}>→</button><button type="button" data-action="falling-down" aria-label="向下软降" ${game.status !== 'playing' ? 'disabled' : ''}>↓</button><button type="button" class="is-wide" data-action="falling-drop" ${game.status !== 'playing' ? 'disabled' : ''}>直落</button></div>
+      <div class="local-puzzle-actions"><button class="btn primary" data-action="falling-toggle" ${game.status === 'over' ? 'disabled' : ''}>${game.status === 'paused' ? '继续游戏' : '暂停'}</button><button class="btn" data-action="falling-new">重新开局</button></div><p class="local-key-hint">键盘：← → 移动 · ↑ / Z 旋转 · ↓ 软降 · 空格直落 · P 暂停</p>${game.status === 'over' ? `<section class="local-puzzle-result is-over" data-falling-result role="status" aria-live="polite" tabindex="-1"><span>本轮堆叠结束</span><h2>${game.score} 分 · ${game.lines} 行</h2><p>到达等级 ${game.level}，共落下 ${game.pieces} 个方块</p><div><button class="btn primary" data-action="falling-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本轮仍可继续' : '棋盘、得分与下一个方块序列在当前浏览器自动保存'}。页面隐藏时会自动暂停；本玩法不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function fallingBlocksCellClasses(game) {
+  const active = new Set(getFallingBlocksActiveIndexes(game));
+  const ghost = new Set(getFallingBlocksGhost(game)?.indexes || []);
+  const activeType = game.active?.type || '';
+  return Array.from({ length:FALLING_BLOCKS_CELL_COUNT }, (_, index) => {
+    const settled = game.board[index];
+    const type = settled || (active.has(index) ? activeType : '');
+    return ['falling-cell', type ? `piece-${String(type).toLowerCase()}` : '', active.has(index) ? 'is-active' : '', !type && ghost.has(index) ? 'is-ghost' : ''].filter(Boolean).join(' ');
+  });
+}
+
+function fallingBlocksNextMarkup(game) {
+  return getFallingBlocksNextPieces(game, 4).map((type) => `<i class="piece-${type.toLowerCase()}" title="${FALLING_BLOCK_LABELS[type]}">${type}</i>`).join('');
+}
+
+function matchThreeGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'match-three') return lobby();
+  const selected = Number.isInteger(casual.selectedCell) ? casual.selectedCell : -1;
+  const focused = Number.isInteger(casual.focusedCell) ? casual.focusedCell : 0;
+  const lastSwap = new Set(game.lastSwap ? [game.lastSwap.from, game.lastSwap.to] : []);
+  const cells = game.board.map((symbolIndex, index) => {
+    const symbol = MATCH_THREE_SYMBOLS[symbolIndex];
+    const gem = MATCH_THREE_GEMS[symbol];
+    const row = Math.floor(index / MATCH_THREE_COLUMNS);
+    const column = index % MATCH_THREE_COLUMNS;
+    const classes = ['match3-cell', `gem-${symbol}`, selected === index ? 'is-selected' : '', lastSwap.has(index) ? 'is-last' : ''].filter(Boolean);
+    return `<button type="button" class="${classes.join(' ')}" data-match3-cell="${index}" role="gridcell" aria-label="第 ${row + 1} 行第 ${column + 1} 列，${gem.label}${selected === index ? '，已选择' : ''}" aria-selected="${selected === index}" tabindex="${focused === index ? '0' : '-1'}" ${game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">${gem.glyph}</i></button>`;
+  }).join('');
+  const movesLeft = Math.max(0, game.moveLimit - game.moveCount);
+  const progress = Math.min(100, Math.round(game.score / game.targetScore * 100));
+  const resolution = game.lastResolution;
+  const status = game.status === 'won' ? '目标达成，缤纷连线完成'
+    : game.status === 'lost' ? '步数已经用完，再试一次新的组合'
+      : casual.announcement || (resolution ? `消除 ${resolution.clearedCount} 枚 · 获得 ${resolution.scoreGained} 分${resolution.cascadeCount > 1 ? ` · ${resolution.cascadeCount} 连锁` : ''}` : '先选一枚宝石，再选相邻宝石进行交换');
+  return `<div class="shell casual-shell match3-route">${casualHeader('KAI 三消','MATCH THREE',`${movesLeft} 步剩余 · 本地自动保存`)}<main class="local-puzzle-stage match3-stage">
+    <section class="local-puzzle-copy"><div><span>8×8 连线消除 · 每局 24 步</span><h2>交换宝石<br><b>触发缤纷连锁</b></h2><p>依次选择两枚相邻宝石。只有交换后能形成横向或纵向三连时才会消耗步数，更多连锁会带来更高分数。</p></div><div class="match3-goal"><span>目标进度</span><strong>${game.score} / ${game.targetScore}</strong><div role="progressbar" aria-label="三消目标进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="--match3-progress:${progress}%"></i></div></div><ol><li><i>1</i><span><b>寻找相邻</b><small>先观察可组成三连的位置</small></span></li><li><i>2</i><span><b>交换成线</b><small>无效交换不会扣除步数</small></span></li><li><i>3</i><span><b>制造连锁</b><small>掉落后的连续消除分数更高</small></span></li></ol></section>
+    <section class="local-puzzle-play"><div class="local-puzzle-metrics" aria-label="本局数据"><div><small>得分</small><strong>${game.score}</strong></div><div><small>剩余步数</small><strong>${movesLeft}</strong></div><div><small>已消除</small><strong>${game.totalCleared}</strong></div></div>
+      <div class="local-puzzle-status ${game.status !== 'playing' ? 'is-finished' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${resolution?.cascadeCount > 1 ? `${resolution.cascadeCount} 连锁` : `${progress}%`}</b></div>
+      <div class="match3-board" data-match3-board role="grid" aria-label="8 乘 8 三消宝石盘，方向键移动选择，回车或空格确认" aria-rowcount="8" aria-colcount="8" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${cells}</div>
+      <div class="local-puzzle-actions"><button class="btn" data-action="match3-shuffle" ${game.status !== 'playing' ? 'disabled' : ''}>重排宝石</button><button class="btn" data-action="match3-new">重新开局</button></div><p class="local-key-hint">键盘：方向键移动 · Enter / 空格选择 · 触屏：依次点击相邻宝石</p>${game.status !== 'playing' ? `<section class="local-puzzle-result ${game.status === 'won' ? 'is-win' : 'is-over'}" data-match3-result role="status" aria-live="polite" tabindex="-1"><span>${game.status === 'won' ? '目标达成' : '本局结束'}</span><h2>${game.score} 分</h2><p>${game.moveCount} 步 · 消除 ${game.totalCleared} 枚 · 重排 ${game.shuffleCount} 次</p><div><button class="btn primary" data-action="match3-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '盘面、分数与剩余步数在当前浏览器自动保存'}。所有盘面均保证开局无现成三连且至少存在一步有效交换；本玩法不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function mazeGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'maze') return lobby();
+  const hintPath = new Set(getMazeHintPath(game));
+  const cells = getMazeCells(game).map((cell, index) => {
+    const classes = ['maze-cell', !cell.openings.up ? 'maze-wall-up' : '', !cell.openings.right ? 'maze-wall-right' : '', !cell.openings.down ? 'maze-wall-down' : '', !cell.openings.left ? 'maze-wall-left' : '', hintPath.has(index) ? 'is-hint' : '', cell.start ? 'is-start' : '', cell.goal ? 'is-goal' : '', cell.player ? 'is-player' : ''].filter(Boolean);
+    const content = cell.player ? '<i class="maze-player">K</i>' : cell.goal ? '<i class="maze-goal">★</i>' : cell.start ? '<i class="maze-start">起</i>' : hintPath.has(index) ? '<i class="maze-dot"></i>' : '';
+    return `<span class="${classes.join(' ')}" role="gridcell" aria-label="第 ${cell.row + 1} 行第 ${cell.column + 1} 列${cell.player ? '，当前位置' : cell.goal ? '，出口' : cell.start ? '，起点' : hintPath.has(index) ? '，提示路线' : ''}">${content}</span>`;
+  }).join('');
+  const difficulties = Object.values(MAZE_DIFFICULTIES).map((entry) => `<button type="button" data-action="maze-difficulty" data-maze-difficulty="${entry.key}" class="${entry.key === game.difficulty ? 'active' : ''}" aria-pressed="${entry.key === game.difficulty}"><b>${entry.rows}×${entry.columns}</b><small>${entry.label}</small></button>`).join('');
+  const efficiency = game.status === 'won' ? Math.min(100, Math.round(game.bestPathLength / game.stepCount * 100)) : null;
+  const status = game.status === 'won' ? `抵达出口 · 用了 ${game.stepCount} 步`
+    : casual.announcement || (game.hintVisible ? '提示路线已点亮 · 从当前位置沿光点前进' : '从左上角出发，找到右下角出口');
+  return `<div class="shell casual-shell maze-route">${casualHeader('KAI 迷宫','MAZE',`${MAZE_DIFFICULTIES[game.difficulty].label} ${game.rows}×${game.columns} · 本地自动保存`)}<main class="local-puzzle-stage maze-stage">
+    <section class="local-puzzle-copy"><div><span>程序生成 · 每张都保证可解</span><h2>穿过岔路<br><b>找到唯一出口</b></h2><p>你从左上角出发，目标在右下角。遇到岔路时先看清通道，也可以点亮当前位置到出口的最短提示路线。</p></div><div class="local-difficulty-rail" aria-label="选择迷宫难度">${difficulties}</div><ol><li><i>1</i><span><b>观察墙口</b><small>有缺口的方向才能通过</small></span></li><li><i>2</i><span><b>记住岔路</b><small>走错时原路返回</small></span></li><li><i>3</i><span><b>按需提示</b><small>提示从当前位置动态更新</small></span></li></ol></section>
+    <section class="local-puzzle-play"><div class="local-puzzle-metrics" aria-label="本局数据"><div><small>步数</small><strong>${game.stepCount}</strong></div><div><small>最短路线</small><strong>${game.bestPathLength}</strong></div><div><small>路线效率</small><strong>${efficiency === null ? '—' : `${efficiency}%`}</strong></div></div>
+      <div class="local-puzzle-status ${game.status === 'won' ? 'is-finished' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.hintVisible ? '提示开启' : MAZE_DIFFICULTIES[game.difficulty].label}</b></div>
+      <div class="maze-board size-${game.rows}" data-maze-board role="grid" aria-label="${game.rows} 乘 ${game.columns} 迷宫，方向键或 WASD 移动" aria-rowcount="${game.rows}" aria-colcount="${game.columns}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D" tabindex="0" style="--maze-columns:${game.columns}">${cells}</div>
+      <div class="local-direction-pad maze-pad" aria-label="迷宫方向控制"><span></span><button type="button" data-action="maze-move" data-maze-direction="up" aria-label="向上移动" ${game.status === 'won' ? 'disabled' : ''}>↑</button><span></span><button type="button" data-action="maze-move" data-maze-direction="left" aria-label="向左移动" ${game.status === 'won' ? 'disabled' : ''}>←</button><button type="button" data-action="maze-move" data-maze-direction="down" aria-label="向下移动" ${game.status === 'won' ? 'disabled' : ''}>↓</button><button type="button" data-action="maze-move" data-maze-direction="right" aria-label="向右移动" ${game.status === 'won' ? 'disabled' : ''}>→</button></div>
+      <div class="local-puzzle-actions"><button class="btn primary" data-action="maze-hint" ${game.status === 'won' ? 'disabled' : ''}>${game.hintVisible ? '关闭提示' : '显示提示路线'}</button><button class="btn" data-action="maze-restart">重走本图</button><button class="btn" data-action="maze-new">换一张图</button></div><p class="local-key-hint">键盘：方向键 / WASD 移动 · 每一步都会自动保存</p>${game.status === 'won' ? `<section class="local-puzzle-result is-win" data-maze-result role="status" aria-live="polite" tabindex="-1"><span>${MAZE_DIFFICULTIES[game.difficulty].label}迷宫完成</span><h2>${game.stepCount} 步抵达出口</h2><p>最短路线 ${game.bestPathLength} 步 · 路线效率 ${efficiency}%</p><div><button class="btn primary" data-action="maze-new">换一张图</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本图仍可继续' : '迷宫、位置与步数在当前浏览器自动保存'}。迷宫为本地生成的连通无环地图，提示只显示当前位置到出口的路线；本玩法不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
 function historyMatchWon(match) {
   if (match.role === 'landlord') return match.winner === 'landlord';
   if (match.role === 'farmer') return match.winner === 'farmers';
@@ -2284,10 +2540,10 @@ function history() {
     <section class="history-list"><div class="section-head"><div><span class="section-kicker">最近牌局</span><h2>${matches.length?'逐局记录':'等待第一场记录'}</h2></div><p>最多展示服务端返回的最近 20 局</p></div>${recentMatches}</section></div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、黑白棋、麻将、1048、数独、扫雷、推箱子、数字华容道、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
+function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、黑白棋、麻将、1048、数独、扫雷、推箱子、数字华容道、记忆翻牌、三消、下落方块、贪吃蛇、迷宫、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='reversi'?reversiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='sokoban'?sokobanGame():state.view==='sliding'?slidingPuzzleGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='reversi'?reversiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='sokoban'?sokobanGame():state.view==='sliding'?slidingPuzzleGame():state.view==='memory'?memoryMatchGame():state.view==='match3'?matchThreeGame():state.view==='falling'?fallingBlocksGame():state.view==='snake'?snakeGame():state.view==='maze'?mazeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
   if(state.view==='lobby')updateWorldCarouselStatus(app.querySelector('[data-world-strip]'));
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
@@ -2308,12 +2564,14 @@ function stopCasualTimers() {
   if (snakeTimer) clearTimeout(snakeTimer);
   if (memoryMismatchTimer) clearTimeout(memoryMismatchTimer);
   if (farmTimer) clearTimeout(farmTimer);
+  if (fallingTimer) clearTimeout(fallingTimer);
   threeRevealTimer = null;
   slotSpinTimer = null;
   xiangqiAiTimer = null;
   snakeTimer = null;
   memoryMismatchTimer = null;
   farmTimer = null;
+  fallingTimer = null;
   cancelMinesweeperLongPress();
   minesweeperSuppressedClick = null;
 }
@@ -3538,6 +3796,212 @@ function updateSlidingPuzzleClock() {
   if (casual.game.elapsedSeconds % 5 === 0) saveSlidingPuzzleGame(casual.game);
 }
 
+function focusFallingBlocksInteraction() {
+  const target = document.querySelector('[data-falling-result]') || document.querySelector('[data-falling-board]');
+  target?.focus({ preventScroll:true });
+}
+
+function updateFallingBlocksDom(game, announcement = null) {
+  const board = document.querySelector('[data-falling-board]');
+  const cells = board ? Array.from(board.querySelectorAll('.falling-cell')) : [];
+  if (!board || cells.length !== FALLING_BLOCKS_CELL_COUNT) return false;
+
+  const classes = fallingBlocksCellClasses(game);
+  cells.forEach((cell, index) => {
+    if (cell.className !== classes[index]) cell.className = classes[index];
+  });
+
+  const boardLabel = `${FALLING_BLOCKS_ROWS} 行 ${FALLING_BLOCKS_COLUMNS} 列下落方块棋盘，当前得分 ${game.score}，已消除 ${game.lines} 行`;
+  if (board.getAttribute('aria-label') !== boardLabel) board.setAttribute('aria-label', boardLabel);
+
+  const metrics = Array.from(document.querySelectorAll('[data-falling-metrics] strong'));
+  [game.score, game.lines, game.level].forEach((value, index) => {
+    if (metrics[index] && metrics[index].textContent !== String(value)) metrics[index].textContent = String(value);
+  });
+
+  const next = document.querySelector('[data-falling-next]');
+  const nextMarkup = fallingBlocksNextMarkup(game);
+  if (next && next.innerHTML !== nextMarkup) next.innerHTML = nextMarkup;
+
+  const status = document.querySelector('[data-falling-status]');
+  const statusText = status?.querySelector('span');
+  const speed = status?.querySelector('b');
+  const speedText = `${getFallingBlocksDropInterval(game)}ms / 格`;
+  if (announcement && statusText && statusText.textContent !== announcement) statusText.textContent = announcement;
+  if (speed && speed.textContent !== speedText) speed.textContent = speedText;
+  return true;
+}
+
+function queueFallingBlocksTick() {
+  if (fallingTimer) clearTimeout(fallingTimer);
+  fallingTimer = null;
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'falling' || casual?.kind !== 'falling' || game?.status !== 'playing' || document.visibilityState === 'hidden') return;
+  fallingTimer = setTimeout(() => {
+    fallingTimer = null;
+    const live = state.casual;
+    const current = live?.game;
+    if (state.view !== 'falling' || live !== casual || current?.status !== 'playing') return;
+    try {
+      const next = advanceFallingBlocks(current);
+      live.game = next;
+      const announcement = next.status === 'over' ? '方块堆满出生区域 · 本轮结束' : next.lastClear ? `消除 ${next.lastClear} 行 · 继续保持` : null;
+      if (announcement) live.announcement = announcement;
+      persistFallingBlocksGame(next, live);
+      if (next.status === 'over') {
+        render();focusFallingBlocksInteraction();return;
+      }
+      if (!updateFallingBlocksDom(next, announcement)) render();
+      queueFallingBlocksTick();
+    } catch {
+      live.announcement = '下落状态异常，请重新开局';
+      render();focusFallingBlocksInteraction();
+    }
+  }, getFallingBlocksDropInterval(game));
+}
+
+function startFallingBlocksSession(game, announcement = '用方向键移动，↑ 旋转，空格直落') {
+  stopCasualTimers();
+  state.casual = { kind:'falling', game, announcement, saveAvailable:true };
+  state.view = 'falling';
+  if (!persistFallingBlocksGame(game)) state.casual.announcement = '当前浏览器无法保存 · 本轮仍可继续';
+  queueFallingBlocksTick();
+}
+
+function openFallingBlocks() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const saved = loadSavedFallingBlocksGame();
+  const resumable = isResumableFallingBlocksGame(saved);
+  const restored = saved && (resumable || saved.status === 'over') ? saved : null;
+  const game = restored?.status === 'paused' ? toggleFallingBlocksPause(restored) : restored || newFallingBlocksGame();
+  const announcement = !restored ? '用方向键移动，↑ 旋转，空格直落' : game.status === 'over' ? '上轮成绩已保留' : '已恢复本地堆叠进度';
+  startFallingBlocksSession(game, announcement);
+  rememberLastLocalGame('falling');
+}
+
+function commitFallingBlocksGame(next, announcement) {
+  const casual = state.casual;
+  if (state.view !== 'falling' || casual?.kind !== 'falling') return;
+  casual.game = next;
+  casual.announcement = announcement;
+  if (!persistFallingBlocksGame(next, casual)) casual.announcement += ' · 当前进度无法保存';
+  render();focusFallingBlocksInteraction();queueFallingBlocksTick();
+}
+
+function performFallingBlocksAction(action) {
+  const game = state.casual?.game;
+  if (state.view !== 'falling' || state.casual?.kind !== 'falling' || !game) return;
+  try {
+    const next = action(game);
+    if (next === game) {
+      state.casual.announcement = game.status === 'paused' ? '请先继续游戏' : '这个方向已经被挡住了';
+      render();focusFallingBlocksInteraction();return;
+    }
+    const announcement = next.status === 'over' ? '方块堆满出生区域 · 本轮结束'
+      : next.lastClear ? `消除 ${next.lastClear} 行 · 得分提升` : next.lastAction === 'hard-drop' ? `直落 ${next.lastDropDistance} 格` : '操作成功';
+    commitFallingBlocksGame(next, announcement);
+  } catch {
+    state.casual.announcement = '当前操作无法完成';render();focusFallingBlocksInteraction();
+  }
+}
+
+function focusMatchThreeInteraction(index = state.casual?.focusedCell) {
+  const result = document.querySelector('[data-match3-result]');
+  if (result) { result.focus({ preventScroll:true }); return; }
+  document.querySelector(`[data-match3-cell="${Number.isInteger(index) ? index : 0}"]`)?.focus({ preventScroll:true });
+}
+
+function startMatchThreeSession(game, announcement = '先选一枚宝石，再选相邻宝石交换') {
+  stopCasualTimers();
+  state.casual = { kind:'match3', game, selectedCell:null, focusedCell:0, announcement, saveAvailable:true };
+  state.view = 'match3';
+  if (!saveMatchThreeGame(game)) state.casual.announcement = '当前浏览器无法保存 · 本局仍可继续';
+}
+
+function openMatchThree() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const saved = loadSavedMatchThreeGame();
+  const game = saved || newMatchThreeGame();
+  const announcement = !saved ? '先选一枚宝石，再选相邻宝石交换' : game.status === 'playing' ? '已恢复本地消除进度' : '上局成绩已保留';
+  startMatchThreeSession(game, announcement);
+  rememberLastLocalGame('match3');
+}
+
+function selectMatchThreeCell(index) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'match3' || casual?.kind !== 'match3' || game?.status !== 'playing' || !Number.isInteger(index) || index < 0 || index >= MATCH_THREE_CELL_COUNT) return;
+  casual.focusedCell = index;
+  const selected = casual.selectedCell;
+  if (!Number.isInteger(selected)) {
+    casual.selectedCell = index;casual.announcement = '已选择宝石 · 再选一枚相邻宝石';render();focusMatchThreeInteraction(index);return;
+  }
+  if (selected === index) {
+    casual.selectedCell = null;casual.announcement = '已取消选择';render();focusMatchThreeInteraction(index);return;
+  }
+  const firstRow = Math.floor(selected / MATCH_THREE_COLUMNS);
+  const firstColumn = selected % MATCH_THREE_COLUMNS;
+  const row = Math.floor(index / MATCH_THREE_COLUMNS);
+  const column = index % MATCH_THREE_COLUMNS;
+  if (Math.abs(firstRow - row) + Math.abs(firstColumn - column) !== 1) {
+    casual.selectedCell = index;casual.announcement = '已改选这枚宝石 · 请选择它旁边的一枚';render();focusMatchThreeInteraction(index);return;
+  }
+  try {
+    const next = swapMatchThree(game, selected, index);
+    if (next === game) {
+      casual.selectedCell = index;casual.announcement = '这次交换不能形成三连 · 已改选第二枚宝石';render();focusMatchThreeInteraction(index);return;
+    }
+    casual.game = next;casual.selectedCell = null;
+    casual.announcement = next.status === 'won' ? '目标达成 · 本局完成' : next.status === 'lost' ? '步数用完 · 本局结束' : `消除 ${next.lastResolution.clearedCount} 枚 · 获得 ${next.lastResolution.scoreGained} 分${next.lastResolution.cascadeCount > 1 ? ` · ${next.lastResolution.cascadeCount} 连锁` : ''}`;
+    if (!saveMatchThreeGame(next, casual)) casual.announcement += ' · 当前进度无法保存';
+    render();focusMatchThreeInteraction(index);
+  } catch {
+    casual.announcement = '当前交换无法完成';render();focusMatchThreeInteraction(index);
+  }
+}
+
+function focusMazeInteraction() {
+  const target = document.querySelector('[data-maze-result]') || document.querySelector('[data-maze-board]');
+  target?.focus({ preventScroll:true });
+}
+
+function startMazeSession(game, announcement = '从左上角出发，找到右下角出口') {
+  stopCasualTimers();
+  state.casual = { kind:'maze', game, announcement, saveAvailable:true };
+  state.view = 'maze';
+  if (!saveMazeGame(game)) state.casual.announcement = '当前浏览器无法保存 · 本图仍可继续';
+}
+
+function openMaze() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const saved = loadSavedMazeGame();
+  const game = saved || newMazeGame();
+  const announcement = !saved ? '从左上角出发，找到右下角出口' : game.status === 'won' ? '上次路线已经完成' : '已恢复本地探索位置';
+  startMazeSession(game, announcement);
+  rememberLastLocalGame('maze');
+}
+
+function commitMazeGame(next, announcement) {
+  const casual = state.casual;
+  if (state.view !== 'maze' || casual?.kind !== 'maze') return;
+  casual.game = next;casual.announcement = announcement;
+  if (!saveMazeGame(next, casual)) casual.announcement += ' · 当前进度无法保存';
+  render();focusMazeInteraction();
+}
+
+function performMazeMove(direction) {
+  const game = state.casual?.game;
+  if (state.view !== 'maze' || state.casual?.kind !== 'maze' || !game || game.status === 'won') return;
+  try {
+    const next = moveMaze(game, direction);
+    if (next === game) { state.casual.announcement = '这个方向是墙，请换一条路';render();focusMazeInteraction();return; }
+    commitMazeGame(next, next.status === 'won' ? `抵达出口 · 共走 ${next.stepCount} 步` : '位置已移动');
+  } catch {
+    state.casual.announcement = '当前方向无法移动';render();focusMazeInteraction();
+  }
+}
+
 function openSlots() {
   stopGameSync();
   stopRoomSync();
@@ -3750,6 +4214,10 @@ function applyCatalogDiscovery() {
   const preferredIndex=Math.max(0,visibleCards.findIndex((card)=>card.dataset.worldId===preferredId));
   const playbook=document.querySelector('[data-catalog-playbook]');
   if(playbook)playbook.hidden=visibleCount===0;
+  if(strip.classList.contains('game-icon-grid')){
+    for(const card of cards)card.classList.remove('is-current');
+    return;
+  }
   if(visibleCards.length)scrollWorldCarouselToIndex(strip,preferredIndex,{behavior:'auto'});
   else updateWorldCarouselStatus(strip);
 }
@@ -3797,6 +4265,11 @@ function scrollWorldCarousel(direction) {
 
 function updateWorldCarouselStatus(strip = document.querySelector('[data-world-strip]')) {
   if (!strip?.isConnected) return;
+  if(strip.classList.contains('game-icon-grid')){
+    for(const card of strip.querySelectorAll('.game-world'))card.classList.remove('is-current');
+    strip.classList.remove('is-at-start','is-at-end','is-dragging');
+    return;
+  }
   const geometry=worldCarouselGeometry(strip);
   const {cards,index,bounds}=geometry;
   const status=document.querySelector('[data-world-status]');
@@ -3866,12 +4339,21 @@ function jumpToLobbyTarget(target) {
     globalThis.scrollTo?.(0,0);
     return;
   }
-  const allowed=new Set(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','snake','farm','three','reels']);
+  const allowed=new Set(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','match3','falling','snake','maze','farm','three','reels']);
   if(!allowed.has(target))return;
   resetCatalogDiscovery();
   const strip=document.querySelector('[data-world-strip]');
   const card=strip?.querySelector(`[data-world-id="${target}"]`);
   if(!strip||!card)return;
+  if(strip.classList.contains('game-icon-grid')){
+    document.getElementById('game-selection')?.scrollIntoView({block:'start',behavior:reduceMotion?'auto':'smooth'});
+    card.classList.add('is-highlighted');
+    globalThis.setTimeout?.(()=>{
+      card.classList.remove('is-highlighted');
+      card.querySelector('button')?.focus({preventScroll:true});
+    },reduceMotion?0:420);
+    return;
+  }
   const cards=visibleCarouselItems(strip.querySelectorAll('[data-world-card]'));
   scrollWorldCarouselToIndex(strip,cards.indexOf(card),{behavior:reduceMotion?'auto':'smooth'});
   document.getElementById('game-selection')?.scrollIntoView({block:'start',behavior:reduceMotion?'auto':'smooth'});
@@ -3922,6 +4404,10 @@ app.addEventListener('click', e => {
   }
   if(el.dataset.memoryCard!==undefined){
     performMemoryFlip(Number(el.dataset.memoryCard));
+    return;
+  }
+  if(el.dataset.match3Cell!==undefined){
+    selectMatchThreeCell(Number(el.dataset.match3Cell));
     return;
   }
   if(el.dataset.farmPlot!==undefined){
@@ -4037,7 +4523,10 @@ app.addEventListener('click', e => {
   if(a==='open-sokoban'){openSokoban();render();globalThis.scrollTo?.(0,0);focusSokobanInteraction();}
   if(a==='open-sliding'){openSlidingPuzzle();render();globalThis.scrollTo?.(0,0);focusSlidingPuzzleInteraction();}
   if(a==='open-memory'){openMemoryMatch();render();globalThis.scrollTo?.(0,0);focusMemoryInteraction();}
+  if(a==='open-match3'){openMatchThree();render();globalThis.scrollTo?.(0,0);focusMatchThreeInteraction();}
+  if(a==='open-falling'){openFallingBlocks();render();globalThis.scrollTo?.(0,0);focusFallingBlocksInteraction();}
   if(a==='open-snake'){openSnake();render();globalThis.scrollTo?.(0,0);focusSnakeInteraction();}
+  if(a==='open-maze'){openMaze();render();globalThis.scrollTo?.(0,0);focusMazeInteraction();}
   if(a==='open-farm'){openFarm();render();globalThis.scrollTo?.(0,0);focusFarmInteraction();queueFarmTick();}
   if(a==='open-slots'){openSlots();render();globalThis.scrollTo?.(0,0);}
   if(a==='casual-home'){
@@ -4052,10 +4541,16 @@ app.addEventListener('click', e => {
     if(state.view==='sokoban'&&state.casual?.game)saveSokobanGame(state.casual.game);
     if(state.view==='sliding'&&state.casual?.game)saveSlidingPuzzleGame(state.casual.game);
     if(state.view==='memory')saveCurrentMemorySession();
+    if(state.view==='match3'&&state.casual?.game)saveMatchThreeGame(state.casual.game);
+    if(state.view==='falling'&&state.casual?.game){
+      if(state.casual.game.status==='playing')state.casual.game=toggleFallingBlocksPause(state.casual.game);
+      persistFallingBlocksGame(state.casual.game);
+    }
     if(state.view==='snake'&&state.casual?.game){
       if(state.casual.game.status==='playing')state.casual.game=toggleSnakePause(state.casual.game);
       saveSnakeGame(state.casual.game);
     }
+    if(state.view==='maze'&&state.casual?.game)saveMazeGame(state.casual.game);
     if(state.view==='farm'&&state.casual?.game)saveFarmGame(state.casual.game);
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
@@ -4105,6 +4600,56 @@ app.addEventListener('click', e => {
     if(difficulty===game.difficulty){state.casual.announcement='当前已是这个盘面';render();focusSlidingPuzzleInteraction();return;}
     if(!confirmLocalGameReplacement(game.status==='playing'&&game.moveCount>0,'切换盘面会开始新拼图，确定继续吗？'))return;
     startSlidingPuzzleSession(reshuffleSlidingPuzzleGame(game,{difficulty}),`已生成 ${SLIDING_PUZZLE_DIFFICULTIES[difficulty].size}×${SLIDING_PUZZLE_DIFFICULTIES[difficulty].size} 盘面`);render();focusSlidingPuzzleInteraction();return;
+  }
+  if(a==='falling-left'&&state.view==='falling'){performFallingBlocksAction((game)=>moveFallingBlocks(game,'left'));return;}
+  if(a==='falling-right'&&state.view==='falling'){performFallingBlocksAction((game)=>moveFallingBlocks(game,'right'));return;}
+  if(a==='falling-rotate'&&state.view==='falling'){performFallingBlocksAction((game)=>rotateFallingBlocks(game));return;}
+  if(a==='falling-down'&&state.view==='falling'){performFallingBlocksAction(softDropFallingBlocks);return;}
+  if(a==='falling-drop'&&state.view==='falling'){performFallingBlocksAction(hardDropFallingBlocks);return;}
+  if(a==='falling-toggle'&&state.view==='falling'){
+    const game=state.casual?.game;if(!game||game.status==='over')return;
+    const next=toggleFallingBlocksPause(game);commitFallingBlocksGame(next,next.status==='paused'?'已暂停 · 进度已经保存':'继续游戏');return;
+  }
+  if(a==='falling-new'&&state.view==='falling'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(game.status!=='over'&&(game.pieces>0||game.ticks>0),'当前堆叠尚未结束，确定重新开局吗？'))return;
+    startFallingBlocksSession(restartFallingBlocksGame(game),'新一轮开始 · 看准落点');render();focusFallingBlocksInteraction();return;
+  }
+  if(a==='match3-shuffle'&&state.view==='match3'){
+    const game=state.casual?.game;if(!game||game.status!=='playing')return;
+    try {
+      const next=shuffleMatchThreeGame(game);state.casual.game=next;state.casual.selectedCell=null;state.casual.announcement='宝石已重新排列 · 步数不会减少';saveMatchThreeGame(next);render();focusMatchThreeInteraction();
+    } catch {
+      state.casual.announcement='本局重排次数已达上限，请重新开局';render();focusMatchThreeInteraction();
+    }
+    return;
+  }
+  if(a==='match3-new'&&state.view==='match3'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(game.status==='playing'&&game.moveCount>0,'当前三消尚未结束，确定重新开局吗？'))return;
+    startMatchThreeSession(newMatchThreeGame(),'新盘面已准备好 · 至少有一步有效交换');render();focusMatchThreeInteraction();return;
+  }
+  if(a==='maze-move'&&state.view==='maze'){performMazeMove(el.dataset.mazeDirection);return;}
+  if(a==='maze-hint'&&state.view==='maze'){
+    const game=state.casual?.game;if(!game||game.status==='won')return;
+    const next=toggleMazeHint(game);commitMazeGame(next,next.hintVisible?'提示路线已点亮':'提示路线已关闭');return;
+  }
+  if(a==='maze-restart'&&state.view==='maze'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(game.status!=='won'&&game.stepCount>0,'重走会清除本图已走步数，确定继续吗？'))return;
+    startMazeSession(restartMazeGame(game),'已回到起点 · 地图保持不变');render();focusMazeInteraction();return;
+  }
+  if(a==='maze-new'&&state.view==='maze'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(game.status!=='won'&&game.stepCount>0,'换图会清除当前路线，确定继续吗？'))return;
+    startMazeSession(newMazeForGame(game),'新迷宫已生成 · 从左上角出发');render();focusMazeInteraction();return;
+  }
+  if(a==='maze-difficulty'&&state.view==='maze'){
+    const game=state.casual?.game;const difficulty=el.dataset.mazeDifficulty;
+    if(!game||!Object.hasOwn(MAZE_DIFFICULTIES,difficulty))return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已经是这个难度';render();focusMazeInteraction();return;}
+    if(!confirmLocalGameReplacement(game.status!=='won'&&game.stepCount>0,'切换难度会生成新迷宫，确定继续吗？'))return;
+    startMazeSession(newMazeForGame(game,{difficulty}),`已生成${MAZE_DIFFICULTIES[difficulty].label}迷宫`);render();focusMazeInteraction();return;
   }
   if(a==='three-guess'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed&&THREE_CARD_LABELS.includes(el.dataset.threeGuess)){
     state.casual.guess=el.dataset.threeGuess;render();return;
@@ -4459,7 +5004,7 @@ app.addEventListener('pointerdown', (event) => {
     return;
   }
   const worldStrip = event.target.closest?.('[data-world-strip]');
-  if(worldStrip&&state.view==='lobby'&&event.isPrimary&&event.button===0&&['mouse','pen'].includes(event.pointerType)&&!event.target.closest?.('button, input, a')){
+  if(worldStrip&&!worldStrip.classList.contains('game-icon-grid')&&state.view==='lobby'&&event.isPrimary&&event.button===0&&['mouse','pen'].includes(event.pointerType)&&!event.target.closest?.('button, input, a')){
     const geometry=worldCarouselGeometry(worldStrip);
     worldPointer={
       id:event.pointerId,strip:worldStrip,x:event.clientX,y:event.clientY,startScroll:worldStrip.scrollLeft,
@@ -4600,6 +5145,36 @@ app.addEventListener('keydown', (event) => {
     event.preventDefault();
     focusXiangqiDialog();
     return;
+  }
+  if (state.view === 'falling' && event.target.closest?.('[data-falling-board]')) {
+    const action = ({ ArrowLeft:'left', ArrowRight:'right', ArrowDown:'down', ArrowUp:'rotate', x:'rotate', X:'rotate', z:'counter', Z:'counter', ' ':'drop', p:'pause', P:'pause' })[event.key];
+    if (action) {
+      event.preventDefault();
+      if (action === 'left' || action === 'right') performFallingBlocksAction((game)=>moveFallingBlocks(game,action));
+      else if (action === 'down') performFallingBlocksAction(softDropFallingBlocks);
+      else if (action === 'rotate') performFallingBlocksAction((game)=>rotateFallingBlocks(game,'clockwise'));
+      else if (action === 'counter') performFallingBlocksAction((game)=>rotateFallingBlocks(game,'counterclockwise'));
+      else if (action === 'drop') { if (!event.repeat) performFallingBlocksAction(hardDropFallingBlocks); }
+      else if (!event.repeat) document.querySelector('[data-action="falling-toggle"]')?.click();
+      return;
+    }
+  }
+  if (state.view === 'maze' && event.target.closest?.('[data-maze-board]')) {
+    const direction = mazeDirectionFromKey(event.key);
+    if (direction) { event.preventDefault();performMazeMove(direction);return; }
+  }
+  const matchThreeCell = event.target.closest?.('[data-match3-cell]');
+  if (state.view === 'match3' && matchThreeCell) {
+    const index = Number(matchThreeCell.dataset.match3Cell);
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault();selectMatchThreeCell(index);return; }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) {
+      event.preventDefault();
+      const row=Math.floor(index/MATCH_THREE_COLUMNS);const column=index%MATCH_THREE_COLUMNS;
+      const nextIndex=event.key==='Home'?0:event.key==='End'?MATCH_THREE_CELL_COUNT-1:
+        (event.key==='ArrowUp'?Math.max(0,row-1):event.key==='ArrowDown'?Math.min(7,row+1):row)*MATCH_THREE_COLUMNS+
+        (event.key==='ArrowLeft'?Math.max(0,column-1):event.key==='ArrowRight'?Math.min(7,column+1):column);
+      state.casual.focusedCell=nextIndex;render();focusMatchThreeInteraction(nextIndex);return;
+    }
   }
   const reversiCellNode = event.target.closest?.('[data-reversi-cell]');
   if (state.view === 'reversi' && reversiCellNode) {
@@ -4846,6 +5421,15 @@ document.addEventListener('visibilitychange', () => {
   if (state.view === 'reversi' && document.visibilityState === 'hidden') saveCurrentReversiGame(state.casual.game);
   if (state.view === 'sokoban' && document.visibilityState === 'hidden') saveSokobanGame(state.casual.game);
   if (state.view === 'sliding' && document.visibilityState === 'hidden') saveSlidingPuzzleGame(state.casual.game);
+  if (state.view === 'match3' && document.visibilityState === 'hidden') saveMatchThreeGame(state.casual.game);
+  if (state.view === 'falling' && document.visibilityState === 'hidden') {
+    if (state.casual.game.status === 'playing') state.casual.game = toggleFallingBlocksPause(state.casual.game);
+    state.casual.announcement = '页面已隐藏，游戏自动暂停';
+    persistFallingBlocksGame(state.casual.game);
+    if (fallingTimer) clearTimeout(fallingTimer);
+    fallingTimer = null;
+  }
+  else if (state.view === 'falling') render();
   if (state.view === 'memory') {
     if (document.visibilityState === 'hidden') {
       if (memoryMismatchTimer) clearTimeout(memoryMismatchTimer);
@@ -4860,6 +5444,7 @@ document.addEventListener('visibilitychange', () => {
     saveSnakeGame(state.casual.game);
     stopCasualTimers();
   }
+  if (state.view === 'maze' && document.visibilityState === 'hidden') saveMazeGame(state.casual.game);
   if (state.view === 'farm') {
     if (document.visibilityState === 'hidden') {
       saveFarmGame(state.casual.game);

@@ -31,7 +31,7 @@ test('every statically rendered button action has a reachable click handler', ()
   assert.deepEqual(resumeActions, [
     'open-minesweeper', 'open-sudoku6', 'open-1048', 'open-xiangqi',
     'open-gomoku', 'open-reversi', 'open-sokoban', 'open-sliding',
-    'open-memory', 'open-snake', 'open-farm',
+    'open-memory', 'open-match3', 'open-falling', 'open-snake', 'open-maze', 'open-farm',
   ]);
   for (const action of resumeActions) {
     assert.match(action, /^open-/);

@@ -19,6 +19,7 @@ const lobby = between(appSource, 'function lobby()', 'function nav(');
 const discovery = between(appSource, 'const CATALOG_DISCOVERY', 'const TURN_TIMEOUT_MS');
 const filterLogic = between(appSource, 'function normalizeCatalogText(', 'function scrollWorldCarousel(');
 const v15Styles = stylesSource.slice(stylesSource.indexOf('/* V15:'));
+const v24Styles = stylesSource.slice(stylesSource.indexOf('/* V24'));
 
 test('V15 exposes a first-class local search with a discoverable keyboard shortcut', () => {
   assert.match(lobby, /type="search"[^>]*data-catalog-search/);
@@ -44,11 +45,11 @@ test('V15 filters cover all useful intents without pretending to measure popular
   assert.doesNotMatch(lobby, /今日热门|猜你喜欢|\d+\s*人在线/);
 });
 
-test('V15 discovery metadata covers every shipped game and common Chinese or English aliases', () => {
-  for (const id of ['ddz', 'xiangqi', 'gomoku', 'mahjong', '1048', 'sudoku6', 'minesweeper', 'memory', 'snake', 'farm', 'three', 'reels']) {
+test('discovery metadata covers every shipped game and common Chinese or English aliases', () => {
+  for (const id of ['ddz', 'xiangqi', 'gomoku', 'reversi', 'mahjong', '1048', 'sudoku6', 'minesweeper', 'sokoban', 'sliding', 'memory', 'match3', 'falling', 'snake', 'maze', 'farm', 'three', 'reels']) {
     assert.match(discovery, new RegExp(`(?:^|\\n)\\s*(?:'${id}'|${id}):\\s*\\{`));
   }
-  for (const alias of ['中国象棋', 'xiangqi', 'chinese chess', 'dou dizhu', 'gomoku', 'five in a row', '2048', 'sudoku', 'minesweeper', 'memory match', 'snake', 'qq农场', 'farm', '种菜', 'three card poker']) {
+  for (const alias of ['中国象棋', 'xiangqi', 'chinese chess', 'dou dizhu', 'gomoku', 'five in a row', '2048', 'sudoku', 'minesweeper', 'memory match', 'match three', 'falling blocks', 'snake', 'maze', 'qq农场', 'farm', '种菜', 'three card poker']) {
     assert.match(discovery.toLowerCase(), new RegExp(alias.toLowerCase()));
   }
   const reelsMetadata = between(discovery, "reels: {", '\n});');
@@ -57,32 +58,29 @@ test('V15 discovery metadata covers every shipped game and common Chinese or Eng
   assert.match(appSource, /function isResumableSudoku6Game[\s\S]*game\.notes/);
 });
 
-test('filtered carousel paging ignores hidden cards and reports an honest empty state', () => {
-  const status = between(appSource, 'function scrollWorldCarousel(', 'function scheduleWorldCarouselStatus(');
-  assert.match(status, /\.game-world:not\(\[hidden\]\)/);
-  assert.match(status, /status\.textContent='0 \/ 0'/);
+test('filtered icon-grid results reflow in place and report an honest empty state', () => {
   assert.match(filterLogic, /visibleCount!==0/);
   assert.match(filterLogic, /找到 \$\{visibleCount\} 款/);
-  assert.match(filterLogic, /cannotPage=visibleCount<=1/);
-  assert.match(filterLogic, /world-carousel-hint'[\s\S]*hint\.hidden=cannotPage/);
-  assert.match(filterLogic, /world-prev[\s\S]*control\.disabled=cannotPage/);
+  assert.match(filterLogic, /strip\.classList\.contains\('game-icon-grid'\)[\s\S]*card\.classList\.remove\('is-current'\)[\s\S]*return/);
+  assert.doesNotMatch(lobby, /data-action="world-(?:prev|next)"|data-world-status|world-carousel-hint/);
   assert.match(appSource, /if\(a==='catalog-reset'\)\{resetCatalogDiscovery/);
 });
 
-test('V15 keeps the requested one-row slider while exposing about five compact cards on desktop', () => {
-  assert.notEqual(stylesSource.indexOf('/* V15:'), -1);
-  assert.match(v15Styles, /\.lobby-game-center \.game-world\s*\{[\s\S]*width:calc\(\(100% - 48px\)\/5\)/);
-  assert.match(v15Styles, /min-height:316px/);
-  assert.match(v15Styles, /\.lobby-game-center \.world-cover\s*\{\s*height:148px/);
-  assert.match(v15Styles, /@media \(max-width:560px\)[\s\S]*width:min\(72vw,270px\)/);
-  assert.match(v15Styles, /\.catalog-filters button\s*\{[\s\S]*min-height:44px/);
-  assert.match(v15Styles, /@media \(max-width:760px\)[\s\S]*\.catalog-filters button\s*\{\s*min-height:44px/);
-  assert.match(v15Styles, /@media \(max-width:900px\)[\s\S]*\.hub-discovery\s*\{\s*grid-template-columns:1fr[\s\S]*\.hub-side\s*\{\s*display:grid/);
+test('V24 replaces the one-row slider with a dense responsive icon wall', () => {
+  assert.notEqual(stylesSource.indexOf('/* V24'), -1);
+  assert.match(lobby, /class="world-strip game-icon-grid"/);
+  assert.match(v24Styles, /\.game-icon-grid\s*\{[\s\S]*?grid-template-columns:repeat\(9,minmax\(0,1fr\)\)/);
+  assert.match(v24Styles, /@media \(max-width:1120px\)[\s\S]*repeat\(7,minmax\(0,1fr\)\)/);
+  assert.match(v24Styles, /@media \(max-width:820px\)[\s\S]*repeat\(5,minmax\(0,1fr\)\)/);
+  assert.match(v24Styles, /@media \(max-width:560px\)[\s\S]*repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(v24Styles, /@media \(max-width:350px\)[\s\S]*repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(v24Styles, /\.game-icon-grid \.world-copy \.btn\s*\{[^}]*min-height:44px/);
 });
 
-test('V15 compresses the showcase so discovery enters the first viewport sooner', () => {
+test('search and filter controls remain accessible above the compact icon wall', () => {
   assert.match(v15Styles, /\.lobby-game-center \.lobby-game-carousel,[\s\S]*height:342px;min-height:342px/);
   assert.match(v15Styles, /\.game-center-intro\s*\{[\s\S]*padding:18px 22px 14px/);
   assert.match(v15Styles, /\.catalog-search:focus-within/);
   assert.match(v15Styles, /@media \(prefers-reduced-motion:reduce\)[\s\S]*\.catalog-filters button/);
+  assert.match(v24Styles, /@media \(prefers-reduced-motion:reduce\)[\s\S]*\.game-icon-grid \.game-world/);
 });

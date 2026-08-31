@@ -43,7 +43,7 @@ test('the lobby promotes only playable content and makes 1048 discoverable', () 
   assert.match(lobby, /继续游玩/);
   assert.match(lobby, /resume-progress/);
   assert.doesNotMatch(lobby, /scroll-games|每日残局|筹备中/);
-  assert.match(stylesSource, /\.world-swipe-hint/);
+  assert.match(stylesSource, /\.game-icon-grid/);
 });
 
 test('the game center stays focused while social and record utilities live in Friends', () => {
@@ -64,26 +64,25 @@ test('the game center stays focused while social and record utilities live in Fr
 
 test('poster cards keep one real action and a truthful benefit promise', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
-  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 15);
-  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 15);
-  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 15);
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 18);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 18);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 18);
   assert.match(lobby, /首击必安全/);
   assert.match(lobby, /三档 KAI 对手/);
   assert.match(lobby, /无现金下注 · 无提现/);
   assert.doesNotMatch(lobby, /\d+\s*人在线|五星|好评率|今日热门/);
 });
 
-test('all fifteen games form one horizontally sliding card carousel', () => {
+test('all eighteen games form one directly scannable small-icon grid', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /data-world-strip/);
-  assert.match(lobby, /全部玩法卡片轮播/);
-  assert.match(lobby, /data-action="world-prev"/);
-  assert.match(lobby, /data-action="world-next"/);
-  assert.match(appSource, /function scrollWorldCarousel\(direction\)/);
-  assert.match(appSource, /targetCarouselScrollPosition/);
-  assert.match(appSource, /carouselReleaseDecision/);
-  assert.match(stylesSource, /\.lobby-game-center \.world-strip\s*\{[\s\S]*?scroll-snap-type:inline proximity/);
-  assert.match(stylesSource, /\.lobby-game-center \.world-strip \.game-world\s*\{[\s\S]*?scroll-snap-align:start/);
+  assert.match(lobby, /class="world-strip game-icon-grid"/);
+  assert.match(lobby, /全部 18 款玩法，小图标网格排列/);
+  assert.doesNotMatch(lobby, /data-action="world-(?:prev|next)"|data-world-status|world-carousel-hint/);
+  const v24 = stylesSource.slice(stylesSource.indexOf('/* V24'));
+  assert.match(v24, /\.game-icon-grid\s*\{[\s\S]*?grid-template-columns:repeat\(9,minmax\(0,1fr\)\)/);
+  assert.match(v24, /\.game-icon-grid \.world-cover\s*\{[\s\S]*?aspect-ratio:1\.16/);
+  assert.match(v24, /\.game-icon-grid \.world-copy \.btn\s*\{[^}]*min-height:44px/);
+  assert.match(appSource, /!worldStrip\.classList\.contains\('game-icon-grid'\)/);
 });
 
 test('1048 local progress is restored, saved after moves, and described honestly', () => {

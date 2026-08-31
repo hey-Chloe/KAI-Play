@@ -29,32 +29,33 @@ function sourceBetween(source: string, start: string, end: string) {
   return source.slice(startIndex, endIndex);
 }
 
-test('the catalog publishes exactly fifteen games in the reviewed order', () => {
+test('the catalog publishes exactly eighteen games in the reviewed order', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
   const ids = [...lobby.matchAll(/data-world-card data-world-id="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(ids, [
     'ddz', 'xiangqi', 'gomoku', 'reversi', 'mahjong', '1048', 'sudoku6',
-    'minesweeper', 'sokoban', 'sliding', 'memory', 'snake', 'farm', 'three', 'reels',
+    'minesweeper', 'sokoban', 'sliding', 'memory', 'match3', 'falling', 'snake',
+    'maze', 'farm', 'three', 'reels',
   ]);
-  assert.match(lobby, /15 款即开即玩的牌桌、策略、益智与经营游戏/);
-  assert.match(lobby, /15 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 14 款免费畅玩/);
-  assert.match(lobby, /data-world-status[^>]*aria-live="polite">1 \/ 15/);
-  assert.match(indexSource, /十五款即开即玩的牌桌、策略、益智与经营玩法/);
+  assert.match(lobby, /18 款即开即玩的牌桌、策略、益智与经营游戏/);
+  assert.match(lobby, /18 款游戏，一眼找到/);
+  assert.match(lobby, /显示全部 18 款/);
+  assert.match(lobby, /全部 18 款玩法，小图标网格排列/);
+  assert.match(indexSource, /十八款即开即玩的牌桌、策略、益智与经营玩法/);
 });
 
-test('the local-save promise is limited to its exact eleven game ids', () => {
+test('the local-save promise is limited to its exact fourteen game ids', () => {
   const declaration = appSource.match(/const LOCAL_GAME_IDS = new Set\(\[([^\]]+)\]\)/);
   assert.ok(declaration);
   const ids = [...declaration[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
-  assert.equal(ids.length, 11);
+  assert.equal(ids.length, 14);
   assert.deepEqual(new Set(ids), new Set([
     'xiangqi', 'gomoku', 'reversi', '1048', 'sudoku6', 'minesweeper',
-    'sokoban', 'sliding', 'memory', 'snake', 'farm',
+    'sokoban', 'sliding', 'memory', 'match3', 'falling', 'snake', 'maze', 'farm',
   ]));
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /11 款本地自动保存/);
-  assert.doesNotMatch(lobby, /15 款本地自动保存/);
+  assert.match(lobby, /14 款本地自动保存/);
+  assert.doesNotMatch(lobby, /18 款本地自动保存/);
 });
 
 test('Gomoku, Memory Match, and Snake are wired as playable local routes', () => {
@@ -79,6 +80,24 @@ test('all three V14 engines ship in syntax checks, the Web image, preflight, and
     assert.match(proxyTestSource, new RegExp("['\"]\\/" + escapedModule + "['\"]"));
     const engine = await read('web/' + module);
     assert.match(engine, /\bexport\s+(?:const|function|class)\b/);
+  }
+});
+
+test('Falling Blocks, Match Three, and Maze ship on every production surface', async () => {
+  for (const entry of [
+    { module:'falling-blocks.js', action:'open-falling', view:'falling' },
+    { module:'match-three.js', action:'open-match3', view:'match3' },
+    { module:'maze.js', action:'open-maze', view:'maze' },
+  ]) {
+    const escapedModule = entry.module.replace('.', '\\.');
+    assert.match(appSource, new RegExp("from ['\"]\\.\\/" + escapedModule + "['\"]"));
+    assert.match(appSource, new RegExp("if\\(a===['\"]" + entry.action + "['\"]\\)"));
+    assert.match(appSource, new RegExp("state\\.view===['\"]" + entry.view + "['\"]"));
+    assert.match(packageSource, new RegExp('node --check web\\/' + escapedModule));
+    assert.match(dockerSource, new RegExp('COPY[^\\n]*web\\/' + escapedModule + '[^\\n]*\\.\\/'));
+    assert.match(preflightSource, new RegExp("['\"]web\\/" + escapedModule + "['\"]"));
+    assert.match(proxyTestSource, new RegExp("['\"]\\/" + escapedModule + "['\"]"));
+    assert.match(await read('web/' + entry.module), /\bexport\s+(?:const|function|class)\b/);
   }
 });
 
