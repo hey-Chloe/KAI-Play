@@ -94,6 +94,19 @@ const SNAKE_DIFFICULTY_KEY = 'kai.play.snake.difficulty.v1';
 const SNAKE_BEST_KEY = 'kai.play.snake.best.v1';
 const LAST_LOCAL_GAME_KEY = 'kai.play.last-local-game';
 const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake']);
+const CATALOG_DISCOVERY = Object.freeze({
+  ddz: { categories:['card','competitive'], search:'斗地主 ddz dou dizhu fighting the landlord 扑克 牌桌 三人 竞技 快速人机' },
+  xiangqi: { categories:['board','save'], search:'KAI 象棋 中国象棋 xiangqi chinese chess 棋类 策略 人机 自动保存' },
+  gomoku: { categories:['board','save'], search:'KAI 五子棋 gomoku five in a row 连五 棋类 策略 人机 自动保存' },
+  mahjong: { categories:['card'], search:'KAI 麻将 麻雀 mahjong 牌桌 四人 人机' },
+  '1048': { categories:['puzzle','quick','save'], search:'1048 2048 数字 合并 益智 短局 自动保存' },
+  sudoku6: { categories:['puzzle','quick','save'], search:'KAI 数独 sudoku 逻辑 填数 益智 短局 自动保存' },
+  minesweeper: { categories:['puzzle','quick','save'], search:'KAI 扫雷 minesweeper 雷区 推理 益智 短局 自动保存' },
+  memory: { categories:['puzzle','quick','save'], search:'KAI 记忆翻牌 memory match 配对 记忆 益智 短局 自动保存' },
+  snake: { categories:['arcade','quick','save'], search:'KAI 贪吃蛇 snake 反应 街机 即时 短局 自动保存' },
+  three: { categories:['card','quick'], search:'炸金花 zha jin hua three card poker 三张牌 扑克 牌桌 比牌 短局' },
+  reels: { categories:['arcade','quick'], search:'算力转轮 转轮 reels slots spin 轻娱乐 街机 短局' },
+});
 const TURN_TIMEOUT_MS = 45_000;
 const DEAL_ANIMATION_MS = 3_750;
 function safeStorageGet(key) {
@@ -456,7 +469,8 @@ function lobby() {
   const savedSnake = loadSavedSnakeGame();
   const canContinueMinesweeper = savedMinesweeper?.status === 'playing' && Number(savedMinesweeper.revealedCount) > 0;
   const canContinueSudoku6 = savedSudoku6?.status === 'playing'
-    && savedSudoku6.values.some((value, index) => savedSudoku6.puzzle[index] === 0 && value !== 0);
+    && (savedSudoku6.values.some((value, index) => savedSudoku6.puzzle[index] === 0 && value !== 0)
+      || (savedSudoku6.notes || []).some((mask) => mask !== 0));
   const canContinue1048 = saved1048?.status === 'playing' && Number(saved1048.moves) > 0;
   const canContinueXiangqi = savedXiangqi?.game?.status === 'playing'
     && (Number(savedXiangqi.game.moveCount) > 0 || savedXiangqi.game.history?.length > 0);
@@ -565,7 +579,16 @@ function lobby() {
   return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
-        <div><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>11 款即开即玩的牌桌、策略与益智游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>11 款即开即玩的牌桌、策略与益智游戏，无需下载，点开就能玩。</p></div>
+        <div class="catalog-search-wrap">
+          <label class="catalog-search" for="catalog-search-input">
+            <i aria-hidden="true">⌕</i>
+            <span class="sr-only">搜索全部玩法</span>
+            <input id="catalog-search-input" type="search" data-catalog-search placeholder="搜索游戏或玩法，例如：象棋、短局" autocomplete="off" spellcheck="false">
+            <kbd aria-hidden="true">/</kbd>
+          </label>
+          <button class="catalog-search-jump" type="button" data-action="catalog-show-results" hidden><span data-catalog-search-feedback aria-live="polite">查看搜索结果</span><b aria-hidden="true">↓</b></button>
+        </div>
         <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>7 款本地自动保存</span></div>
         <nav class="mood-rail" aria-label="按心情选择玩法">
           <button data-action="jump-world" data-world-target="minesweeper"><i>⚑</i>短局放松</button>
@@ -625,20 +648,34 @@ function lobby() {
 
       <section class="section-block game-catalog" id="game-selection">
         <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>11 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 10 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 11</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
+        <div class="catalog-command" aria-label="筛选全部玩法">
+          <div class="catalog-filters" role="group" aria-label="按玩法类型筛选">
+            <button class="is-active" data-action="catalog-filter" data-catalog-filter="all" aria-pressed="true">全部</button>
+            <button data-action="catalog-filter" data-catalog-filter="continue" aria-pressed="false">可继续</button>
+            <button data-action="catalog-filter" data-catalog-filter="quick" aria-pressed="false">5 分钟</button>
+            <button data-action="catalog-filter" data-catalog-filter="card" aria-pressed="false">牌桌</button>
+            <button data-action="catalog-filter" data-catalog-filter="board" aria-pressed="false">棋类</button>
+            <button data-action="catalog-filter" data-catalog-filter="puzzle" aria-pressed="false">益智</button>
+            <button data-action="catalog-filter" data-catalog-filter="arcade" aria-pressed="false">街机</button>
+            <button data-action="catalog-filter" data-catalog-filter="save" aria-pressed="false">自动保存</button>
+          </div>
+          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 11 款</span>
+        </div>
         <p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，下一款游戏已经露出来了</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
           <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
-          <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
-          <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>
+          <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"${canContinueXiangqi?' data-world-resumable="true"':''}><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
+          <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"${canContinueGomoku?' data-world-resumable="true"':''}><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>
           <article class="game-world world-mahjong" data-world-card data-world-id="mahjong"><span class="world-badge">牌桌经典</span><div class="world-cover"><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div><i class="world-cover-mark" aria-hidden="true">東</i></div><div class="world-copy"><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>摸牌、理牌、听牌，和三位 KAI 牌友打到结算。</p><button class="btn" data-action="open-mahjong">开始麻将 <b>→</b></button></div></article>
-          <article class="game-world world-1048" data-world-card data-world-id="1048"><span class="world-badge">${canContinue1048?'可继续':saved1048?.status==='playing'?'等待开局':saved1048?'上局已保存':'稀有目标'}</span><div class="world-cover"><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div><i class="world-cover-mark" aria-hidden="true">＋</i></div><div class="world-copy"><span>数字合并 · 单机益智 · 冲击 1048</span><h3>1048</h3><p>逐级合并数字，让最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action} <b>→</b></button></div></article>
-          <article class="game-world world-sudoku6" data-world-card data-world-id="sudoku6"><span class="world-badge">${canContinueSudoku6?'可继续':savedSudoku6?.status==='playing'?'待你开题':savedSudoku6?'成绩已保存':'每日一局'}</span><div class="world-cover"><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">6×6</i></div><div class="world-copy"><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>填满盘面，用一局让思路重新清晰，支持随手记笔记。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action} <b>→</b></button></div></article>
-          <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
-          <article class="game-world world-memory" data-world-card data-world-id="memory"><span class="world-badge">${canContinueMemory?'可继续':savedMemory?.status==='won'?'成绩已保存':'轻松短局'}</span><div class="world-cover"><div class="world-memory-cards" aria-hidden="true"><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i></div><i class="world-cover-mark" aria-hidden="true">PAIR</i></div><div class="world-copy"><span>翻开配对 · 三档牌阵</span><h3>KAI 记忆翻牌</h3><p>记住每张卡的位置，用更少步数找齐所有相同图案。</p><button class="btn" data-action="open-memory">${memoryAction} <b>→</b></button></div></article>
-          <article class="game-world world-snake" data-world-card data-world-id="snake"><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
+          <article class="game-world world-1048" data-world-card data-world-id="1048"${canContinue1048?' data-world-resumable="true"':''}><span class="world-badge">${canContinue1048?'可继续':saved1048?.status==='playing'?'等待开局':saved1048?'上局已保存':'稀有目标'}</span><div class="world-cover"><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div><i class="world-cover-mark" aria-hidden="true">＋</i></div><div class="world-copy"><span>数字合并 · 单机益智 · 冲击 1048</span><h3>1048</h3><p>逐级合并数字，让最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action} <b>→</b></button></div></article>
+          <article class="game-world world-sudoku6" data-world-card data-world-id="sudoku6"${canContinueSudoku6?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSudoku6?'可继续':savedSudoku6?.status==='playing'?'待你开题':savedSudoku6?'成绩已保存':'每日一局'}</span><div class="world-cover"><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">6×6</i></div><div class="world-copy"><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>填满盘面，用一局让思路重新清晰，支持随手记笔记。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action} <b>→</b></button></div></article>
+          <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"${canContinueMinesweeper?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
+          <article class="game-world world-memory" data-world-card data-world-id="memory"${canContinueMemory?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMemory?'可继续':savedMemory?.status==='won'?'成绩已保存':'轻松短局'}</span><div class="world-cover"><div class="world-memory-cards" aria-hidden="true"><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i></div><i class="world-cover-mark" aria-hidden="true">PAIR</i></div><div class="world-copy"><span>翻开配对 · 三档牌阵</span><h3>KAI 记忆翻牌</h3><p>记住每张卡的位置，用更少步数找齐所有相同图案。</p><button class="btn" data-action="open-memory">${memoryAction} <b>→</b></button></div></article>
+          <article class="game-world world-snake" data-world-card data-world-id="snake"${canContinueSnake?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
           <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">免费比牌</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三张定胜负 · 单机训练</span><h3>炸金花训练</h3><p>一眼判断牌型强弱，翻开这一手就见分晓。</p><button class="btn" data-action="open-three">翻开这一手 <b>→</b></button></div></article>
           <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>轻点一次，看三枚符号能否同频连线。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">试转一次 <b>→</b></button></div></article>
         </div>
+        <div class="catalog-empty" data-catalog-empty hidden role="status"><i aria-hidden="true">⌕</i><div><b>没有找到相关玩法</b><span>换个关键词，或者重新查看全部游戏。</span></div><button class="btn" data-action="catalog-reset">显示全部</button></div>
       </section>
 
       <section class="lobby-tools" id="lobby-tools" aria-labelledby="lobby-tools-title">
@@ -2649,9 +2686,78 @@ async function startQuickGame(){
 }
 async function act(fn){ if(state.busy)return; state.busy=true;render();try{await fn(); state.error='';}catch(e){toast(e.message);}finally{state.busy=false;render();} }
 
+function normalizeCatalogText(value) {
+  return String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('zh-CN');
+}
+
+function activeCatalogFilter() {
+  return document.querySelector('[data-catalog-filter][aria-pressed="true"]')?.dataset.catalogFilter || 'all';
+}
+
+function applyCatalogDiscovery() {
+  const strip=document.querySelector('[data-world-strip]');
+  if(!strip)return;
+  const query=normalizeCatalogText(document.querySelector('[data-catalog-search]')?.value);
+  const terms=query.split(/\s+/).filter(Boolean);
+  const filter=activeCatalogFilter();
+  const cards=[...strip.querySelectorAll('[data-world-card]')];
+  let visibleCount=0;
+  for(const card of cards){
+    const metadata=CATALOG_DISCOVERY[card.dataset.worldId] || {categories:[],search:''};
+    const searchable=normalizeCatalogText(`${card.dataset.worldId} ${metadata.search} ${card.textContent}`);
+    const matchesQuery=terms.every((term)=>searchable.includes(term));
+    const matchesFilter=filter==='all'
+      || filter==='continue' && card.dataset.worldResumable==='true'
+      || metadata.categories.includes(filter);
+    card.hidden=!(matchesQuery&&matchesFilter);
+    if(!card.hidden)visibleCount+=1;
+  }
+  const result=document.querySelector('[data-catalog-result]');
+  if(result)result.textContent=query||filter!=='all'?`找到 ${visibleCount} 款`:`显示全部 ${visibleCount} 款`;
+  const searchJump=document.querySelector('[data-action="catalog-show-results"]');
+  const searchFeedback=document.querySelector('[data-catalog-search-feedback]');
+  if(searchJump)searchJump.hidden=!query;
+  if(searchFeedback)searchFeedback.textContent=visibleCount?`查看 ${visibleCount} 款结果`:'查看无匹配结果';
+  const empty=document.querySelector('[data-catalog-empty]');
+  if(empty)empty.hidden=visibleCount!==0;
+  const cannotPage=visibleCount<=1;
+  const hint=document.getElementById('world-carousel-hint');
+  if(hint)hint.hidden=cannotPage;
+  for(const control of document.querySelectorAll('[data-action="world-prev"],[data-action="world-next"]'))control.disabled=cannotPage;
+  strip.classList.toggle('is-filtered',Boolean(query)||filter!=='all');
+  strip.scrollLeft=0;
+  updateWorldCarouselStatus(strip);
+}
+
+function resetCatalogDiscovery({focusSearch=false}={}) {
+  const input=document.querySelector('[data-catalog-search]');
+  if(input)input.value='';
+  for(const control of document.querySelectorAll('[data-catalog-filter]')){
+    const selected=control.dataset.catalogFilter==='all';
+    control.classList.toggle('is-active',selected);
+    control.setAttribute('aria-pressed',String(selected));
+  }
+  applyCatalogDiscovery();
+  if(focusSearch)input?.focus({preventScroll:true});
+}
+
+function clearCatalogSearch({focusSearch=false}={}) {
+  const input=document.querySelector('[data-catalog-search]');
+  if(input)input.value='';
+  applyCatalogDiscovery();
+  if(focusSearch)input?.focus({preventScroll:true});
+}
+
+function showCatalogResults() {
+  document.getElementById('game-selection')?.scrollIntoView({
+    block:'start',
+    behavior:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+  });
+}
+
 function scrollWorldCarousel(direction) {
   const strip=document.querySelector('[data-world-strip]');
-  const card=strip?.querySelector('.game-world');
+  const card=strip?.querySelector('.game-world:not([hidden])');
   if(!strip||!card)return;
   const gap=Number.parseFloat(globalThis.getComputedStyle?.(strip).columnGap||'0')||16;
   const step=card.getBoundingClientRect().width+gap;
@@ -2661,14 +2767,17 @@ function scrollWorldCarousel(direction) {
 
 function updateWorldCarouselStatus(strip = document.querySelector('[data-world-strip]')) {
   if (!strip) return;
-  const cards=[...strip.querySelectorAll('.game-world')];
-  if (!cards.length) return;
+  const cards=[...strip.querySelectorAll('.game-world:not([hidden])')];
+  const status=document.querySelector('[data-world-status]');
+  if (!cards.length) {
+    if(status)status.textContent='0 / 0';
+    return;
+  }
   const stripLeft=strip.getBoundingClientRect().left;
   const current=cards.reduce((closest,card,index)=>{
     const distance=Math.abs(card.getBoundingClientRect().left-stripLeft);
     return distance<closest.distance?{index,distance}:closest;
   },{index:0,distance:Number.POSITIVE_INFINITY});
-  const status=document.querySelector('[data-world-status]');
   const nextText=`${current.index+1} / ${cards.length}`;
   if(status&&status.textContent!==nextText)status.textContent=nextText;
 }
@@ -2697,6 +2806,7 @@ function jumpToLobbyTarget(target) {
   }
   const allowed=new Set(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','three','reels']);
   if(!allowed.has(target))return;
+  resetCatalogDiscovery();
   const strip=document.querySelector('[data-world-strip]');
   const card=strip?.querySelector(`[data-world-id="${target}"]`);
   if(!strip||!card)return;
@@ -2783,6 +2893,17 @@ app.addEventListener('click', e => {
   if(a==='world-prev'){scrollWorldCarousel(-1);return;}
   if(a==='world-next'){scrollWorldCarousel(1);return;}
   if(a==='jump-world'){jumpToLobbyTarget(el.dataset.worldTarget);return;}
+  if(a==='catalog-filter'){
+    for(const control of document.querySelectorAll('[data-catalog-filter]')){
+      const selected=control===el;
+      control.classList.toggle('is-active',selected);
+      control.setAttribute('aria-pressed',String(selected));
+    }
+    applyCatalogDiscovery();
+    return;
+  }
+  if(a==='catalog-show-results'){showCatalogResults();return;}
+  if(a==='catalog-reset'){resetCatalogDiscovery({focusSearch:true});return;}
   if(a==='clear-selection'){state.selected.clear();render();return;}
   if(a==='quick') act(startQuickGame);
   if(a==='open-three'){openThreeCard();render();}
@@ -3050,6 +3171,10 @@ app.addEventListener('click', e => {
   }
 });
 
+app.addEventListener('input', (event) => {
+  if(event.target?.matches?.('[data-catalog-search]'))applyCatalogDiscovery();
+});
+
 app.addEventListener('scroll', (event) => {
   if (event.target?.matches?.('[data-world-strip]')) scheduleWorldCarouselStatus(event.target);
 }, true);
@@ -3132,6 +3257,25 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', () => { heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
+  if(state.view==='lobby'){
+    const search=document.querySelector('[data-catalog-search]');
+    const editable=event.target?.matches?.('input, textarea, select, [contenteditable="true"]');
+    if(event.key==='/'&&!editable){
+      event.preventDefault();
+      search?.focus();
+      return;
+    }
+    if(event.key==='Escape'&&event.target===search&&search?.value){
+      event.preventDefault();
+      clearCatalogSearch({focusSearch:true});
+      return;
+    }
+    if(event.key==='Enter'&&event.target===search){
+      event.preventDefault();
+      showCatalogResults();
+      return;
+    }
+  }
   const minesweeperModalOpen = state.view === 'minesweeper' && state.casual?.confirmAction;
   if (minesweeperModalOpen && event.key === 'Tab') {
     trapMinesweeperDialogTab(event);

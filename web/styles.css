@@ -7911,3 +7911,326 @@ button.poker.poker-face:disabled { cursor: default; }
   .snake-status.is-live>i,.snake-cell.is-food { animation:none; }
   .snake-controls button:active { transform:none; }
 }
+
+/* V15: portal-style discovery — 4399 scan speed with KAI's tactile identity. */
+body:has(.lobby-game-center) {
+  background:
+    radial-gradient(circle at 9% -7%, rgba(255,255,255,.98), transparent 31rem),
+    radial-gradient(circle at 95% 8%, rgba(211,110,74,.09), transparent 29rem),
+    #f1efe9;
+}
+
+.lobby-game-center {
+  width:min(1320px,100%);
+  padding-inline:18px;
+}
+.lobby-game-center .live-lobby { gap:18px; }
+
+.game-center-intro {
+  grid-template-columns:minmax(250px,.78fr) minmax(330px,1.15fr) auto;
+  gap:12px 18px;
+  padding:18px 22px 14px;
+  border-radius:21px;
+  background:
+    linear-gradient(120deg,rgba(255,255,255,.97),rgba(250,248,241,.91)),
+    #fff;
+  box-shadow:0 12px 31px rgba(47,43,37,.065),inset 0 1px rgba(255,255,255,.96);
+}
+.game-center-intro::after { right:-4px;top:-34px;font-size:8.3rem; }
+.game-center-heading { min-width:0; }
+.game-center-intro h1 { margin:3px 0 4px;font-size:clamp(1.7rem,3.05vw,2.55rem); }
+.game-center-intro p { max-width:46ch;font-size:.73rem; }
+
+.catalog-search-wrap {
+  min-width:0;
+  display:grid;
+  align-self:start;
+  gap:6px;
+}
+.catalog-search {
+  min-width:0;
+  min-height:54px;
+  display:grid;
+  grid-template-columns:30px minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px;
+  padding:6px 8px 6px 12px;
+  border:1px solid rgba(29,49,39,.14);
+  border-radius:16px;
+  background:#f7f6f1;
+  box-shadow:inset 0 1px 2px rgba(28,39,33,.04),0 6px 17px rgba(36,42,37,.045);
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.catalog-search:focus-within {
+  border-color:rgba(12,91,65,.48);
+  background:#fff;
+  box-shadow:0 0 0 4px rgba(16,111,79,.1),0 10px 24px rgba(36,42,37,.07);
+}
+.catalog-search > i {
+  width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  background:#173f30;
+  color:#fff9ed;
+  font-size:1rem;
+  font-style:normal;
+  font-weight:900;
+}
+.catalog-search input {
+  width:100%;
+  min-width:0;
+  min-height:40px;
+  padding:0;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:#1c2923;
+  font:760 .78rem/1.2 var(--font-ui);
+}
+.catalog-search input::placeholder { color:#8a908a;opacity:1; }
+.catalog-search kbd {
+  min-width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(30,46,38,.13);
+  border-radius:8px;
+  background:#fff;
+  color:#68716b;
+  box-shadow:0 2px 0 rgba(30,46,38,.09);
+  font:800 .64rem/1 var(--font-ui);
+}
+.catalog-search-jump {
+  min-height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:7px 12px;
+  border:1px solid rgba(17,92,65,.18);
+  border-radius:12px;
+  background:#e9f0eb;
+  color:#174a37;
+  cursor:pointer;
+  font:850 .66rem/1 var(--font-ui);
+}
+.catalog-search-jump[hidden] { display:none!important; }
+.catalog-search-jump b { font-size:.9rem; }
+.game-center-trust { max-width:250px;gap:5px; }
+.game-center-trust span { min-height:27px;padding:4px 8px;font-size:.56rem; }
+
+.mood-rail { gap:7px;padding-top:1px; }
+.mood-rail button {
+  min-height:44px;
+  flex:1 0 145px;
+  justify-content:flex-start;
+  padding:6px 12px 6px 7px;
+  border-radius:13px;
+  background:#f8f7f2;
+  box-shadow:none;
+}
+.mood-rail button i { width:30px;height:30px;border-radius:10px; }
+
+.hub-discovery { grid-template-columns:minmax(0,1.9fr) minmax(286px,.7fr);gap:13px; }
+.lobby-game-center .lobby-game-carousel,
+.lobby-game-center .lobby-hero-v4 { height:342px;min-height:342px; }
+.lobby-game-center .lobby-game-carousel { border-radius:23px;box-shadow:0 18px 42px rgba(25,37,31,.16); }
+.lobby-game-center .lobby-hero-v4.game-stage--ddz .live-table-center,
+.lobby-game-center .game-stage--mahjong .mahjong-hero-copy { left:31px;top:52px; }
+.lobby-game-center .lobby-hero-v4 .live-table-center h1,
+.lobby-game-center .mahjong-hero-copy h1 { max-width:300px;font-size:clamp(1.55rem,2.7vw,2.18rem); }
+.lobby-game-center .lobby-hero-v4 .live-table-center p,
+.lobby-game-center .mahjong-hero-copy p { max-width:285px; }
+.lobby-game-center .lobby-card-scene { right:1%;top:111px;transform:scale(.72); }
+.lobby-game-center .lobby-hero-v4.game-stage--ddz .live-table-seat { transform:scale(.86); }
+.lobby-game-center .lobby-hero-v4.game-stage--ddz .live-seat-left { right:42%;top:73px; }
+.lobby-game-center .lobby-hero-v4.game-stage--ddz .live-seat-right { top:93px; }
+.lobby-game-center .lobby-hero-v4.game-stage--ddz .live-seat-you { bottom:16px; }
+.lobby-game-center .lobby-hero-v4 .live-join-bar,
+.lobby-game-center .game-stage--mahjong .mahjong-hero-action { left:31px;bottom:23px; }
+.lobby-game-center .game-stage--mahjong { --mahjong-preview-size:285px; }
+.lobby-game-center .game-stage--mahjong .mahjong-preview-table { left:74%; }
+
+.hub-side { gap:9px;padding:14px;border-radius:23px; }
+.hub-side-head h2 { font-size:1rem; }
+.resume-card { min-height:116px;grid-template-columns:50px minmax(0,1fr);padding:11px;border-radius:17px; }
+.resume-glyph { width:48px;height:48px;border-radius:14px; }
+.resume-card .btn { min-height:44px; }
+.lobby-game-center .lobby-mode-rail { gap:6px; }
+.lobby-game-center .mode-entry { min-height:57px;grid-template-columns:28px minmax(0,1fr);padding:7px;border-radius:13px; }
+.lobby-game-center .mode-entry i { width:28px;height:28px;border-radius:9px; }
+
+.game-catalog { margin-top:0;padding-top:1px; }
+.lobby-game-center .section-head { gap:14px; }
+.lobby-game-center .section-head h2 { font-size:clamp(1.5rem,3vw,2.12rem); }
+.catalog-command {
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin:-2px 0 9px;
+}
+.catalog-filters {
+  min-width:0;
+  display:flex;
+  gap:7px;
+  overflow-x:auto;
+  padding:3px 1px 5px;
+  scrollbar-width:none;
+}
+.catalog-filters::-webkit-scrollbar { display:none; }
+.catalog-filters button {
+  min-height:44px;
+  padding:7px 13px;
+  border:1px solid rgba(29,46,37,.11);
+  border-radius:11px;
+  background:#f9f8f4;
+  color:#536058;
+  cursor:pointer;
+  font:800 .66rem/1 var(--font-ui);
+  white-space:nowrap;
+  transition:border-color .16s ease,background .16s ease,color .16s ease,transform .16s ease;
+}
+.catalog-filters button:hover { border-color:rgba(17,92,65,.32);color:#153e2f;transform:translateY(-1px); }
+.catalog-filters button.is-active {
+  border-color:#173f30;
+  background:#173f30;
+  color:#fffaf0;
+  box-shadow:0 7px 15px rgba(23,63,48,.16);
+}
+.catalog-result { flex:0 0 auto;color:#6e7771;font-size:.62rem;font-weight:760;white-space:nowrap; }
+.lobby-game-center .world-swipe-hint { margin:-3px 0 7px; }
+.lobby-game-center .world-swipe-hint[hidden] { display:none!important; }
+.lobby-game-center .world-carousel-controls button:disabled { opacity:.38;cursor:not-allowed;transform:none; }
+.lobby-game-center .world-strip { gap:12px;padding-top:4px;padding-bottom:14px; }
+.lobby-game-center .game-world {
+  width:calc((100% - 48px)/5);
+  min-width:210px;
+  max-width:236px;
+  min-height:316px;
+  flex:0 0 calc((100% - 48px)/5);
+  border-radius:18px;
+  box-shadow:0 10px 25px rgba(38,43,37,.075);
+}
+.lobby-game-center .game-world[hidden] { display:none!important; }
+.lobby-game-center .world-cover { height:148px;flex-basis:148px; }
+.lobby-game-center .world-cover > :not(.world-cover-mark) { scale:.78; }
+.lobby-game-center .world-ddz-hand,
+.lobby-game-center .world-mahjong-tiles { margin-top:0; }
+.lobby-game-center .world-copy { padding:12px 13px 13px; }
+.lobby-game-center .world-copy > span { font-size:.54rem; }
+.lobby-game-center .world-copy h3 { margin:5px 0 3px;font-size:1.08rem; }
+.lobby-game-center .world-copy p { min-height:32px;margin-bottom:8px;font-size:.6rem;-webkit-line-clamp:2; }
+.lobby-game-center .world-copy .btn { min-height:44px;border-radius:10px;font-size:.63rem; }
+.lobby-game-center .game-world > .world-badge { top:8px;right:8px;padding:4px 7px;font-size:.56rem; }
+.catalog-empty {
+  min-height:118px;
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr) auto;
+  align-items:center;
+  gap:13px;
+  margin-top:7px;
+  padding:17px;
+  border:1px dashed rgba(25,65,49,.25);
+  border-radius:17px;
+  background:rgba(255,253,248,.76);
+}
+.catalog-empty[hidden] { display:none!important; }
+.catalog-empty > i { width:44px;height:44px;display:grid;place-items:center;border-radius:13px;background:#e9efea;color:#1b5943;font-style:normal;font-weight:900; }
+.catalog-empty b,.catalog-empty span { display:block; }
+.catalog-empty b { margin-bottom:3px;color:#203029;font-size:.88rem; }
+.catalog-empty span { color:#747d77;font-size:.68rem; }
+.catalog-empty .btn { min-width:104px;min-height:44px; }
+
+@media (max-width:1100px) {
+  .game-center-intro { grid-template-columns:minmax(220px,.72fr) minmax(300px,1.1fr); }
+  .game-center-trust { display:none; }
+  .hub-discovery { grid-template-columns:minmax(0,1.65fr) 280px; }
+  .lobby-game-center .lobby-game-carousel,
+  .lobby-game-center .lobby-hero-v4 { height:320px;min-height:320px; }
+  .lobby-game-center .game-world { width:calc((100% - 36px)/4);flex-basis:calc((100% - 36px)/4); }
+}
+
+@media (max-width:900px) {
+  .hub-discovery { grid-template-columns:1fr; }
+  .hub-side { display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,.9fr);align-items:stretch; }
+  .hub-side-head { grid-column:1/-1; }
+  .quick-entry-head { display:none; }
+  .lobby-game-center .lobby-mode-rail { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width:760px) {
+  .game-center-intro { grid-template-columns:1fr;gap:9px;padding:15px 17px 12px; }
+  .game-center-intro::after { top:-12px;font-size:6.1rem; }
+  .catalog-search-wrap { grid-row:2; }
+  .catalog-search { min-height:50px; }
+  .mood-rail { grid-row:3;margin-inline:-17px;padding-inline:17px; }
+  .mood-rail button { flex:0 0 auto; }
+  .hub-discovery { grid-template-columns:1fr; }
+  .lobby-game-center .lobby-game-carousel,
+  .lobby-game-center .lobby-hero-v4 { height:270px;min-height:270px; }
+  .hub-side { grid-template-columns:minmax(0,1fr) minmax(250px,.9fr); }
+  .catalog-command { align-items:flex-start;flex-direction:column;gap:2px; }
+  .catalog-filters { width:100%; }
+  .catalog-result { align-self:flex-end;margin-top:-2px; }
+  .catalog-filters button { min-height:44px;font-size:.72rem; }
+  .catalog-search-jump { min-height:44px;font-size:.72rem; }
+  .lobby-game-center .game-world { width:min(43vw,224px);min-width:min(43vw,224px);max-width:none;flex-basis:min(43vw,224px); }
+}
+
+@media (max-width:560px) {
+  .lobby-game-center { padding-inline:8px; }
+  .lobby-game-center .live-lobby { gap:13px; }
+  .game-center-intro { padding:12px 13px 10px;border-radius:18px; }
+  .game-center-intro h1 { font-size:clamp(1.45rem,7.3vw,1.8rem); }
+  .game-center-intro p { display:none; }
+  .catalog-search { min-height:48px;padding-left:8px;border-radius:14px; }
+  .catalog-search kbd { display:none; }
+  .catalog-search { grid-template-columns:30px minmax(0,1fr); }
+  .catalog-search input { font-size:.75rem; }
+  .mood-rail { margin-inline:-13px;padding-inline:13px; }
+  .mood-rail button { min-height:44px;flex-basis:auto;font-size:.72rem; }
+  .lobby-game-center .lobby-game-carousel,
+  .lobby-game-center .lobby-hero-v4 { height:225px;min-height:225px; }
+  .lobby-game-center .lobby-hero-v4.game-stage--ddz .live-table-center,
+  .lobby-game-center .game-stage--mahjong .mahjong-hero-copy { left:15px;top:57px;width:61%; }
+  .lobby-game-center .lobby-hero-v4 .live-join-bar,
+  .lobby-game-center .game-stage--mahjong .mahjong-hero-action { left:15px;bottom:12px; }
+  .lobby-game-center .lobby-card-scene { top:82px; }
+  .hub-side { grid-template-columns:1fr; }
+  .catalog-command { margin-bottom:5px; }
+  .catalog-filters { margin-inline:-8px;width:calc(100% + 16px);padding-inline:8px; }
+  .catalog-result { align-self:flex-start;font-size:.6875rem; }
+  .lobby-game-center .world-swipe-hint { display:block;margin:0 0 5px;font-size:.6875rem; }
+  .lobby-game-center .game-world {
+    width:min(72vw,270px);
+    min-width:min(72vw,270px);
+    min-height:302px;
+    flex-basis:min(72vw,270px);
+  }
+  .lobby-game-center .world-cover { height:142px;flex-basis:142px; }
+  .lobby-game-center .world-copy { padding:11px 12px 12px; }
+  .lobby-game-center .world-copy > span { font-size:.6875rem; }
+  .lobby-game-center .world-copy h3 { font-size:1.12rem; }
+  .lobby-game-center .world-copy p { font-size:.72rem; }
+  .lobby-game-center .world-copy .btn { font-size:.75rem; }
+  .catalog-empty { grid-template-columns:38px minmax(0,1fr);padding:13px; }
+  .catalog-empty > i { width:38px;height:38px; }
+  .catalog-empty .btn { grid-column:1/-1;width:100%; }
+}
+
+@media (max-width:340px) {
+  .game-center-intro { padding-inline:11px; }
+  .mood-rail { margin-inline:-11px;padding-inline:11px; }
+  .lobby-game-center .game-world { width:min(78vw,250px);min-width:min(78vw,250px);flex-basis:min(78vw,250px); }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .catalog-search,
+  .catalog-filters button,
+  .catalog-search-jump { transition:none!important; }
+  .catalog-filters button:hover { transform:none; }
+}
