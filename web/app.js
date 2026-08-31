@@ -301,10 +301,22 @@ function sudoku6SaveKey(mode, date = localDateKey()) {
   return mode === 'daily' ? `${SUDOKU6_DAILY_SAVE_PREFIX}${date}` : SUDOKU6_PRACTICE_SAVE_KEY;
 }
 
+function isResumableSudoku6Game(game) {
+  return game?.status === 'playing'
+    && (game.values?.some((value, index) => game.puzzle?.[index] === 0 && value !== 0)
+      || game.notes?.some((mask) => mask !== 0));
+}
+
+function isResumableMinesweeperGame(game) {
+  if (game?.status === 'playing') return safeLocalCounter(game.revealedCount) > 0;
+  return game?.status === 'ready' && safeLocalCounter(game.flagCount) > 0;
+}
+
 function loadSavedSudoku6Game(mode = null) {
   try {
     const lastMode = safeStorageGet(SUDOKU6_LAST_MODE_KEY) === 'daily' ? 'daily' : 'practice';
     const modes = mode ? [mode] : [lastMode, lastMode === 'daily' ? 'practice' : 'daily'];
+    const savedGames = [];
     for (const candidate of modes) {
       const key = sudoku6SaveKey(candidate);
       const raw = safeStorageGet(key);
@@ -312,9 +324,14 @@ function loadSavedSudoku6Game(mode = null) {
       let game = null;
       try { game = restoreSudoku6Game(JSON.parse(raw)); }
       catch { /* Damaged JSON is removed below. */ }
-      if (game && game.mode === candidate && (candidate !== 'daily' || game.date === localDateKey())) return game;
+      if (game && game.mode === candidate && (candidate !== 'daily' || game.date === localDateKey())) {
+        if (mode) return game;
+        savedGames.push(game);
+        continue;
+      }
       safeStorageRemove(key);
     }
+    return savedGames.find(isResumableSudoku6Game) || savedGames[0] || null;
   } catch {
     /* Storage can be unavailable or contain damaged JSON; a fresh puzzle remains playable. */
   }
@@ -467,10 +484,8 @@ function lobby() {
   const memorySession = loadMemoryMatchSession() || { restored:false, game:null };
   const savedMemory = memorySession.restored ? memorySession.game : null;
   const savedSnake = loadSavedSnakeGame();
-  const canContinueMinesweeper = savedMinesweeper?.status === 'playing' && Number(savedMinesweeper.revealedCount) > 0;
-  const canContinueSudoku6 = savedSudoku6?.status === 'playing'
-    && (savedSudoku6.values.some((value, index) => savedSudoku6.puzzle[index] === 0 && value !== 0)
-      || (savedSudoku6.notes || []).some((mask) => mask !== 0));
+  const canContinueMinesweeper = isResumableMinesweeperGame(savedMinesweeper);
+  const canContinueSudoku6 = isResumableSudoku6Game(savedSudoku6);
   const canContinue1048 = saved1048?.status === 'playing' && Number(saved1048.moves) > 0;
   const canContinueXiangqi = savedXiangqi?.game?.status === 'playing'
     && (Number(savedXiangqi.game.moveCount) > 0 || savedXiangqi.game.history?.length > 0);
@@ -491,11 +506,13 @@ function lobby() {
   if (canContinueMinesweeper) {
     const safeCells = savedMinesweeper.rows * savedMinesweeper.columns - savedMinesweeper.mineCount;
     const completed = Math.min(safeCells, Number(savedMinesweeper.revealedCount) || 0);
+    const flagCount = Math.max(0, Number(savedMinesweeper.flagCount) || 0);
     resumeCandidates.push({
       id:'minesweeper',
       accent:'minesweeper', eyebrow:'继续游玩', title:'KAI 扫雷',
-      meta:`${MINESWEEPER_DIFFICULTIES[savedMinesweeper.difficulty].label}雷区 · 已揭开 ${completed}/${safeCells}`,
-      progress:safeCells ? Math.round(completed / safeCells * 100) : 0,
+      meta:`${MINESWEEPER_DIFFICULTIES[savedMinesweeper.difficulty].label}雷区 · ${completed ? `已揭开 ${completed}/${safeCells}` : `已标记 ${flagCount} 处`}`,
+      progress:completed && safeCells ? Math.round(completed / safeCells * 100) : null,
+      note:completed ? '' : '旗位已保存 · 首击仍然安全',
       action:'open-minesweeper', label:minesweeperAction, glyph:'⚑',
     });
   }
@@ -558,6 +575,7 @@ function lobby() {
     meta:'首击必安全 · 从 10 颗雷的入门盘开始',
     progress:null, note:'无需规则准备，点开就能玩', action:'open-minesweeper', label:'开始排雷', glyph:'⚑',
   };
+  const hasResumableGames = resumeCandidates.length > 0;
   const resumeButton = `<button class="btn primary" data-action="${esc(resumeGame.action)}">${resumeGame.label} <b>→</b></button>`;
   const heroGame = state.heroGame === 'mahjong' ? 'mahjong' : 'ddz';
   const ddzActive = heroGame === 'ddz';
@@ -576,6 +594,21 @@ function lobby() {
     [{rank:6,suit:'条',label:'六条'},{rank:4,suit:'筒',label:'四筒'},{rank:0,suit:'字',label:'北'}],
   ];
   const previewRivers = ['north','east','south','west'].map((position,index)=>`<div class="preview-river preview-river--${position}">${previewRiverData[index].map((tile)=>mahjongFace(tile,'preview-river-tile')).join('')}</div>`).join('');
+  const hubSide = `<aside class="hub-side">
+    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">11 款可玩</span>'}</div>
+    <article class="resume-card resume-${resumeGame.accent}">
+      <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
+      <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
+      ${resumeButton}
+    </article>
+    <div class="quick-entry-head"><span>快速入口</span><small>换个口味</small></div>
+    <nav class="lobby-mode-rail" aria-label="大厅玩法入口">
+      <button class="mode-entry" data-action="open-1048"><i aria-hidden="true">16</i><b>1048</b><small>数字合并</small></button>
+      <button class="mode-entry" data-action="open-gomoku"><i aria-hidden="true">五</i><b>五子棋</b><small>落子连五</small></button>
+      <button class="mode-entry" data-action="open-memory"><i aria-hidden="true">◫</i><b>记忆翻牌</b><small>翻牌配对</small></button>
+      <button class="mode-entry" data-action="open-snake"><i aria-hidden="true">S</i><b>贪吃蛇</b><small>即时操作</small></button>
+    </nav>
+  </aside>`;
   return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
@@ -599,7 +632,8 @@ function lobby() {
         </nav>
       </section>
 
-      <section class="hub-discovery" aria-label="精选与快速开始">
+      <section class="hub-discovery${hasResumableGames?' has-resume':''}" aria-label="精选与快速开始">
+        ${hasResumableGames?hubSide:''}
         <section class="lobby-game-carousel" data-hero-carousel tabindex="0" aria-label="精选玩法，可左右滑动或使用方向键切换" aria-roledescription="carousel" aria-keyshortcuts="ArrowLeft ArrowRight">
           <section class="live-table live-table-preview lobby-hero-v4 lobby-game-stage game-stage--ddz ${ddzActive?'is-active':''}" data-hero-stage="ddz" aria-labelledby="live-table-title" aria-hidden="${ddzActive?'false':'true'}" ${ddzActive?'':'inert'}>
             ${tableFrame('preview')}
@@ -628,22 +662,7 @@ function lobby() {
           <nav class="hero-switcher" aria-label="切换精选玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">↔ 滑动</span></nav>
           <p class="sr-only" data-hero-status aria-live="polite">当前展示${ddzActive?'斗地主':'麻将'}</p>
         </section>
-
-        <aside class="hub-side">
-          <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div><span class="hub-side-count">11 款可玩</span></div>
-          <article class="resume-card resume-${resumeGame.accent}">
-            <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
-            <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
-            ${resumeButton}
-          </article>
-          <div class="quick-entry-head"><span>快速入口</span><small>换个口味</small></div>
-          <nav class="lobby-mode-rail" aria-label="大厅玩法入口">
-            <button class="mode-entry ${ddzActive?'is-primary':''}" data-action="hero-select" data-hero-game="ddz"><i aria-hidden="true">♠</i><b>斗地主</b><small>三人牌桌</small></button>
-            <button class="mode-entry ${ddzActive?'':'is-primary'}" data-action="hero-select" data-hero-game="mahjong"><i aria-hidden="true">東</i><b>麻将</b><small>四人速战</small></button>
-            <button class="mode-entry" data-action="open-1048"><i aria-hidden="true">16</i><b>1048</b><small>数字合并</small></button>
-            <button class="mode-entry" data-action="open-minesweeper"><i aria-hidden="true">⚑</i><b>扫雷</b><small>首击安全</small></button>
-          </nav>
-        </aside>
+        ${hasResumableGames?'':hubSide}
       </section>
 
       <section class="section-block game-catalog" id="game-selection">
@@ -2694,6 +2713,14 @@ function activeCatalogFilter() {
   return document.querySelector('[data-catalog-filter][aria-pressed="true"]')?.dataset.catalogFilter || 'all';
 }
 
+function selectCatalogFilter(filter) {
+  for(const control of document.querySelectorAll('[data-catalog-filter]')){
+    const selected=control.dataset.catalogFilter===filter;
+    control.classList.toggle('is-active',selected);
+    control.setAttribute('aria-pressed',String(selected));
+  }
+}
+
 function applyCatalogDiscovery() {
   const strip=document.querySelector('[data-world-strip]');
   if(!strip)return;
@@ -2732,11 +2759,7 @@ function applyCatalogDiscovery() {
 function resetCatalogDiscovery({focusSearch=false}={}) {
   const input=document.querySelector('[data-catalog-search]');
   if(input)input.value='';
-  for(const control of document.querySelectorAll('[data-catalog-filter]')){
-    const selected=control.dataset.catalogFilter==='all';
-    control.classList.toggle('is-active',selected);
-    control.setAttribute('aria-pressed',String(selected));
-  }
+  selectCatalogFilter('all');
   applyCatalogDiscovery();
   if(focusSearch)input?.focus({preventScroll:true});
 }
@@ -2753,6 +2776,15 @@ function showCatalogResults() {
     block:'start',
     behavior:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
   });
+}
+
+function showContinuableGames() {
+  const input=document.querySelector('[data-catalog-search]');
+  if(input)input.value='';
+  selectCatalogFilter('continue');
+  applyCatalogDiscovery();
+  showCatalogResults();
+  document.querySelector('[data-catalog-filter="continue"]')?.focus({preventScroll:true});
 }
 
 function scrollWorldCarousel(direction) {
@@ -2894,14 +2926,11 @@ app.addEventListener('click', e => {
   if(a==='world-next'){scrollWorldCarousel(1);return;}
   if(a==='jump-world'){jumpToLobbyTarget(el.dataset.worldTarget);return;}
   if(a==='catalog-filter'){
-    for(const control of document.querySelectorAll('[data-catalog-filter]')){
-      const selected=control===el;
-      control.classList.toggle('is-active',selected);
-      control.setAttribute('aria-pressed',String(selected));
-    }
+    selectCatalogFilter(el.dataset.catalogFilter);
     applyCatalogDiscovery();
     return;
   }
+  if(a==='show-continuable'){showContinuableGames();return;}
   if(a==='catalog-show-results'){showCatalogResults();return;}
   if(a==='catalog-reset'){resetCatalogDiscovery({focusSearch:true});return;}
   if(a==='clear-selection'){state.selected.clear();render();return;}

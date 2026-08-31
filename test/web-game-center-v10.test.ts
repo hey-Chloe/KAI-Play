@@ -71,6 +71,11 @@ function renderLobbyWithSaves({
       saveAvailable:true,
     },
     loadSavedSnakeGame: () => snake,
+    isResumableMinesweeperGame: (game: any) => (game?.status === 'playing' && Number(game?.revealedCount) > 0)
+      || (game?.status === 'ready' && Number(game?.flagCount) > 0),
+    isResumableSudoku6Game: (game: any) => game?.status === 'playing'
+      && (game.values?.some((value: number, index: number) => game.puzzle?.[index] === 0 && value !== 0)
+        || game.notes?.some((mask: number) => mask !== 0)),
     MINESWEEPER_DIFFICULTIES: { beginner:{ label:'入门' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
     SUDOKU6_DIFFICULTIES: { easy:{ label:'入门' }, medium:{ label:'标准' }, hard:{ label:'挑战' } },
     XIANGQI_DIFFICULTIES: { beginner:{ label:'初学' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
@@ -132,7 +137,7 @@ test('continuation uses real local state and has an honest first-time fallback',
 });
 
 test('continuation prefers the most recently opened game but only while it can really continue', () => {
-  const playingMinesweeper = { status:'playing', rows:9, columns:9, mineCount:10, revealedCount:12, difficulty:'beginner' };
+  const playingMinesweeper = { status:'playing', rows:9, columns:9, mineCount:10, revealedCount:12, flagCount:0, moveCount:12, elapsedSeconds:0, difficulty:'beginner' };
   const sudokuValues = Array(36).fill(0);
   sudokuValues[0] = 3;
   const playingSudoku = { status:'playing', puzzle:Array(36).fill(0), values:sudokuValues, difficulty:'medium' };
@@ -149,6 +154,9 @@ test('continuation prefers the most recently opened game but only while it can r
     minesweeper:playingMinesweeper, sudoku6:playingSudoku, merge1048:playing1048, xiangqi:playingXiangqi, last:'xiangqi',
   });
   assert.match(recentXiangqi, /继续游玩[\s\S]*KAI 象棋/);
+  assert.match(recentXiangqi, /class="hub-discovery has-resume"/);
+  assert.match(recentXiangqi, /data-action="show-continuable"[\s\S]*4 款可继续/);
+  assert.ok(recentXiangqi.indexOf('<aside class="hub-side">') < recentXiangqi.indexOf('<section class="lobby-game-carousel"'));
 
   const fallbackSudoku = renderLobbyWithSaves({
     minesweeper:{ ...playingMinesweeper, status:'lost' }, sudoku6:playingSudoku, last:'minesweeper',
@@ -161,6 +169,17 @@ test('continuation prefers the most recently opened game but only while it can r
   assert.match(recentMemory, /继续游玩[\s\S]*KAI 记忆翻牌[\s\S]*已配对 2\/6/);
   const recentSnake = renderLobbyWithSaves({ snake:playingSnake, last:'snake' });
   assert.match(recentSnake, /继续游玩[\s\S]*KAI 贪吃蛇[\s\S]*得分 30/);
+
+  const flaggedMinesweeper = renderLobbyWithSaves({
+    minesweeper:{ ...playingMinesweeper, status:'ready', revealedCount:0, flagCount:1, moveCount:1 },
+    last:'minesweeper',
+  });
+  assert.match(flaggedMinesweeper, /继续游玩[\s\S]*KAI 扫雷[\s\S]*已标记 1 处[\s\S]*旗位已保存 · 首击仍然安全/);
+  const clearedFlags = renderLobbyWithSaves({
+    minesweeper:{ ...playingMinesweeper, status:'ready', revealedCount:0, flagCount:0, moveCount:2 },
+    last:'minesweeper',
+  });
+  assert.doesNotMatch(clearedFlags, /hub-discovery has-resume|data-action="show-continuable"/);
 
   const untouchedSudoku = renderLobbyWithSaves({
     sudoku6:{ ...playingSudoku, values:Array(36).fill(0) }, last:'sudoku6',
@@ -186,6 +205,60 @@ test('continuation prefers the most recently opened game but only while it can r
   });
   assert.match(terminalOnly, /新手推荐[\s\S]*先来一局扫雷/);
   assert.doesNotMatch(terminalOnly, /<span>继续游玩<\/span>/);
+  assert.doesNotMatch(terminalOnly, /hub-discovery has-resume|data-action="show-continuable"/);
+  assert.ok(terminalOnly.indexOf('<section class="lobby-game-carousel"') < terminalOnly.indexOf('<aside class="hub-side">'));
+});
+
+test('Sudoku continuation checks both daily and practice saves before falling back to the last mode', () => {
+  const loaderSource = between(appSource, 'function loadSavedSudoku6Game(', 'function saveSudoku6Game(');
+  const progressSource = between(appSource, 'function isResumableSudoku6Game(', 'function isResumableMinesweeperGame(');
+  const date = '2026-08-31';
+  const empty = Array(36).fill(0);
+  const daily = { mode:'daily', date, status:'playing', puzzle:empty, values:[...empty], notes:[...empty] };
+  const practiceValues = [...empty];
+  practiceValues[7] = 4;
+  const practice = { mode:'practice', date:null, status:'playing', puzzle:empty, values:practiceValues, notes:[...empty] };
+  const storage = new Map<string, string>([
+    ['last-mode', 'daily'],
+    [`daily:${date}`, JSON.stringify(daily)],
+    ['practice', JSON.stringify(practice)],
+  ]);
+  const loadSavedSudoku6Game = runInNewContext(`${loaderSource}\n${progressSource}; loadSavedSudoku6Game`, {
+    JSON,
+    SUDOKU6_LAST_MODE_KEY:'last-mode',
+    SUDOKU6_DAILY_SAVE_PREFIX:'daily:',
+    SUDOKU6_PRACTICE_SAVE_KEY:'practice',
+    safeStorageGet:(key: string) => storage.get(key) ?? null,
+    safeStorageRemove:(key: string) => storage.delete(key),
+    localDateKey:() => date,
+    sudoku6SaveKey:(mode: string) => mode === 'daily' ? `daily:${date}` : 'practice',
+    restoreSudoku6Game:(value: object) => value,
+  });
+
+  assert.equal(loadSavedSudoku6Game().mode, 'practice', 'a real alternate-mode save must beat a zero-progress last mode');
+  assert.equal(loadSavedSudoku6Game('daily').mode, 'daily', 'an explicit mode selection must remain exact');
+
+  const dailyNotes = [...empty];
+  dailyNotes[4] = 2;
+  storage.set('last-mode', 'practice');
+  storage.set(`daily:${date}`, JSON.stringify({ ...daily, notes:dailyNotes }));
+  storage.set('practice', JSON.stringify({ ...practice, values:[...empty] }));
+  assert.equal(loadSavedSudoku6Game().mode, 'daily', 'notes in the alternate daily puzzle must count as resumable');
+
+  storage.set('practice', JSON.stringify(practice));
+  assert.equal(loadSavedSudoku6Game().mode, 'practice', 'when both modes can resume, the last mode remains preferred');
+
+  storage.set(`daily:${date}`, JSON.stringify({ ...daily, status:'completed' }));
+  storage.set('practice', JSON.stringify({ ...practice, values:[...empty] }));
+  assert.equal(loadSavedSudoku6Game().mode, 'practice', 'without resumable progress, the last valid mode remains the fallback');
+});
+
+test('quick entries complement the featured card tables instead of repeating them', () => {
+  const quickRail = between(lobby, '<nav class="lobby-mode-rail"', '</nav>');
+  const actions = [...quickRail.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(actions, ['open-1048', 'open-gomoku', 'open-memory', 'open-snake']);
+  assert.doesNotMatch(quickRail, /hero-select|data-hero-game/);
+  for (const name of ['1048', '五子棋', '记忆翻牌', '贪吃蛇']) assert.match(quickRail, new RegExp(name));
 });
 
 test('each of the seven persisted local games records itself as the most recently opened candidate', () => {

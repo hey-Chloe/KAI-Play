@@ -53,7 +53,8 @@ test('V15 discovery metadata covers every shipped game and common Chinese or Eng
   }
   const reelsMetadata = between(discovery, "reels: {", '\n});');
   assert.doesNotMatch(reelsMetadata, /反应/);
-  assert.match(lobby, /canContinueSudoku6[\s\S]*savedSudoku6\.notes/);
+  assert.match(lobby, /canContinueSudoku6 = isResumableSudoku6Game\(savedSudoku6\)/);
+  assert.match(appSource, /function isResumableSudoku6Game[\s\S]*game\.notes/);
 });
 
 test('filtered carousel paging ignores hidden cards and reports an honest empty state', () => {
