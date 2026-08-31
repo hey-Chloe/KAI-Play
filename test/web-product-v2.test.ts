@@ -19,10 +19,15 @@ const lobbySource = sourceBetween('function lobby()', 'function nav(');
 const resultAndGameSource = sourceBetween('function matchResult(', 'function casualHeader(');
 const historySource = sourceBetween('function history()', 'function rules()');
 
-test('live lobby keeps one-click quick play and friend-room actions wired', () => {
-  for (const action of ['quick', 'create-room', 'join-room']) {
+test('live lobby keeps one-click quick play and a dedicated friend-room route wired', () => {
+  for (const action of ['quick', 'view-friends']) {
     assert.match(lobbySource, new RegExp(`data-action=["']${action}["']`), `Lobby action is missing: ${action}`);
     assert.match(appSource, new RegExp(`a\\s*===\\s*["']${action}["']`), `Lobby handler is missing: ${action}`);
+  }
+  for (const roomAction of ['create-room', 'join-room']) {
+    assert.match(appSource, new RegExp(`data-action=["']${roomAction}["']`), `Friend-room action is missing: ${roomAction}`);
+    assert.match(appSource, new RegExp(`a\\s*===\\s*["']${roomAction}["']`), `Friend-room handler is missing: ${roomAction}`);
+    assert.doesNotMatch(lobbySource, new RegExp(`data-action=["']${roomAction}["']`));
   }
   assert.match(appSource, /\/v1\/games\/quick/, 'Quick play must remain connected to the authoritative game API');
   assert.match(appSource, /\/v1\/rooms(?:\/join)?/, 'Friend rooms must remain connected to the room API');

@@ -27,7 +27,7 @@ npm run test:coverage
 
 `npm run verify` 顺序执行 `build → test:coverage → check → preflight`；覆盖率命令本身已经运行全部测试。`build` 在当前阶段表示服务端/Web Node 可执行语法检查与移动端 TypeScript 检查，不表示 core/server 已完成 TypeScript 编译或生成发布产物。GitHub Actions 配置会在提交与拉取请求中安装 `mobile/package-lock.json` 锁定依赖、运行完整门禁、校验 Compose、构建两个容器镜像，并启动整套服务冒烟 API、Web 代理与视觉资产。发布预检还会校验安全边界、视觉资源、受信代理配置、文档和 CI 文件未被遗漏。
 
-当前自动化测试覆盖规则单元测试、平台/存储集成测试、真实 HTTP 服务测试、Web 同源代理端到端测试，以及 1048、6×6 数独、KAI 象棋、KAI 扫雷、KAI 五子棋、KAI 记忆翻牌、KAI 贪吃蛇和 KAI 农场的规则与产品交互契约。新增目录模块覆盖筛选后的可见顺序、不等宽卡片、首尾钳制、距离/速度翻页、纵向手势排除与 LTR/RTL 滚动模型；产品契约同时约束十二款玩法内容源、三手牌型判断和转轮会话统计。生产契约还会验证独立玩法模块的 Brotli、JavaScript MIME、CSP 与 ETag。
+当前自动化测试覆盖规则单元测试、平台/存储集成测试、真实 HTTP 服务测试、Web 同源代理端到端测试，以及 1048、6×6 数独、KAI 象棋、KAI 扫雷、KAI 五子棋、KAI 记忆翻牌、KAI 贪吃蛇和 KAI 农场的规则与产品交互契约。目录模块覆盖筛选后的可见顺序、不等宽卡片、首尾钳制、距离/速度翻页、纵向手势排除与 LTR/RTL 滚动模型；产品契约同时约束十二款玩法内容源、三手牌型判断、转轮会话统计，以及好友房独立路由、四项导航、创建/加入入口与现有服务端处理器复用。生产契约还会验证独立玩法模块的 Brotli、JavaScript MIME、CSP 与 ETag。
 
 下表保留扫雷合流时最近一次可完整监听端口环境的覆盖率基线，当时 `npm run verify` 共执行 218 个测试且全部通过；它不是本次新增三款玩法后的最新覆盖率，也未使用单文件覆盖率替代：
 
@@ -37,7 +37,7 @@ npm run test:coverage
 | 分支覆盖率 | 79.63% | 87.51% | +7.88 个百分点 |
 | 函数覆盖率 | 88.92% | 95.36% | +6.44 个百分点 |
 
-表中只记录加入扫雷计时、多标签存档冲突、无障碍交互与生产传输契约后的历史结果。本次工作区测试已扩展到 278 项；受限沙箱内有 270 项通过，剩余 8 项均因不允许监听本地端口而无法运行，最终发布结果必须以 GitHub Actions 在正常网络命名空间中执行完整 `npm run verify` 为准。并发 HTTP/超时测试可能令 Node 原生覆盖率出现轻微时序差异，发布判断以每次 `npm run verify` 是否同时满足三项门槛为准。
+表中只记录加入扫雷计时、多标签存档冲突、无障碍交互与生产传输契约后的历史结果。当前工作区 `npm run verify` 共执行 327 项测试且全部通过；本次 Node 原生报告为行覆盖率 98.09%、分支覆盖率 88.37%、函数覆盖率 96.34%。并发 HTTP/超时测试可能令覆盖率出现轻微时序差异，发布判断以每次 `npm run verify` 是否同时满足三项门槛为准。
 
 发布门槛固定为行覆盖率 90%、分支覆盖率 80%、函数覆盖率 90%；低于任一阈值时 `npm run test:coverage` 和 CI 会直接失败。当前 Node 报告覆盖被测试进程加载的 `core/*`、`server/*`、`web/casual-games.js`、`web/catalog-carousel.js`、`web/sudoku6.js`、`web/xiangqi.js`、`web/minesweeper.js`、`web/gomoku.js`、`web/memory-match.js`、`web/snake.js`、`web/farm.js`、`web/serve.mjs` 及测试文件；不包含主要通过源码契约和真实浏览器回归验证的 `web/app.js`，也不包含 React Native UI。因此表中数字不能表述为全项目覆盖率，后续仍需迁移到能合并浏览器与移动端结果的工具。
 

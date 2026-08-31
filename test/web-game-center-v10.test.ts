@@ -125,8 +125,8 @@ test('game discovery leads while room and record tools remain available later', 
   assert.ok(discovery < catalog);
   assert.ok(catalog < tools);
   assert.match(lobby, /现在，想玩点什么？/);
-  assert.match(lobby, /data-action="create-room"/);
-  assert.match(lobby, /data-action="join-room"/);
+  assert.match(lobby, /data-action="view-friends"/);
+  assert.doesNotMatch(lobby, /data-action="create-room"|data-action="join-room"|id="room-code"/);
   assert.match(productSource, /Game Center V10 信息架构/);
 });
 
@@ -307,10 +307,11 @@ test('the global trust row scopes local persistence to the eight games that prov
 });
 
 test('mood shortcuts navigate only to known playable destinations', () => {
-  assert.equal([...lobby.matchAll(/data-action="jump-world"/g)].length, 5);
-  for (const target of ['minesweeper', 'sudoku6', 'xiangqi', 'ddz', 'friends']) {
+  assert.equal([...lobby.matchAll(/data-action="jump-world"/g)].length, 4);
+  for (const target of ['minesweeper', 'sudoku6', 'xiangqi', 'ddz']) {
     assert.match(lobby, new RegExp(`data-world-target="${target}"`));
   }
+  assert.match(lobby, /data-action="view-friends"[^>]*>[\s\S]*?和朋友玩/);
   const jump = between(appSource, 'function jumpToLobbyTarget(', "app.addEventListener('click'");
   assert.match(jump, /new Set\(\['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels'\]\)/);
   assert.match(jump, /target==='friends'/);

@@ -241,7 +241,7 @@ function rememberLastLocalGame(game) {
   return LOCAL_GAME_IDS.has(game) && safeStorageSet(LAST_LOCAL_GAME_KEY, game);
 }
 const storedHeroGame = safeStorageGet(HERO_GAME_KEY);
-const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
+const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, roomCodeDraft: '', history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
 let merge1048Pointer = null;
 let heroTransitionTimer = null;
@@ -821,7 +821,7 @@ function lobby() {
           <button data-action="jump-world" data-world-target="sudoku6"><i>6</i>动脑解谜</button>
           <button data-action="jump-world" data-world-target="xiangqi"><i>帅</i>棋桌对战</button>
           <button data-action="jump-world" data-world-target="ddz"><i>♠</i>牌桌对战</button>
-          <button data-action="jump-world" data-world-target="friends"><i>＋</i>和朋友玩</button>
+          <button data-action="view-friends"><i>＋</i>和朋友玩</button>
         </nav>
       </section>
 
@@ -893,16 +893,35 @@ function lobby() {
       </section>
 
       <section class="lobby-tools" id="lobby-tools" aria-labelledby="lobby-tools-title">
-        <div class="section-head compact"><div><span class="section-kicker">一起玩与我的记录</span><h2 id="lobby-tools-title">需要时，再打开这些工具</h2></div></div>
+        <div class="section-head compact"><div><span class="section-kicker">一起玩与我的记录</span><h2 id="lobby-tools-title">邀请朋友，或者回顾战绩</h2></div></div>
         <div class="lobby-shortcuts">
-          <article class="room-panel"><div><span>好友房</span><h2>叫上朋友，同桌斗地主</h2><p>创建一个新房间，或输入朋友发来的六位房号。</p></div><div class="room-actions"><button class="btn primary" data-action="create-room">创建房间</button><div class="friend-row"><label for="room-code">六位房号</label><input class="input" id="room-code" maxlength="6" inputmode="numeric" aria-label="六位房号" placeholder="输入房号"><button class="btn" data-action="join-room">加入</button></div></div></article>
+          <article class="friends-portal"><span class="friends-portal-icon" aria-hidden="true">＋</span><div><span>好友房</span><h2>叫上朋友，同桌斗地主</h2><p>进入独立好友房页面，创建牌桌或使用六位房号加入。</p></div><button class="btn primary" data-action="view-friends">进入好友房 <b aria-hidden="true">→</b></button></article>
           <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${firstGame?'完成首局，解锁你的胜率与牌局记录':`${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%`}</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
         </div>
       </section>
     </main>${nav('lobby')}</div>`;
 }
 
-function nav(active) { return `<nav class="nav"><button class="btn ${active==='lobby'?'active':''}" data-view="lobby">游戏</button><button class="btn ${active==='history'?'active':''}" data-view="history">战绩</button><button class="btn ${active==='rules'?'active':''}" data-view="rules">规则</button></nav>`; }
+function nav(active) { return `<nav class="nav" aria-label="主要页面"><button type="button" class="btn ${active==='lobby'?'active':''}" data-view="lobby" ${active==='lobby'?'aria-current="page"':''}>游戏</button><button type="button" class="btn ${active==='history'?'active':''}" data-view="history" ${active==='history'?'aria-current="page"':''}>战绩</button><button type="button" class="btn ${active==='rules'?'active':''}" data-view="rules" ${active==='rules'?'aria-current="page"':''}>规则</button><button type="button" class="btn ${active==='friends'?'active':''}" data-action="view-friends" ${active==='friends'?'aria-current="page"':''}>好友房</button></nav>`; }
+
+function friends() {
+  const playerName = state.profile?.name || '你';
+  const roomCodeDraft = String(state.roomCodeDraft || '').replace(/\D/g,'').slice(0,6);
+  const roomCodeStatus = roomCodeDraft.length === 6 ? '房号已完整，按回车或点击加入房间' : roomCodeDraft ? `已输入 ${roomCodeDraft.length}/6 位` : '请输入朋友发来的 6 位数字';
+  return `<div class="shell page-shell friends-page">${header()}<main>
+    <section class="friends-hero" aria-labelledby="friends-title">
+      <div class="friends-hero-copy"><span class="section-kicker">FRIEND TABLE</span><h1 id="friends-title">好友房</h1><p>创建一张只凭房号进入的牌桌，或者输入朋友发来的六位数字，三人同桌完成一局斗地主。</p><div aria-label="好友房特点"><span>6 位房号</span><span>3 个座位</span><span>智能牌友可补位</span></div></div>
+      <div class="friends-hero-table" aria-hidden="true"><span class="friends-table-seat seat-a"><i>A</i><b>好友 A</b></span><span class="friends-table-seat seat-b"><i>B</i><b>好友 B</b></span><span class="friends-table-seat seat-you"><i>${esc(playerName.slice(0,1))}</i><b>${esc(playerName)}</b></span><strong>斗地主<small>好友同桌</small></strong></div>
+    </section>
+
+    <section class="friends-entry-grid" aria-label="创建或加入好友房">
+      <article class="friends-entry-card is-create"><span class="friends-entry-icon" aria-hidden="true">＋</span><div><small>我是房主</small><h2>创建新房间</h2><p>系统会生成一个六位房号。把房号发给朋友，等人到齐后由你开始牌局。</p></div><ul><li>创建后自动入座</li><li>人数不足时可让智能牌友补位</li></ul><button class="btn primary" data-action="create-room">创建好友房 <b aria-hidden="true">→</b></button></article>
+      <article class="friends-entry-card is-join"><span class="friends-entry-icon" aria-hidden="true">#</span><div><small>我有房号</small><h2>加入朋友的房间</h2><p>输入朋友分享的六位数字。房间有效且有空座时，你会直接进入牌桌。</p></div><label for="room-code">六位房号</label><div class="friends-room-code"><input class="input" id="room-code" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" aria-describedby="room-code-help" placeholder="例如 123456" value="${esc(roomCodeDraft)}"><button class="btn" data-action="join-room">加入房间</button></div><p class="friends-code-status" id="room-code-help" data-room-code-status aria-live="polite">${roomCodeStatus}</p></article>
+    </section>
+
+    <section class="friends-how" aria-labelledby="friends-how-title"><div class="section-head"><div><span class="section-kicker">好友房说明</span><h2 id="friends-how-title">三步同桌开局</h2></div><p>当前版本仅支持三人斗地主好友房</p></div><ol class="friends-steps"><li><span>01</span><div><b>创建或加入</b><p>房主创建房间，其他玩家凭六位房号加入。</p></div></li><li><span>02</span><div><b>确认座位</b><p>最多三位真人入座；未满三人时，房主可用智能牌友补位。</p></div></li><li><span>03</span><div><b>房主开局</b><p>发牌、回合和结算继续由服务端统一判定，并写入正常战绩。</p></div></li></ol><p class="muted">房间说明：好友房不提供公开房间列表、在线好友或陌生人匹配；请只把房号分享给想邀请的人。</p></section>
+  </main>${nav('friends')}</div>`;
+}
 
 function room() {
   const r = state.room;
@@ -1928,7 +1947,7 @@ function history() {
 function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}${nav('rules')}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
   if(state.view==='lobby')updateWorldCarouselStatus(app.querySelector('[data-world-strip]'));
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
@@ -3325,9 +3344,9 @@ function finishWorldCarouselPointer(event,{cancelled=false}={}) {
 function jumpToLobbyTarget(target) {
   const reduceMotion=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   if(target==='friends'){
-    const tools=document.querySelector('#lobby-tools');
-    tools?.scrollIntoView({block:'start',behavior:reduceMotion?'auto':'smooth'});
-    globalThis.setTimeout?.(()=>document.querySelector('#room-code')?.focus({preventScroll:true}),reduceMotion?0:420);
+    state.view='friends';
+    render();
+    globalThis.scrollTo?.(0,0);
     return;
   }
   const allowed=new Set(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels']);
@@ -3418,11 +3437,13 @@ app.addEventListener('click', e => {
     stopMahjongBotSequence();
     if(state.view!=='game') stopGameSync();
     if(state.view!=='room') stopRoomSync();
+    globalThis.scrollTo?.(0,0);
     if(state.view==='history') act(loadHistoryData); else render();
     return;
   }
   if(el.dataset.bid!==undefined) act(async()=>{const current=state.game;const body={score:Number(el.dataset.bid),expectedSequence:current.sequence};const r=await api(`/v1/games/${current.id}/bid`,{method:'POST',body:JSON.stringify(body),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);});
   const a=el.dataset.action;
+  if(a==='view-friends'){state.view='friends';stopMahjongBotSequence();stopGameSync();stopRoomSync();render();globalThis.scrollTo?.(0,0);return;}
   if(a==='hero-select'){switchHero(el.dataset.heroGame,el.dataset.heroGame==='ddz'?'previous':'next');return;}
   if(a==='world-prev'){scrollWorldCarousel(-1);return;}
   if(a==='world-next'){scrollWorldCarousel(1);return;}
@@ -3728,8 +3749,13 @@ app.addEventListener('click', e => {
   }
   if(a==='retry-history') act(loadHistoryData);
   if(a==='resume') act(async()=>{const r=await api('/v1/resume');if(r.game){enterGame(r.game);}else if(r.room){state.room=r.room;state.roomExitConfirm=false;state.view='room';startRoomSync();}else toast('没有待恢复的牌局');});
-  if(a==='create-room') act(async()=>{state.room=(await api('/v1/rooms',{method:'POST',body:'{}'})).room;state.roomExitConfirm=false;state.view='room';startRoomSync();});
-  if(a==='join-room') act(async()=>{const code=document.querySelector('#room-code')?.value.trim();if(!/^\d{6}$/.test(code))throw new Error('请输入 6 位房号');state.room=(await api('/v1/rooms/join',{method:'POST',body:JSON.stringify({code})})).room;state.roomExitConfirm=false;state.view='room';startRoomSync();});
+  if(a==='create-room') act(async()=>{state.room=(await api('/v1/rooms',{method:'POST',body:'{}'})).room;state.roomCodeDraft='';state.roomExitConfirm=false;state.view='room';startRoomSync();});
+  if(a==='join-room'){
+    const code=document.querySelector('#room-code')?.value.trim();
+    if(!/^\d{6}$/.test(code)){toast('请输入 6 位房号');document.querySelector('#room-code')?.focus();return;}
+    state.roomCodeDraft=code;
+    act(async()=>{state.room=(await api('/v1/rooms/join',{method:'POST',body:JSON.stringify({code})})).room;state.roomCodeDraft='';state.roomExitConfirm=false;state.view='room';startRoomSync();});
+  }
   if(a==='copy-room') {
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(state.room.code).then(()=>toast('房号已复制')).catch(()=>toast(`房号：${state.room.code}`));
     else toast(`房号：${state.room.code}`);
@@ -3742,7 +3768,7 @@ app.addEventListener('click', e => {
     if(state.view==='game'&&state.game){const currentId=state.game.id;const next=(await api(`/v1/games/${currentId}`)).game;if(state.game?.id===currentId){state.game=next;startGameSync();}}
   });
   if(a==='start-room') act(async()=>{const r=await api(`/v1/rooms/${state.room.id}/start`,{method:'POST',body:'{}'});state.room=r.room;enterGame(r.game,{animateDeal:true});});
-  if(a==='leave-room') act(async()=>{const roomId=state.room.id;stopRoomSync();try{await api(`/v1/rooms/${roomId}/leave`,{method:'POST',body:'{}'});}catch(error){startRoomSync();throw error;}state.room=null;state.roomExitConfirm=false;state.view='lobby';});
+  if(a==='leave-room') act(async()=>{const roomId=state.room.id;stopRoomSync();try{await api(`/v1/rooms/${roomId}/leave`,{method:'POST',body:'{}'});}catch(error){startRoomSync();throw error;}state.room=null;state.roomExitConfirm=false;state.view='friends';});
   if(a==='pass') act(async()=>{const current=state.game;const r=await api(`/v1/games/${current.id}/pass`,{method:'POST',body:JSON.stringify({expectedSequence:current.sequence}),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);state.selected.clear();});
   if(a==='play') act(async()=>{if(!state.selected.size)throw new Error('请先选择要出的牌');const current=state.game;const r=await api(`/v1/games/${current.id}/play`,{method:'POST',body:JSON.stringify({cardIds:[...state.selected],expectedSequence:current.sequence}),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);state.selected.clear();});
   if(a==='rematch') act(async()=>{stopGameSync();await refreshProfile();await startQuickGame();});
@@ -3762,6 +3788,13 @@ app.addEventListener('click', e => {
 
 app.addEventListener('input', (event) => {
   if(event.target?.matches?.('[data-catalog-search]'))applyCatalogDiscovery();
+  if(event.target?.matches?.('#room-code')){
+    const digits=event.target.value.replace(/\D/g,'').slice(0,6);
+    if(event.target.value!==digits)event.target.value=digits;
+    state.roomCodeDraft=digits;
+    const status=document.querySelector('[data-room-code-status]');
+    if(status)status.textContent=digits.length===6?'房号已完整，按回车或点击加入房间':`已输入 ${digits.length}/6 位`;
+  }
 });
 
 app.addEventListener('scroll', (event) => {
@@ -3876,6 +3909,11 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', (event) => { finishWorldCarouselPointer(event,{cancelled:true});heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
+  if(state.view==='friends'&&event.target?.matches?.('#room-code')&&event.key==='Enter'){
+    event.preventDefault();
+    document.querySelector('[data-action="join-room"]')?.click();
+    return;
+  }
   if(state.view==='lobby'){
     const search=document.querySelector('[data-catalog-search]');
     const editable=event.target?.matches?.('input, textarea, select, [contenteditable="true"]');

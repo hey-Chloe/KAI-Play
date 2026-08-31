@@ -75,9 +75,14 @@ test('the Hero keeps a branded five-card fan at 1.2 to 1.3 times the V3 scale', 
 });
 
 test('the Hero actions remain real while unavailable daily puzzles stay out of the lobby', () => {
-  for (const action of ['quick', 'open-mahjong', 'create-room', 'join-room']) {
+  for (const action of ['quick', 'open-mahjong', 'view-friends']) {
     assert.match(lobbySource, new RegExp(`data-action=["']${action}["']`));
     assert.match(appSource, new RegExp(`a\\s*===\\s*["']${action}["']`));
+  }
+  for (const roomAction of ['create-room', 'join-room']) {
+    assert.match(appSource, new RegExp(`data-action=["']${roomAction}["']`));
+    assert.match(appSource, new RegExp(`a\\s*===\\s*["']${roomAction}["']`));
+    assert.doesNotMatch(lobbySource, new RegExp(`data-action=["']${roomAction}["']`));
   }
   assert.match(appSource, /\/v1\/games\/quick/);
   assert.match(appSource, /\/v1\/rooms(?:\/join)?/);

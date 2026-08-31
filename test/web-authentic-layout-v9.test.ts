@@ -113,5 +113,5 @@ test('friend-room exits require confirmation and clean up room polling', () => {
   assert.match(leaveSource, /\/v1\/rooms\/\$\{(?:roomId|state\.room\.id)\}\/leave/);
   assert.match(leaveSource, /state\.room=null/);
   assert.match(leaveSource, /state\.roomExitConfirm=false/);
-  assert.match(leaveSource, /state\.view='lobby'/);
+  assert.match(leaveSource, /state\.view='friends'/);
 });
