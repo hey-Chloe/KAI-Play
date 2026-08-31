@@ -29,28 +29,28 @@ function sourceBetween(source: string, start: string, end: string) {
   return source.slice(startIndex, endIndex);
 }
 
-test('V14 publishes exactly eleven games in the reviewed catalog order', () => {
+test('the catalog publishes exactly twelve games in the reviewed order', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
   const ids = [...lobby.matchAll(/data-world-card data-world-id="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(ids, [
     'ddz', 'xiangqi', 'gomoku', 'mahjong', '1048', 'sudoku6',
-    'minesweeper', 'memory', 'snake', 'three', 'reels',
+    'minesweeper', 'memory', 'snake', 'farm', 'three', 'reels',
   ]);
-  assert.match(lobby, /11 款即开即玩的牌桌、策略与益智游戏/);
-  assert.match(lobby, /11 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 10 款免费畅玩/);
-  assert.match(lobby, /data-world-status[^>]*aria-live="polite">1 \/ 11/);
-  assert.match(indexSource, /十一款即开即玩的牌桌、策略与益智玩法/);
+  assert.match(lobby, /12 款即开即玩的牌桌、策略、益智与经营游戏/);
+  assert.match(lobby, /12 款玩法，即刻开局/);
+  assert.match(lobby, /1 款竞技 · 11 款免费畅玩/);
+  assert.match(lobby, /data-world-status[^>]*aria-live="polite">1 \/ 12/);
+  assert.match(indexSource, /十二款即开即玩的牌桌、策略、益智与经营玩法/);
 });
 
-test('the local-save promise is limited to its exact seven game ids', () => {
+test('the local-save promise is limited to its exact eight game ids', () => {
   const declaration = appSource.match(/const LOCAL_GAME_IDS = new Set\(\[([^\]]+)\]\)/);
   assert.ok(declaration);
   const ids = [...declaration[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
-  assert.deepEqual(ids, ['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake']);
+  assert.deepEqual(ids, ['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake', 'farm']);
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /7 款本地自动保存/);
-  assert.doesNotMatch(lobby, /11 款本地自动保存/);
+  assert.match(lobby, /8 款本地自动保存/);
+  assert.doesNotMatch(lobby, /12 款本地自动保存/);
 });
 
 test('Gomoku, Memory Match, and Snake are wired as playable local routes', () => {
@@ -131,7 +131,7 @@ test('in-progress local games ask before destructive restart or difficulty chang
   assert.match(confirmation, /globalThis\.confirm\(message\)\s*:\s*false/);
 
   const handlers = sourceBetween(appSource, "if(a==='gomoku-new'", "if(a==='slots-spin'");
-  assert.equal((handlers.match(/confirmLocalGameReplacement\(/g) || []).length, 5);
+  assert.equal((handlers.match(/confirmLocalGameReplacement\(/g) || []).length, 6);
 
   const gomokuRestart = sourceBetween(handlers, "if(a==='gomoku-new'", "if(a==='memory-new'");
   assert.match(gomokuRestart, /game\?\.status\s*===\s*['"]playing['"]/);

@@ -55,6 +55,21 @@ import {
   toggleSnakePause,
 } from './snake.js';
 import {
+  FARM_CROPS,
+  farmGrowthRatio,
+  farmHasProgress,
+  farmNextLevelXp,
+  farmPlotStatus,
+  farmRemainingMs,
+  harvestFarmCrop,
+  harvestReadyFarmCrops,
+  newFarmGame,
+  plantFarmCrop,
+  restoreFarmGame,
+  selectFarmCrop,
+  waterFarmCrop,
+} from './farm.js';
+import {
   GOMOKU_CELL_COUNT,
   GOMOKU_SIZE,
   loadGomokuGame,
@@ -92,8 +107,9 @@ const MINESWEEPER_DIFFICULTY_KEY = 'kai.play.minesweeper.difficulty.v1';
 const SNAKE_SAVE_KEY = 'kai.play.snake.game.v1';
 const SNAKE_DIFFICULTY_KEY = 'kai.play.snake.difficulty.v1';
 const SNAKE_BEST_KEY = 'kai.play.snake.best.v1';
+const FARM_SAVE_KEY = 'kai.play.farm.game.v1';
 const LAST_LOCAL_GAME_KEY = 'kai.play.last-local-game';
-const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake']);
+const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake', 'farm']);
 const CATALOG_DISCOVERY = Object.freeze({
   ddz: { categories:['card','competitive'], search:'斗地主 ddz dou dizhu fighting the landlord 扑克 牌桌 三人 竞技 快速人机' },
   xiangqi: { categories:['board','save'], search:'KAI 象棋 中国象棋 xiangqi chinese chess 棋类 策略 人机 自动保存' },
@@ -104,6 +120,7 @@ const CATALOG_DISCOVERY = Object.freeze({
   minesweeper: { categories:['puzzle','quick','save'], search:'KAI 扫雷 minesweeper 雷区 推理 益智 短局 自动保存' },
   memory: { categories:['puzzle','quick','save'], search:'KAI 记忆翻牌 memory match 配对 记忆 益智 短局 自动保存' },
   snake: { categories:['arcade','quick','save'], search:'KAI 贪吃蛇 snake 反应 街机 即时 短局 自动保存' },
+  farm: { categories:['quick','save'], search:'KAI 农场 QQ农场 qq farm farming 种菜 收菜 种植 经营 养成 休闲 自动保存 离线成长' },
   three: { categories:['card','quick'], search:'炸金花 zha jin hua three card poker 三张牌 扑克 牌桌 比牌 短局' },
   reels: { categories:['arcade','quick'], search:'算力转轮 转轮 reels slots spin 轻娱乐 街机 短局' },
 });
@@ -138,6 +155,7 @@ let minesweeperLongPress = null;
 let minesweeperSuppressedClick = null;
 let snakeTimer = null;
 let memoryMismatchTimer = null;
+let farmTimer = null;
 let snakePointer = null;
 let toastTimer = null;
 let threeRevealTimer = null;
@@ -289,6 +307,35 @@ function saveSnakeGame(game, casual = state.casual) {
   const bestSaved = safeStorageSet(SNAKE_BEST_KEY, String(best));
   casual.saveAvailable = gameSaved && difficultySaved && bestSaved;
   return casual.saveAvailable;
+}
+
+function loadSavedFarmGame() {
+  try {
+    const raw = safeStorageGet(FARM_SAVE_KEY);
+    if (!raw) return null;
+    const game = restoreFarmGame(JSON.parse(raw));
+    if (!game) safeStorageRemove(FARM_SAVE_KEY);
+    return game;
+  } catch {
+    safeStorageRemove(FARM_SAVE_KEY);
+    return null;
+  }
+}
+
+function saveFarmGame(game, casual = state.casual, { force = false } = {}) {
+  if (!game || casual?.kind !== 'farm') return false;
+  const serialized = JSON.stringify(game);
+  const stored = safeStorageGet(FARM_SAVE_KEY);
+  if (!force && typeof casual.farmPersistedSnapshot === 'string' && stored !== casual.farmPersistedSnapshot) {
+    casual.saveAvailable = false;
+    casual.saveConflict = true;
+    return false;
+  }
+  const saved = safeStorageSet(FARM_SAVE_KEY, serialized);
+  casual.saveAvailable = saved;
+  casual.saveConflict = false;
+  if (saved) casual.farmPersistedSnapshot = serialized;
+  return saved;
 }
 
 function localDateKey(date = new Date()) {
@@ -484,6 +531,7 @@ function lobby() {
   const memorySession = loadMemoryMatchSession() || { restored:false, game:null };
   const savedMemory = memorySession.restored ? memorySession.game : null;
   const savedSnake = loadSavedSnakeGame();
+  const savedFarm = loadSavedFarmGame();
   const canContinueMinesweeper = isResumableMinesweeperGame(savedMinesweeper);
   const canContinueSudoku6 = isResumableSudoku6Game(savedSudoku6);
   const canContinue1048 = saved1048?.status === 'playing' && Number(saved1048.moves) > 0;
@@ -493,6 +541,7 @@ function lobby() {
   const canContinueMemory = savedMemory?.status === 'playing'
     && (Number(savedMemory.moveCount) > 0 || savedMemory.faceUp?.length > 0 || Number(savedMemory.matchedPairs) > 0);
   const canContinueSnake = ['playing','paused'].includes(savedSnake?.status) && Number(savedSnake.ticks) > 0;
+  const canContinueFarm = farmHasProgress(savedFarm);
   const xiangqiAction = !savedXiangqi || (savedXiangqi.game.status === 'playing' && !canContinueXiangqi) ? '执红开局' : canContinueXiangqi ? '继续对局' : '查看战果';
   const merge1048Action = !saved1048 || (saved1048.status === 'playing' && !canContinue1048) ? '开始合并' : canContinue1048 ? '继续上局' : '查看上局';
   const sudoku6Action = !savedSudoku6 || (savedSudoku6.status === 'playing' && !canContinueSudoku6) ? '开始数独' : canContinueSudoku6 ? '继续上局' : '查看成绩';
@@ -500,6 +549,7 @@ function lobby() {
   const gomokuAction = !savedGomoku || (savedGomoku.status === 'playing' && !canContinueGomoku) ? '执黑开局' : canContinueGomoku ? '继续对局' : '查看战果';
   const memoryAction = !savedMemory || (savedMemory.status === 'ready' && !canContinueMemory) ? '开始配对' : canContinueMemory ? '继续配对' : '查看成绩';
   const snakeAction = !savedSnake || !canContinueSnake && ['ready','playing','paused'].includes(savedSnake.status) ? '开始穿行' : canContinueSnake ? '继续穿行' : '查看上轮';
+  const farmAction = canContinueFarm ? '继续经营' : '开始种植';
   const minesweeperPreview = ['covered','covered','covered','covered','covered','covered','covered','one','one','one','covered','covered','covered','one','empty','two','flag','covered','covered','one','one','two','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered','covered']
     .map((cell) => `<i class="${cell}">${cell === 'one' ? '1' : cell === 'two' ? '2' : cell === 'flag' ? '⚑' : ''}</i>`).join('');
   const resumeCandidates = [];
@@ -569,6 +619,17 @@ function lobby() {
       action:'open-snake', label:snakeAction, glyph:'S',
     });
   }
+  if (canContinueFarm) {
+    const farmNow = Math.max(Date.now(), savedFarm.updatedAt);
+    const readyCount = savedFarm.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, farmNow) === 'ready').length;
+    const growingCount = savedFarm.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, farmNow) === 'growing').length;
+    resumeCandidates.push({
+      id:'farm', accent:'farm', eyebrow:'继续经营', title:'KAI 农场',
+      meta:readyCount ? `${readyCount} 块作物已经成熟` : growingCount ? `${growingCount} 块田正在生长` : `Lv.${savedFarm.level} 农场 · 等待播种`,
+      progress:null, note:`金币 ${savedFarm.coins} · 已收获 ${savedFarm.harvests} 次`,
+      action:'open-farm', label:farmAction, glyph:'苗',
+    });
+  }
   const recentLocalGame = safeStorageGet(LAST_LOCAL_GAME_KEY);
   const resumeGame = resumeCandidates.find((game) => game.id === recentLocalGame) || resumeCandidates[0] || {
     accent:'minesweeper', eyebrow:'新手推荐', title:'先来一局扫雷',
@@ -595,7 +656,7 @@ function lobby() {
   ];
   const previewRivers = ['north','east','south','west'].map((position,index)=>`<div class="preview-river preview-river--${position}">${previewRiverData[index].map((tile)=>mahjongFace(tile,'preview-river-tile')).join('')}</div>`).join('');
   const hubSide = `<aside class="hub-side">
-    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">11 款可玩</span>'}</div>
+    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">12 款可玩</span>'}</div>
     <article class="resume-card resume-${resumeGame.accent}">
       <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
       <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
@@ -612,7 +673,7 @@ function lobby() {
   return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
-        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>11 款即开即玩的牌桌、策略与益智游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>12 款即开即玩的牌桌、策略、益智与经营游戏，无需下载，点开就能玩。</p></div>
         <div class="catalog-search-wrap">
           <label class="catalog-search" for="catalog-search-input">
             <i aria-hidden="true">⌕</i>
@@ -622,7 +683,7 @@ function lobby() {
           </label>
           <button class="catalog-search-jump" type="button" data-action="catalog-show-results" hidden><span data-catalog-search-feedback aria-live="polite">查看搜索结果</span><b aria-hidden="true">↓</b></button>
         </div>
-        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>7 款本地自动保存</span></div>
+        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>8 款本地自动保存</span></div>
         <nav class="mood-rail" aria-label="按心情选择玩法">
           <button data-action="jump-world" data-world-target="minesweeper"><i>⚑</i>短局放松</button>
           <button data-action="jump-world" data-world-target="sudoku6"><i>6</i>动脑解谜</button>
@@ -666,7 +727,7 @@ function lobby() {
       </section>
 
       <section class="section-block game-catalog" id="game-selection">
-        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>11 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 10 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 11</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>12 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 11 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 12</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
         <div class="catalog-command" aria-label="筛选全部玩法">
           <div class="catalog-filters" role="group" aria-label="按玩法类型筛选">
             <button class="is-active" data-action="catalog-filter" data-catalog-filter="all" aria-pressed="true">全部</button>
@@ -678,7 +739,7 @@ function lobby() {
             <button data-action="catalog-filter" data-catalog-filter="arcade" aria-pressed="false">街机</button>
             <button data-action="catalog-filter" data-catalog-filter="save" aria-pressed="false">自动保存</button>
           </div>
-          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 11 款</span>
+          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 12 款</span>
         </div>
         <p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，下一款游戏已经露出来了</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
@@ -691,6 +752,7 @@ function lobby() {
           <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"${canContinueMinesweeper?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
           <article class="game-world world-memory" data-world-card data-world-id="memory"${canContinueMemory?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMemory?'可继续':savedMemory?.status==='won'?'成绩已保存':'轻松短局'}</span><div class="world-cover"><div class="world-memory-cards" aria-hidden="true"><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i></div><i class="world-cover-mark" aria-hidden="true">PAIR</i></div><div class="world-copy"><span>翻开配对 · 三档牌阵</span><h3>KAI 记忆翻牌</h3><p>记住每张卡的位置，用更少步数找齐所有相同图案。</p><button class="btn" data-action="open-memory">${memoryAction} <b>→</b></button></div></article>
           <article class="game-world world-snake" data-world-card data-world-id="snake"${canContinueSnake?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
+          <article class="game-world world-farm" data-world-card data-world-id="farm"${canContinueFarm?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFarm?'可继续':'新上线'}</span><div class="world-cover"><div class="world-farm-field" aria-hidden="true"><i class="crop-wheat stage-ready"><b>麦</b></i><i class="crop-carrot stage-growing"><b>萝</b></i><i></i><i class="crop-strawberry stage-ready"><b>莓</b></i><i class="crop-wheat stage-growing"><b>麦</b></i><i></i></div><i class="world-cover-mark" aria-hidden="true">丰</i></div><div class="world-copy"><span>经典农场经营 · 20 秒首获</span><h3>KAI 农场</h3><p>播种、浇水、等待成熟，再把收获投入下一季。</p><button class="btn" data-action="open-farm">${farmAction} <b>→</b></button></div></article>
           <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">免费比牌</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三张定胜负 · 单机训练</span><h3>炸金花训练</h3><p>一眼判断牌型强弱，翻开这一手就见分晓。</p><button class="btn" data-action="open-three">翻开这一手 <b>→</b></button></div></article>
           <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>轻点一次，看三枚符号能否同频连线。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">试转一次 <b>→</b></button></div></article>
         </div>
@@ -1574,6 +1636,70 @@ function snakeGame() {
   </main><p class="casual-disclaimer">${persistenceAvailable ? '本轮完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本轮仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
+function formatFarmDuration(milliseconds) {
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  if (seconds === 0) return '可收获';
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function farmEffectiveNow(game) {
+  return Math.max(Date.now(), game?.updatedAt || 0);
+}
+
+function farmReadySignature(game, now = farmEffectiveNow(game)) {
+  return game.plots.map((plot) => plot.cropId ? farmPlotStatus(plot, now) : 'empty').join('|');
+}
+
+function farmCropStage(plot, now) {
+  const ratio = farmGrowthRatio(plot, now);
+  return ratio >= 0.72 ? 'full' : ratio >= 0.3 ? 'growing' : 'sprout';
+}
+
+function farmPlotMarkup(game, index, now, focused) {
+  const plot = game.plots[index];
+  const selected = FARM_CROPS[game.selectedCrop];
+  if (!plot.cropId) {
+    return `<button type="button" class="farm-plot is-empty" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块空地，点击播种${selected.label}"><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span><b>空地 ${index + 1}</b><small>播种${selected.label} · ${selected.seedCost} 金币</small></button>`;
+  }
+  const crop = FARM_CROPS[plot.cropId];
+  const status = farmPlotStatus(plot, now);
+  const ready = status === 'ready';
+  const remaining = farmRemainingMs(plot, now);
+  const ratio = Math.round(farmGrowthRatio(plot, now) * 100);
+  const stage = farmCropStage(plot, now);
+  const stateLabel = ready ? `成熟，点击收获 ${crop.reward} 金币` : plot.watered ? `已浇水，${formatFarmDuration(remaining)} 后成熟` : `生长中，点击浇水可加速`;
+  const helper = ready ? `收获 +${crop.reward} 金币` : plot.watered ? `${formatFarmDuration(remaining)} 成熟` : '浇水加速';
+  return `<button type="button" class="farm-plot crop-${crop.id} ${ready ? 'is-ready' : plot.watered ? 'is-growing is-watered' : 'is-growing'}" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块地，${crop.label}${stateLabel}" aria-describedby="farm-key-hint"><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span><span class="farm-crop stage-${stage}" aria-hidden="true"><i></i><b>${crop.glyph}</b></span><span class="farm-progress" data-farm-progress="${index}" role="progressbar" aria-label="${crop.label}成长进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${ratio}" style="--farm-progress:${ratio}%"><i></i></span><b>${crop.label}</b><small data-farm-countdown="${index}">${helper}</small>${plot.watered && !ready ? '<em>已浇水</em>' : ready ? '<em>已成熟</em>' : '<em>待浇水</em>'}</button>`;
+}
+
+function farmGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'farm') return lobby();
+  const now = farmEffectiveNow(game);
+  const readyCount = game.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'ready').length;
+  const growingCount = game.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'growing').length;
+  const nextLevelXp = farmNextLevelXp(game.level);
+  const xpProgress = nextLevelXp ? Math.min(100, Math.round(game.xp / nextLevelXp * 100)) : 100;
+  const persistenceAvailable = casual.saveAvailable !== false && !casual.saveConflict;
+  const cropChoices = Object.values(FARM_CROPS).map((crop) => {
+    const locked = crop.unlockLevel > game.level;
+    const selected = crop.id === game.selectedCrop;
+    return `<button type="button" class="farm-crop-choice crop-${crop.id} ${selected ? 'is-selected' : ''} ${locked ? 'is-locked' : ''}" data-action="farm-select" data-farm-crop="${crop.id}" aria-pressed="${selected}" ${locked ? `disabled aria-label="${crop.label}，等级 ${crop.unlockLevel} 解锁"` : `aria-label="选择${crop.label}种子，${crop.seedCost} 金币，成熟收获 ${crop.reward} 金币"`}><i aria-hidden="true">${crop.glyph}</i><span><b>${crop.label}</b><small>${locked ? `Lv.${crop.unlockLevel} 解锁` : `${crop.seedCost} → ${crop.reward} 金币 · ${formatFarmDuration(crop.growMs)}`}</small></span></button>`;
+  }).join('');
+  const status = casual.saveConflict ? '另一标签页已更新农场，本页已停止写入，请重新打开'
+    : casual.announcement || (readyCount ? `${readyCount} 块作物已经成熟` : growingCount ? `${growingCount} 块作物正在生长` : '选好种子，点击空地开始播种');
+  return `<div class="shell casual-shell farm-route">${casualHeader('KAI 农场','LOCAL FARM',`Lv.${game.level} · ${persistenceAvailable ? '本地自动保存' : '仅本次可玩'}`)}<main class="farm-stage">
+    <section class="farm-copy"><div><span>轻松经营 · 离线继续成长</span><h1>种下一季<br><b>等一场丰收</b></h1><p>选种后点击空地播种，再点击作物浇水加速。成熟不会枯萎，回来后手动收获即可。</p></div><div class="farm-crop-picker" role="group" aria-label="选择要播种的作物">${cropChoices}</div><ol><li><i>1</i><span><b>播种</b><small>点击空地扣除种子金币</small></span></li><li><i>2</i><span><b>浇水</b><small>每块作物可加速一次</small></span></li><li><i>3</i><span><b>收获</b><small>成熟后手动获得金币与经验</small></span></li></ol></section>
+    <section class="farm-play"><div class="farm-metrics" aria-label="农场数据"><div><small>金币</small><strong>${game.coins}</strong></div><div><small>等级</small><strong>Lv.${game.level}</strong></div><div><small>经验</small><strong>${nextLevelXp ? `${game.xp}/${nextLevelXp}` : `${game.xp} MAX`}</strong><span role="progressbar" aria-label="农场升级进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${xpProgress}"><i style="--farm-xp:${xpProgress}%"></i></span></div><div><small>已收获</small><strong>${game.harvests}</strong></div></div>
+      <div class="farm-status ${readyCount ? 'is-ready' : growingCount ? 'is-growing' : ''} ${casual.saveConflict ? 'is-warning' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${readyCount ? `${readyCount} 块可收` : `${growingCount} 块生长中`}</b></div>
+      <div class="farm-field" data-farm-field role="grid" aria-label="2 行 3 列农场地块，方向键移动，回车或空格操作" aria-rowcount="2" aria-colcount="3" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${game.plots.map((_, index) => farmPlotMarkup(game, index, now, casual.focusedPlot === index)).join('')}</div>
+      <div class="farm-actions"><button class="btn primary" data-action="farm-harvest-all" ${readyCount ? '' : 'disabled'}>一键收获${readyCount ? ` · ${readyCount} 块` : ''}</button><button class="btn" data-action="farm-reset">重新开垦</button></div>
+      <div class="farm-legend" aria-label="地块状态图例"><span><i class="empty"></i>空地</span><span><i class="growing"></i>生长中</span><span><i class="watered"></i>已浇水</span><span><i class="ready"></i>已成熟</span></div><p class="farm-key-hint" id="farm-key-hint">键盘：方向键移动 · Enter / 空格执行当前操作</p>
+    </section>
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '农场在当前浏览器本地运行并自动保存' : casual.saveConflict ? '检测到另一标签页的更新，本页为只读状态' : '当前浏览器存储不可用，本次仍可游玩但刷新后不会恢复'}。离开后作物只继续成长，不会自动产币；暂不支持好友拜访、偷菜或跨设备同步。农场金币不可购买、提现、转让或兑换，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
 function historyMatchWon(match) {
   if (match.role === 'landlord') return match.winner === 'landlord';
   if (match.role === 'farmer') return match.winner === 'farmers';
@@ -1634,10 +1760,10 @@ function history() {
     ${nav('history')}</div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局或关卡，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>卡时与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务，不作为牌桌筹码；试玩场也不支付、不下注、不发放可兑换奖励。</p></div></div></div></section>${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${nav('rules')}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():lobby();
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -1656,11 +1782,13 @@ function stopCasualTimers() {
   if (xiangqiAiTimer) clearTimeout(xiangqiAiTimer);
   if (snakeTimer) clearTimeout(snakeTimer);
   if (memoryMismatchTimer) clearTimeout(memoryMismatchTimer);
+  if (farmTimer) clearTimeout(farmTimer);
   threeRevealTimer = null;
   slotSpinTimer = null;
   xiangqiAiTimer = null;
   snakeTimer = null;
   memoryMismatchTimer = null;
+  farmTimer = null;
   cancelMinesweeperLongPress();
   minesweeperSuppressedClick = null;
 }
@@ -2566,6 +2694,148 @@ function toggleSnakeSession() {
   render();focusSnakeInteraction();queueSnakeTick();
 }
 
+function focusFarmInteraction(index = state.casual?.focusedPlot ?? 0) {
+  const plot = document.querySelector(`[data-farm-plot="${index}"]`) || document.querySelector('[data-farm-plot]');
+  plot?.focus({ preventScroll:true });
+  plot?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function queueFarmTick() {
+  if (farmTimer) clearTimeout(farmTimer);
+  farmTimer = null;
+  const casual = state.casual;
+  const game = casual?.game;
+  if (document.visibilityState === 'hidden' || state.view !== 'farm' || casual?.kind !== 'farm' || !game) return;
+  const now = farmEffectiveNow(game);
+  const remaining = game.plots
+    .filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'growing')
+    .map((plot) => farmRemainingMs(plot, now));
+  if (!remaining.length) return;
+  const delay = Math.max(80, Math.min(1000, Math.min(...remaining) + 20));
+  farmTimer = setTimeout(() => {
+    farmTimer = null;
+    if (state.view !== 'farm' || state.casual !== casual || document.visibilityState === 'hidden') return;
+    const liveGame = casual.game;
+    const liveNow = farmEffectiveNow(liveGame);
+    const signature = farmReadySignature(liveGame, liveNow);
+    if (signature !== casual.readySignature) {
+      const readyCount = liveGame.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, liveNow) === 'ready').length;
+      casual.readySignature = signature;
+      casual.announcement = readyCount ? `${readyCount} 块作物已经成熟，可以收获了` : '农场状态已更新';
+      render();focusFarmInteraction(casual.focusedPlot);
+    } else {
+      liveGame.plots.forEach((plot, index) => {
+        if (!plot.cropId || farmPlotStatus(plot, liveNow) !== 'growing') return;
+        const crop = FARM_CROPS[plot.cropId];
+        const remainingMs = farmRemainingMs(plot, liveNow);
+        const countdown = document.querySelector(`[data-farm-countdown="${index}"]`);
+        if (countdown && plot.watered) countdown.textContent = `${formatFarmDuration(remainingMs)} 成熟`;
+        const progress = document.querySelector(`[data-farm-progress="${index}"]`);
+        if (progress) {
+          const value = Math.round(farmGrowthRatio(plot, liveNow) * 100);
+          progress.setAttribute('aria-valuenow', String(value));
+          progress.setAttribute('aria-label', `${crop.label}成长进度 ${value}%`);
+          progress.style.setProperty('--farm-progress', `${value}%`);
+        }
+      });
+    }
+    queueFarmTick();
+  }, delay);
+}
+
+function startFarmSession(game, announcement = '选好种子，点击空地开始播种') {
+  stopCasualTimers();
+  state.casual = {
+    kind:'farm',
+    game,
+    focusedPlot:0,
+    announcement,
+    readySignature:farmReadySignature(game),
+    saveAvailable:true,
+    saveConflict:false,
+    farmPersistedSnapshot:null,
+  };
+  state.view = 'farm';
+  if (!saveFarmGame(game)) state.casual.announcement = '本浏览器无法保存进度 · 仍可继续经营';
+  queueFarmTick();
+}
+
+function openFarm() {
+  stopGameSync();
+  stopRoomSync();
+  stopMahjongBotSequence();
+  stopCasualTimers();
+  const saved = loadSavedFarmGame();
+  const game = saved || newFarmGame();
+  const now = farmEffectiveNow(game);
+  const readyCount = game.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'ready').length;
+  const announcement = !saved || !farmHasProgress(game) ? '欢迎来到农场，先播种一块小麦吧'
+    : readyCount ? `${readyCount} 块作物已经成熟，可以收获了` : '已恢复当前浏览器的农场进度';
+  startFarmSession(game, announcement);
+  rememberLastLocalGame('farm');
+}
+
+function farmActionError(error) {
+  return ({
+    FARM_COINS_REQUIRED:'金币不足，先收获现有作物再播种',
+    FARM_CROP_LOCKED:'等级还不够，继续收获即可解锁',
+    FARM_PLOT_OCCUPIED:'这块地已经有作物了',
+    FARM_PLOT_EMPTY:'这是一块空地',
+    FARM_CROP_READY:'作物已经成熟，直接收获吧',
+    FARM_ALREADY_WATERED:'这块作物已经浇过水了',
+    FARM_CROP_GROWING:'作物还在生长，请再等一会儿',
+  })[error?.message] || '这次操作没有完成，请再试一次';
+}
+
+function commitFarmGame(next, announcement, focusedPlot = state.casual?.focusedPlot ?? 0) {
+  const casual = state.casual;
+  if (state.view !== 'farm' || casual?.kind !== 'farm') return;
+  casual.game = next;
+  casual.focusedPlot = focusedPlot;
+  casual.announcement = announcement;
+  casual.readySignature = farmReadySignature(next);
+  const saveWasAvailable = casual.saveAvailable !== false;
+  if (!saveFarmGame(next) && saveWasAvailable) casual.announcement += casual.saveConflict ? ' · 请重新打开以继续保存' : ' · 当前进度无法保存';
+  render();focusFarmInteraction(focusedPlot);queueFarmTick();
+}
+
+function performFarmPlot(index) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'farm' || casual?.kind !== 'farm' || !game || !Number.isInteger(index)) return;
+  casual.focusedPlot = index;
+  if (casual.saveConflict) {
+    casual.announcement = '另一标签页已更新农场，请返回大厅后重新打开';
+    render();focusFarmInteraction(index);return;
+  }
+  const now = farmEffectiveNow(game);
+  const plot = game.plots[index];
+  try {
+    if (!plot.cropId) {
+      const crop = FARM_CROPS[game.selectedCrop];
+      commitFarmGame(plantFarmCrop(game, index, game.selectedCrop, now), `已在第 ${index + 1} 块地播种${crop.label} · 点击作物浇水可加速`, index);
+      return;
+    }
+    const crop = FARM_CROPS[plot.cropId];
+    if (farmPlotStatus(plot, now) === 'ready') {
+      const beforeLevel = game.level;
+      const next = harvestFarmCrop(game, index, now);
+      const levelText = next.level > beforeLevel ? ` · 升到 Lv.${next.level}，新种子已解锁` : '';
+      commitFarmGame(next, `收获${crop.label} · +${crop.reward} 金币、+${crop.xp} 经验${levelText}`, index);
+      return;
+    }
+    if (!plot.watered) {
+      commitFarmGame(waterFarmCrop(game, index, now), `已给${crop.label}浇水 · 成熟时间提前 ${Math.round(crop.waterBonusMs / 1000)} 秒`, index);
+      return;
+    }
+    casual.announcement = `${crop.label}还需 ${formatFarmDuration(farmRemainingMs(plot, now))} 成熟`;
+    render();focusFarmInteraction(index);queueFarmTick();
+  } catch (error) {
+    casual.announcement = farmActionError(error);
+    render();focusFarmInteraction(index);queueFarmTick();
+  }
+}
+
 function openSlots() {
   stopGameSync();
   stopRoomSync();
@@ -2836,7 +3106,7 @@ function jumpToLobbyTarget(target) {
     globalThis.setTimeout?.(()=>document.querySelector('#room-code')?.focus({preventScroll:true}),reduceMotion?0:420);
     return;
   }
-  const allowed=new Set(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','three','reels']);
+  const allowed=new Set(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels']);
   if(!allowed.has(target))return;
   resetCatalogDiscovery();
   const strip=document.querySelector('[data-world-strip]');
@@ -2880,6 +3150,10 @@ app.addEventListener('click', e => {
   }
   if(el.dataset.memoryCard!==undefined){
     performMemoryFlip(Number(el.dataset.memoryCard));
+    return;
+  }
+  if(el.dataset.farmPlot!==undefined){
+    performFarmPlot(Number(el.dataset.farmPlot));
     return;
   }
   if(el.dataset.sudoku6Cell!==undefined){
@@ -2944,6 +3218,7 @@ app.addEventListener('click', e => {
   if(a==='open-gomoku'){openGomoku();render();globalThis.scrollTo?.(0,0);focusGomokuInteraction();}
   if(a==='open-memory'){openMemoryMatch();render();globalThis.scrollTo?.(0,0);focusMemoryInteraction();}
   if(a==='open-snake'){openSnake();render();globalThis.scrollTo?.(0,0);focusSnakeInteraction();}
+  if(a==='open-farm'){openFarm();render();globalThis.scrollTo?.(0,0);focusFarmInteraction();queueFarmTick();}
   if(a==='open-slots'){openSlots();render();}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
@@ -2958,6 +3233,7 @@ app.addEventListener('click', e => {
       if(state.casual.game.status==='playing')state.casual.game=toggleSnakePause(state.casual.game);
       saveSnakeGame(state.casual.game);
     }
+    if(state.view==='farm'&&state.casual?.game)saveFarmGame(state.casual.game);
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
   }
   if(a==='three-new'){stopCasualTimers();state.casual={kind:'three',round:newThreeCardRound(),revealed:false,thinking:false};render();}
@@ -3156,6 +3432,33 @@ app.addEventListener('click', e => {
     if(!confirmLocalGameReplacement(['playing','paused'].includes(game.status)&&Number(game.ticks)>0,'切换速度会重新开始本轮，确定继续吗？'))return;
     newSnakeSession(difficulty);
     render();focusSnakeInteraction();return;
+  }
+  if(a==='farm-select'&&state.view==='farm'){
+    const cropId=el.dataset.farmCrop;const game=state.casual?.game;
+    if(!game||!Object.hasOwn(FARM_CROPS,cropId))return;
+    if(state.casual.saveConflict){state.casual.announcement='另一标签页已更新农场，请重新打开后继续';render();focusFarmInteraction();return;}
+    try{
+      const next=selectFarmCrop(game,cropId,farmEffectiveNow(game));
+      state.casual.game=next;state.casual.announcement=`已选择${FARM_CROPS[cropId].label}种子 · 点击空地播种`;
+      if(!saveFarmGame(next))state.casual.announcement+=' · 当前选择无法保存';
+    }catch(error){state.casual.announcement=farmActionError(error);}
+    render();document.querySelector(`[data-farm-crop="${cropId}"]`)?.focus({preventScroll:true});queueFarmTick();return;
+  }
+  if(a==='farm-harvest-all'&&state.view==='farm'){
+    const game=state.casual?.game;if(!game)return;
+    if(state.casual.saveConflict){state.casual.announcement='另一标签页已更新农场，请重新打开后继续';render();focusFarmInteraction();return;}
+    const now=farmEffectiveNow(game);
+    const readyCount=game.plots.filter((plot)=>plot.cropId&&farmPlotStatus(plot,now)==='ready').length;
+    if(!readyCount){state.casual.announcement='暂时没有成熟作物';render();focusFarmInteraction();queueFarmTick();return;}
+    const beforeLevel=game.level;
+    const next=harvestReadyFarmCrops(game,now);
+    commitFarmGame(next,`一键收获 ${readyCount} 块作物${next.level>beforeLevel?` · 升到 Lv.${next.level}`:''}`,state.casual.focusedPlot);return;
+  }
+  if(a==='farm-reset'&&state.view==='farm'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(farmHasProgress(game),'重新开垦会清空当前金币、作物和收获记录，确定继续吗？'))return;
+    const next=newFarmGame(farmEffectiveNow(game));
+    startFarmSession(next,'农场已重新开垦 · 先播种一块小麦吧');render();focusFarmInteraction();return;
   }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     const casual=state.casual;
@@ -3384,6 +3687,25 @@ app.addEventListener('keydown', (event) => {
     if(direction){event.preventDefault();performSnakeDirection(direction);return;}
     if(event.key===' '){event.preventDefault();toggleSnakeSession();return;}
   }
+  const farmPlotNode = event.target.closest?.('[data-farm-plot]');
+  if (state.view === 'farm' && farmPlotNode) {
+    const index = Number(farmPlotNode.dataset.farmPlot);
+    state.casual.focusedPlot = index;
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const nextIndex = event.key === 'Home' ? 0 : state.casual.game.plots.length - 1;
+      state.casual.focusedPlot = nextIndex;render();focusFarmInteraction(nextIndex);return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const columns=3;const rows=Math.ceil(state.casual.game.plots.length/columns);
+      const row=Math.floor(index/columns);const column=index%columns;
+      const nextRow=event.key==='ArrowUp'?Math.max(0,row-1):event.key==='ArrowDown'?Math.min(rows-1,row+1):row;
+      const nextColumn=event.key==='ArrowLeft'?Math.max(0,column-1):event.key==='ArrowRight'?Math.min(columns-1,column+1):column;
+      const nextIndex=Math.min(state.casual.game.plots.length-1,nextRow*columns+nextColumn);
+      state.casual.focusedPlot=nextIndex;render();focusFarmInteraction(nextIndex);queueFarmTick();return;
+    }
+  }
   const xiangqiCellNode = event.target.closest?.('[data-xiangqi-cell]');
   if (state.view === 'xiangqi' && xiangqiCellNode) {
     const index = Number(xiangqiCellNode.dataset.xiangqiCell);
@@ -3553,6 +3875,21 @@ document.addEventListener('visibilitychange', () => {
     saveSnakeGame(state.casual.game);
     stopCasualTimers();
   }
+  if (state.view === 'farm') {
+    if (document.visibilityState === 'hidden') {
+      saveFarmGame(state.casual.game);
+      if (farmTimer) clearTimeout(farmTimer);
+      farmTimer = null;
+      return;
+    }
+    const now=farmEffectiveNow(state.casual.game);
+    const signature=farmReadySignature(state.casual.game,now);
+    if(signature!==state.casual.readySignature){
+      const readyCount=state.casual.game.plots.filter((plot)=>plot.cropId&&farmPlotStatus(plot,now)==='ready').length;
+      state.casual.readySignature=signature;state.casual.announcement=readyCount?`${readyCount} 块作物已经成熟，可以收获了`:'农场状态已更新';render();focusFarmInteraction();
+    }
+    queueFarmTick();
+  }
 });
 
 globalThis.addEventListener?.('storage', (event) => {
@@ -3567,4 +3904,18 @@ globalThis.addEventListener?.('storage', (event) => {
   render();
   if (state.casual.confirmAction) focusMinesweeperDialog();
   else focusMinesweeperInteraction();
+});
+
+globalThis.addEventListener?.('storage', (event) => {
+  if ((event.key !== FARM_SAVE_KEY && event.key !== null)
+    || state.view !== 'farm'
+    || state.casual?.kind !== 'farm'
+    || typeof state.casual.farmPersistedSnapshot !== 'string'
+    || event.newValue === state.casual.farmPersistedSnapshot) return;
+  state.casual.saveAvailable = false;
+  state.casual.saveConflict = true;
+  state.casual.announcement = '另一个标签页已更新农场，本页已停止写入';
+  if (farmTimer) clearTimeout(farmTimer);
+  farmTimer = null;
+  render();focusFarmInteraction();
 });

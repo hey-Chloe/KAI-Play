@@ -44,6 +44,7 @@ function renderLobbyWithSaves({
   gomoku = null,
   memory = null,
   snake = null,
+  farm = null,
   last = null,
 }: {
   minesweeper?: Record<string, unknown> | null;
@@ -53,6 +54,7 @@ function renderLobbyWithSaves({
   gomoku?: Record<string, unknown> | null;
   memory?: Record<string, unknown> | null;
   snake?: Record<string, unknown> | null;
+  farm?: Record<string, unknown> | null;
   last?: string | null;
 } = {}) {
   return runInNewContext(`(${lobby})()`, {
@@ -71,6 +73,13 @@ function renderLobbyWithSaves({
       saveAvailable:true,
     },
     loadSavedSnakeGame: () => snake,
+    loadSavedFarmGame: () => farm,
+    farmHasProgress: (game: any) => Boolean(game)
+      && (Number(game?.harvests) > 0
+        || Number(game?.xp) > 0
+        || Number(game?.coins) !== 36
+        || game?.plots?.some((plot: any) => plot?.cropId)),
+    farmPlotStatus: (plot: any, now: number) => now >= Number(plot?.matureAt) ? 'ready' : 'growing',
     isResumableMinesweeperGame: (game: any) => (game?.status === 'playing' && Number(game?.revealedCount) > 0)
       || (game?.status === 'ready' && Number(game?.flagCount) > 0),
     isResumableSudoku6Game: (game: any) => game?.status === 'playing'
@@ -102,6 +111,7 @@ function renderLobbyWithSaves({
     winRatePercent: () => 0,
     tierName: () => '启航段位',
     money: (value: unknown) => String(value ?? 0),
+    Date,
   });
 }
 
@@ -122,7 +132,7 @@ test('game discovery leads while room and record tools remain available later', 
 test('continuation uses real local state and has an honest first-time fallback', () => {
   for (const loader of [
     'loadSavedMinesweeperGame', 'loadSavedSudoku6Game', 'loadSaved1048Game', 'loadSavedXiangqiSession',
-    'loadGomokuGame', 'loadMemoryMatchSession', 'loadSavedSnakeGame',
+    'loadGomokuGame', 'loadMemoryMatchSession', 'loadSavedSnakeGame', 'loadSavedFarmGame',
   ]) assert.match(lobby, new RegExp(loader));
   assert.match(lobby, /revealedCount/);
   assert.match(lobby, /已填 \$\{completed\}\/\$\{blanks\} 格/);
@@ -131,6 +141,8 @@ test('continuation uses real local state and has an honest first-time fallback',
   assert.match(lobby, /已落 \$\{savedGomoku\.moveCount\} 手/);
   assert.match(lobby, /已配对 \$\{savedMemory\.matchedPairs\}\/\$\{savedMemory\.pairCount\}/);
   assert.match(lobby, /得分 \$\{savedSnake\.score\}/);
+  assert.match(lobby, /savedFarm\.plots\.filter/);
+  assert.match(lobby, /块作物已经成熟|块田正在生长/);
   assert.match(lobby, /新手推荐/);
   assert.match(lobby, /首击必安全/);
   assert.match(lobby, /role="progressbar"/);
@@ -149,6 +161,13 @@ test('continuation prefers the most recently opened game but only while it can r
     game:{ status:'playing', difficulty:'easy', moveCount:4, faceUp:[], matchedPairs:2, pairCount:6 },
   };
   const playingSnake = { status:'paused', difficulty:'normal', ticks:24, score:30, snake:[1, 2, 3, 4, 5] };
+  const playingFarm = {
+    coins:32, xp:0, level:1, harvests:0, updatedAt:1,
+    plots:[
+      { cropId:'wheat', plantedAt:0, matureAt:1, watered:false },
+      ...Array.from({ length:5 }, () => ({ cropId:null, plantedAt:null, matureAt:null, watered:false })),
+    ],
+  };
 
   const recentXiangqi = renderLobbyWithSaves({
     minesweeper:playingMinesweeper, sudoku6:playingSudoku, merge1048:playing1048, xiangqi:playingXiangqi, last:'xiangqi',
@@ -169,6 +188,8 @@ test('continuation prefers the most recently opened game but only while it can r
   assert.match(recentMemory, /继续游玩[\s\S]*KAI 记忆翻牌[\s\S]*已配对 2\/6/);
   const recentSnake = renderLobbyWithSaves({ snake:playingSnake, last:'snake' });
   assert.match(recentSnake, /继续游玩[\s\S]*KAI 贪吃蛇[\s\S]*得分 30/);
+  const recentFarm = renderLobbyWithSaves({ farm:playingFarm, last:'farm' });
+  assert.match(recentFarm, /继续经营[\s\S]*KAI 农场[\s\S]*1 块作物已经成熟/);
 
   const flaggedMinesweeper = renderLobbyWithSaves({
     minesweeper:{ ...playingMinesweeper, status:'ready', revealedCount:0, flagCount:1, moveCount:1 },
@@ -261,7 +282,7 @@ test('quick entries complement the featured card tables instead of repeating the
   for (const name of ['1048', '五子棋', '记忆翻牌', '贪吃蛇']) assert.match(quickRail, new RegExp(name));
 });
 
-test('each of the seven persisted local games records itself as the most recently opened candidate', () => {
+test('each of the eight persisted local games records itself as the most recently opened candidate', () => {
   assert.match(appSource, /const LAST_LOCAL_GAME_KEY\s*=\s*'kai\.play\.last-local-game'/);
   assert.match(appSource, /function rememberLastLocalGame\(game\)[\s\S]{0,500}safeStorageSet\(LAST_LOCAL_GAME_KEY,\s*game\)/);
   for (const [start, end, game] of [
@@ -272,15 +293,16 @@ test('each of the seven persisted local games records itself as the most recentl
     ['function openGomoku()', 'function newGomokuSession(', 'gomoku'],
     ['function openMemoryMatch()', 'function newMemorySession(', 'memory'],
     ['function openSnake()', 'function newSnakeSession(', 'snake'],
+    ['function openFarm()', 'function farmActionError(', 'farm'],
   ] as const) {
     assert.match(between(appSource, start, end), new RegExp(`rememberLastLocalGame\\('${game}'\\)`));
   }
 });
 
-test('the global trust row scopes local persistence to the seven games that provide it', () => {
-  assert.match(lobby, /<span>7 款本地自动保存<\/span>/);
+test('the global trust row scopes local persistence to the eight games that provide it', () => {
+  assert.match(lobby, /<span>8 款本地自动保存<\/span>/);
   assert.doesNotMatch(lobby, /<span>本地自动保存<\/span>/);
-  assert.match(productSource, /7 款本地自动保存/);
+  assert.match(productSource, /8 款本地自动保存/);
 });
 
 test('mood shortcuts navigate only to known playable destinations', () => {
@@ -289,15 +311,15 @@ test('mood shortcuts navigate only to known playable destinations', () => {
     assert.match(lobby, new RegExp(`data-world-target="${target}"`));
   }
   const jump = between(appSource, 'function jumpToLobbyTarget(', "app.addEventListener('click'");
-  assert.match(jump, /new Set\(\['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','three','reels'\]\)/);
+  assert.match(jump, /new Set\(\['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels'\]\)/);
   assert.match(jump, /target==='friends'/);
   assert.match(appSource, /if\(a==='jump-world'\)\{jumpToLobbyTarget/);
 });
 
-test('all eleven games use equal poster cards with one horizontal rail', () => {
-  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 11);
-  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 11);
-  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 11);
+test('all twelve games use equal poster cards with one horizontal rail', () => {
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 12);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 12);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 12);
   assert.match(lobby, /data-world-status/);
   assert.match(appSource, /function updateWorldCarouselStatus/);
   assert.match(v10Styles, /\.lobby-game-center \.game-world[\s\S]*flex:\s*0 0 clamp\(236px, 22vw, 274px\)/);

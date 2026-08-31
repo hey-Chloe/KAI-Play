@@ -43,7 +43,7 @@ function sourceBetween(source: string, start: string, end: string) {
 
 test('Minesweeper is part of the browser module graph and every production artifact', () => {
   assert.match(appSource, /from ['"]\.\/minesweeper\.js['"]/);
-  assert.match(indexSource, /十一款即开即玩的牌桌、策略与益智玩法/);
+  assert.match(indexSource, /十二款即开即玩的牌桌、策略、益智与经营玩法/);
   assert.match(indexSource, /扫雷/);
   assert.match(packageSource, /node --check web\/minesweeper\.js/);
   assert.match(dockerSource, /COPY[^\n]*web\/minesweeper\.js[^\n]*\.\//);
@@ -52,17 +52,17 @@ test('Minesweeper is part of the browser module graph and every production artif
   assert.match(preflightSource, /load the standalone Minesweeper engine/);
 });
 
-test('the eleven-card lobby opens Minesweeper in the requested catalog position', () => {
+test('the twelve-card lobby opens Minesweeper in the requested catalog position', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /11 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 10 款免费畅玩/);
-  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 11);
+  assert.match(lobby, /12 款玩法，即刻开局/);
+  assert.match(lobby, /1 款竞技 · 11 款免费畅玩/);
+  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 12);
   assert.match(lobby, /class="game-world world-minesweeper"/);
   assert.match(lobby, /<h3>KAI 扫雷<\/h3>/);
   assert.match(lobby, /data-action="open-minesweeper"/);
   const orderedCards = [
     'world-ddz', 'world-xiangqi', 'world-gomoku', 'world-mahjong', 'world-1048',
-    'world-sudoku6', 'world-minesweeper', 'world-memory', 'world-snake', 'world-three', 'world-reels',
+    'world-sudoku6', 'world-minesweeper', 'world-memory', 'world-snake', 'world-farm', 'world-three', 'world-reels',
   ];
   for (let index = 1; index < orderedCards.length; index += 1) {
     assert.ok(

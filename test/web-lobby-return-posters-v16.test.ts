@@ -24,7 +24,7 @@ test('V16 exposes returning-player priority only for real resumable candidates',
   assert.match(lobby, /hub-discovery\$\{hasResumableGames\?' has-resume':''\}/);
   assert.match(lobby, /hasResumableGames\?`<button[^>]*data-action="show-continuable"/);
   assert.match(lobby, /\$\{resumeCandidates\.length\} 款可继续/);
-  assert.match(lobby, /:'<span class="hub-side-count">11 款可玩<\/span>'/);
+  assert.match(lobby, /:'<span class="hub-side-count">12 款可玩<\/span>'/);
 });
 
 test('view-all continuation reuses the honest catalog filter and existing result navigation', () => {

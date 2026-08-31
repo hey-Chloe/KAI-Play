@@ -45,10 +45,10 @@ test('V15 filters cover all useful intents without pretending to measure popular
 });
 
 test('V15 discovery metadata covers every shipped game and common Chinese or English aliases', () => {
-  for (const id of ['ddz', 'xiangqi', 'gomoku', 'mahjong', '1048', 'sudoku6', 'minesweeper', 'memory', 'snake', 'three', 'reels']) {
+  for (const id of ['ddz', 'xiangqi', 'gomoku', 'mahjong', '1048', 'sudoku6', 'minesweeper', 'memory', 'snake', 'farm', 'three', 'reels']) {
     assert.match(discovery, new RegExp(`(?:^|\\n)\\s*(?:'${id}'|${id}):\\s*\\{`));
   }
-  for (const alias of ['中国象棋', 'xiangqi', 'chinese chess', 'dou dizhu', 'gomoku', 'five in a row', '2048', 'sudoku', 'minesweeper', 'memory match', 'snake', 'three card poker']) {
+  for (const alias of ['中国象棋', 'xiangqi', 'chinese chess', 'dou dizhu', 'gomoku', 'five in a row', '2048', 'sudoku', 'minesweeper', 'memory match', 'snake', 'qq农场', 'farm', '种菜', 'three card poker']) {
     assert.match(discovery.toLowerCase(), new RegExp(alias.toLowerCase()));
   }
   const reelsMetadata = between(discovery, "reels: {", '\n});');

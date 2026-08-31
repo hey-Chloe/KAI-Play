@@ -31,7 +31,7 @@ for (const required of [
   'docs/DEPLOYMENT.md', 'docs/ENGINEERING_QUALITY.md', '.github/workflows/ci.yml',
   'mobile/package-lock.json', 'server/data/.gitignore', 'Dockerfile', 'docker-compose.yml', '.env.example',
   'scripts/benchmark-web.mjs',
-  'web/index.html', 'web/app.js', 'web/sudoku6.js', 'web/xiangqi.js', 'web/minesweeper.js', 'web/gomoku.js', 'web/memory-match.js', 'web/snake.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
+  'web/index.html', 'web/app.js', 'web/sudoku6.js', 'web/xiangqi.js', 'web/minesweeper.js', 'web/gomoku.js', 'web/memory-match.js', 'web/snake.js', 'web/farm.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
 ]) assert.equal((await stat(resolve(root, required))).isFile(), true, `Required artifact missing: ${required}`);
 
 const engine = await read('core/engine.ts');
@@ -62,12 +62,14 @@ assert.match(webDocker, /web\/minesweeper\.js/, 'The Web production image must i
 assert.match(webDocker, /web\/gomoku\.js/, 'The Web production image must include the standalone Gomoku engine');
 assert.match(webDocker, /web\/memory-match\.js/, 'The Web production image must include the standalone Memory Match engine');
 assert.match(webDocker, /web\/snake\.js/, 'The Web production image must include the standalone Snake engine');
+assert.match(webDocker, /web\/farm\.js/, 'The Web production image must include the standalone Farm engine');
 const webApp = await read('web/app.js');
 assert.match(webApp, /from ['"]\.\/xiangqi\.js['"]/, 'The Web application must load the standalone Xiangqi engine');
 assert.match(webApp, /from ['"]\.\/minesweeper\.js['"]/, 'The Web application must load the standalone Minesweeper engine');
 assert.match(webApp, /from ['"]\.\/gomoku\.js['"]/, 'The Web application must load the standalone Gomoku engine');
 assert.match(webApp, /from ['"]\.\/memory-match\.js['"]/, 'The Web application must load the standalone Memory Match engine');
 assert.match(webApp, /from ['"]\.\/snake\.js['"]/, 'The Web application must load the standalone Snake engine');
+assert.match(webApp, /from ['"]\.\/farm\.js['"]/, 'The Web application must load the standalone Farm engine');
 const webServer = await read('web/serve.mjs');
 assert.match(webServer, /\.jpg':'image\/jpeg'/, 'JPEG table materials need the correct MIME type');
 assert.match(webServer, /createBrotliCompress/, 'Text assets must support Brotli transfer compression');
@@ -91,6 +93,7 @@ assert.match(rootPackage.scripts.build ?? '', /node --check web\/minesweeper\.js
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/gomoku\.js/, 'The build must syntax-check the Gomoku engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/memory-match\.js/, 'The build must syntax-check the Memory Match engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/snake\.js/, 'The build must syntax-check the Snake engine');
+assert.match(rootPackage.scripts.build ?? '', /node --check web\/farm\.js/, 'The build must syntax-check the Farm engine');
 assert.match(rootPackage.scripts['test:coverage'] ?? '', /--test-coverage-lines=90/, 'Line coverage must have a release threshold');
 assert.match(rootPackage.scripts['test:coverage'] ?? '', /--test-coverage-branches=80/, 'Branch coverage must have a release threshold');
 assert.match(rootPackage.scripts.verify ?? '', /test:coverage/, 'The complete quality gate must enforce coverage thresholds');
