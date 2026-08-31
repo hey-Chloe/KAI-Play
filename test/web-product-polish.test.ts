@@ -46,7 +46,7 @@ test('the lobby promotes only playable content and makes 1048 discoverable', () 
   assert.match(stylesSource, /\.world-swipe-hint/);
 });
 
-test('the game center puts discovery before room and history utilities', () => {
+test('the game center stays focused while social and record utilities live in Friends', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
   const intro = lobby.indexOf('game-center-intro');
   const discovery = lobby.indexOf('hub-discovery');
@@ -54,10 +54,12 @@ test('the game center puts discovery before room and history utilities', () => {
   const tools = lobby.indexOf('id="lobby-tools"');
   assert.ok(intro >= 0 && intro < discovery);
   assert.ok(discovery < catalog);
-  assert.ok(catalog < tools);
+  assert.equal(tools, -1);
   assert.match(lobby, /现在，想玩点什么？/);
   assert.match(lobby, /按心情选择玩法/);
   assert.match(lobby, /本地自动保存/);
+  assert.match(appSource, /class="friend-history-card"/);
+  assert.match(appSource, /class="friends-portal"/);
 });
 
 test('poster cards keep one real action and a truthful benefit promise', () => {

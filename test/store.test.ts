@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -26,7 +27,7 @@ test('snapshots carry a validated schema version and checksum', async () => {
       schemaVersion: number;
       checksum: { algorithm: string; value: string };
     };
-    assert.equal(snapshot.schemaVersion, 1);
+    assert.equal(snapshot.schemaVersion, 2);
     assert.equal(snapshot.checksum.algorithm, 'sha256');
     assert.match(snapshot.checksum.value, /^[a-f0-9]{64}$/);
 
@@ -35,6 +36,43 @@ test('snapshots carry a validated schema version and checksum', async () => {
     assert.equal(reloaded.user(user.id)?.name, '持久化玩家');
     assert.equal(reloaded.userForToken(token)?.id, user.id);
     assert.equal(reloaded.balance(user.id), 10_000);
+  });
+});
+
+test('schema v1 snapshots migrate to empty friend collections without losing users or sessions', async () => {
+  await withTemporaryDirectory('doujoy-store-v1-migration-', async (directory) => {
+    const path = join(directory, 'state.json');
+    const store = new JsonGameStore(path);
+    await store.load();
+    const { user, token } = store.createUser('旧版玩家');
+    await store.save();
+
+    const legacy = JSON.parse(await readFile(path, 'utf8')) as {
+      schemaVersion: number;
+      checksum: { algorithm: string; value: string };
+      state: Record<string, unknown>;
+    };
+    legacy.schemaVersion = 1;
+    delete legacy.state.friendRequests;
+    delete legacy.state.friendships;
+    legacy.checksum.value = createHash('sha256').update(JSON.stringify(legacy.state)).digest('hex');
+    await writeFile(path, JSON.stringify(legacy), 'utf8');
+
+    const migrated = new JsonGameStore(path);
+    await migrated.load();
+    assert.equal(migrated.user(user.id)?.name, '旧版玩家');
+    assert.equal(migrated.userForToken(token)?.id, user.id);
+    assert.deepEqual(migrated.friendRequestsForUser(user.id), []);
+    assert.deepEqual(migrated.friendshipsForUser(user.id), []);
+
+    await migrated.save();
+    const upgraded = JSON.parse(await readFile(path, 'utf8')) as {
+      schemaVersion: number;
+      state: { friendRequests: object; friendships: object };
+    };
+    assert.equal(upgraded.schemaVersion, 2);
+    assert.deepEqual(upgraded.state.friendRequests, {});
+    assert.deepEqual(upgraded.state.friendships, {});
   });
 });
 

@@ -241,7 +241,7 @@ function rememberLastLocalGame(game) {
   return LOCAL_GAME_IDS.has(game) && safeStorageSet(LAST_LOCAL_GAME_KEY, game);
 }
 const storedHeroGame = safeStorageGet(HERO_GAME_KEY);
-const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, roomCodeDraft: '', history: null, historyStatus: 'idle', historyError: '', selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
+const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, roomCodeDraft: '', history: null, historyStatus: 'idle', historyError: '', friendsData: null, friendsStatus: 'idle', friendSearchQuery: '', friendSearchResults: [], selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
 let merge1048Pointer = null;
 let heroTransitionTimer = null;
@@ -598,11 +598,11 @@ async function bootstrap() {
   render();
 }
 
-function header(mode = 'default') {
+function header(mode = 'default', active = '') {
   const name = state.profile?.name || '正在登录';
   const lobbyMode = mode === 'lobby';
   const brandControl = mode === 'room' ? 'data-action="open-room-exit" aria-label="退出好友房"' : 'data-view="lobby" aria-label="返回 KAI PLAY 大厅"';
-  return `<header class="topbar ${lobbyMode?'topbar-lobby':''}"><button class="brand brand-button brand-wordmark" data-wordmark ${brandControl}><div class="logo"><span></span>K</div><span class="wordmark"><b>KAI</b><em>PLAY</em>${lobbyMode?'':'<small>牌桌游乐场</small>'}</span></button><div class="top-actions">${lobbyMode?'':`<div class="player-chip"><span class="player-avatar">${esc(name.slice(0,1))}</span><span><b>${esc(name)}</b><small>${tierName(state.profile)}</small></span></div>`}<div class="score-pill"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></div></header>`;
+  return `<header class="topbar ${lobbyMode?'topbar-lobby':''} ${active?'has-primary-nav':''}"><button class="brand brand-button brand-wordmark" data-wordmark ${brandControl}><div class="logo"><span></span>K</div><span class="wordmark"><b>KAI</b><em>PLAY</em>${lobbyMode?'':'<small>牌桌游乐场</small>'}</span></button>${active?nav(active):''}<div class="top-actions">${lobbyMode?'':`<div class="player-chip"><span class="player-avatar">${esc(name.slice(0,1))}</span><span><b>${esc(name)}</b><small>${tierName(state.profile)}</small></span></div>`}<div class="score-pill"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></div></header>`;
 }
 
 function competitiveScore(profile) { return Math.max(0, Number(profile?.balance) || 0); }
@@ -802,7 +802,7 @@ function lobby() {
       <button class="mode-entry" data-action="open-snake"><i aria-hidden="true">S</i><b>贪吃蛇</b><small>即时操作</small></button>
     </nav>
   </aside>`;
-  return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
+  return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby','lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
         <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>12 款即开即玩的牌桌、策略、益智与经营游戏，无需下载，点开就能玩。</p></div>
@@ -892,35 +892,102 @@ function lobby() {
         <div class="catalog-empty" data-catalog-empty hidden role="status"><i aria-hidden="true">⌕</i><div><b>没有找到相关玩法</b><span>换个关键词，或者重新查看全部游戏。</span></div><button class="btn" data-action="catalog-reset">显示全部</button></div>
       </section>
 
-      <section class="lobby-tools" id="lobby-tools" aria-labelledby="lobby-tools-title">
-        <div class="section-head compact"><div><span class="section-kicker">一起玩与我的记录</span><h2 id="lobby-tools-title">邀请朋友，或者回顾战绩</h2></div></div>
-        <div class="lobby-shortcuts">
-          <article class="friends-portal"><span class="friends-portal-icon" aria-hidden="true">＋</span><div><span>好友房</span><h2>叫上朋友，同桌斗地主</h2><p>进入独立好友房页面，创建牌桌或使用六位房号加入。</p></div><button class="btn primary" data-action="view-friends">进入好友房 <b aria-hidden="true">→</b></button></article>
-          <article class="history-summary"><div><span>我的记录</span><h2>${tierName(p)}</h2><p>${firstGame?'完成首局，解锁你的胜率与牌局记录':`${Number(p.games) || 0} 局已保存 · 胜率 ${winRatePercent(p)}%`}</p></div><div><strong>${money(competitiveScore(p))}</strong><small>竞技分</small><button class="text-link" data-view="history">查看战绩 →</button></div></article>
-        </div>
-      </section>
-    </main>${nav('lobby')}</div>`;
+    </main></div>`;
 }
 
-function nav(active) { return `<nav class="nav" aria-label="主要页面"><button type="button" class="btn ${active==='lobby'?'active':''}" data-view="lobby" ${active==='lobby'?'aria-current="page"':''}>游戏</button><button type="button" class="btn ${active==='history'?'active':''}" data-view="history" ${active==='history'?'aria-current="page"':''}>战绩</button><button type="button" class="btn ${active==='rules'?'active':''}" data-view="rules" ${active==='rules'?'aria-current="page"':''}>规则</button><button type="button" class="btn ${active==='friends'?'active':''}" data-action="view-friends" ${active==='friends'?'aria-current="page"':''}>好友房</button></nav>`; }
+function nav(active) { return `<nav class="nav" aria-label="主要页面"><button type="button" class="btn ${active==='lobby'?'active':''}" data-view="lobby" ${active==='lobby'?'aria-current="page"':''}>游戏</button><button type="button" class="btn ${active==='history'?'active':''}" data-view="history" ${active==='history'?'aria-current="page"':''}>战绩</button><button type="button" class="btn ${active==='rules'?'active':''}" data-view="rules" ${active==='rules'?'aria-current="page"':''}>规则</button><button type="button" class="btn ${active==='friends'?'active':''}" data-action="view-friends" ${active==='friends'?'aria-current="page"':''}>好友</button></nav>`; }
+
+function friendAvatar(user) {
+  return esc(String(user?.name || '友').trim().slice(0,1) || '友');
+}
+
+function friendCode(user) {
+  return esc(String(user?.friendCode || '--------'));
+}
+
+function friendRequestDate(value) {
+  const date = new Date(value || '');
+  return Number.isNaN(date.getTime()) ? '刚刚' : date.toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'});
+}
+
+function applyFriendsPayload(payload) {
+  const profile = payload?.profile ? {...state.profile,...payload.profile} : state.profile;
+  state.friendsData = {
+    profile,
+    friends: Array.isArray(payload?.friends) ? payload.friends : [],
+    incoming: Array.isArray(payload?.incoming) ? payload.incoming : [],
+    outgoing: Array.isArray(payload?.outgoing) ? payload.outgoing : [],
+  };
+  if (profile) state.profile = profile;
+  state.friendsStatus = 'ready';
+}
+
+async function loadFriendsData() {
+  state.friendsStatus = 'loading';
+  try { applyFriendsPayload(await api('/v1/friends')); }
+  catch (error) { state.friendsStatus = 'error'; throw error; }
+}
+
+async function searchFriendsData(query = state.friendSearchQuery) {
+  const normalized = String(query || '').normalize('NFKC').trim().slice(0,32);
+  if (normalized.length < 2) throw new Error('请输入至少 2 个昵称字符或完整 KAI 号');
+  state.friendSearchQuery = normalized;
+  const result = await api(`/v1/friends/search?q=${encodeURIComponent(normalized)}`);
+  state.friendSearchResults = Array.isArray(result.results) ? result.results : [];
+}
+
+async function updateFriendsFromMutation(path, options) {
+  applyFriendsPayload(await api(path, options));
+  if (state.friendSearchQuery) await searchFriendsData();
+}
+
+function friendSearchAction(result) {
+  const relationship = result?.relationship || 'none';
+  if (relationship === 'self') return '<span class="friend-relation is-self">这是你</span>';
+  if (relationship === 'friend') return '<span class="friend-relation is-friend">已是好友</span>';
+  if (relationship === 'outgoing') return '<span class="friend-relation is-pending">申请已发送</span>';
+  if (relationship === 'incoming') return `<button class="btn" data-action="friend-accept" data-request-id="${esc(result.requestId)}">接受申请</button>`;
+  return `<button class="btn primary" data-action="friend-request" data-friend-id="${esc(result.id)}">加好友</button>`;
+}
+
+function friendUserRow(user, actions = '') {
+  return `<article class="friend-user-row"><span class="friend-user-avatar" aria-hidden="true">${friendAvatar(user)}</span><div><b>${esc(user?.name || '牌友')}</b><small>KAI 号 ${friendCode(user)}</small></div>${actions}</article>`;
+}
 
 function friends() {
-  const playerName = state.profile?.name || '你';
+  const data = state.friendsData || {profile:state.profile,friends:[],incoming:[],outgoing:[]};
+  const profile = data.profile || state.profile || {name:'牌友',friendCode:'--------',games:0};
+  const loadError = state.friendsStatus === 'error' ? `<aside class="friends-load-error" role="alert"><div><b>好友数据暂时没有同步</b><p>${state.friendsData?'当前显示上次成功读取的结果，请重新加载。':'这是连接问题，不代表你的好友和申请为空。'}</p></div><button class="btn" data-action="friend-retry">重新加载</button></aside>` : '';
   const roomCodeDraft = String(state.roomCodeDraft || '').replace(/\D/g,'').slice(0,6);
   const roomCodeStatus = roomCodeDraft.length === 6 ? '房号已完整，按回车或点击加入房间' : roomCodeDraft ? `已输入 ${roomCodeDraft.length}/6 位` : '请输入朋友发来的 6 位数字';
-  return `<div class="shell page-shell friends-page">${header()}<main>
-    <section class="friends-hero" aria-labelledby="friends-title">
-      <div class="friends-hero-copy"><span class="section-kicker">FRIEND TABLE</span><h1 id="friends-title">好友房</h1><p>创建一张只凭房号进入的牌桌，或者输入朋友发来的六位数字，三人同桌完成一局斗地主。</p><div aria-label="好友房特点"><span>6 位房号</span><span>3 个座位</span><span>智能牌友可补位</span></div></div>
-      <div class="friends-hero-table" aria-hidden="true"><span class="friends-table-seat seat-a"><i>A</i><b>好友 A</b></span><span class="friends-table-seat seat-b"><i>B</i><b>好友 B</b></span><span class="friends-table-seat seat-you"><i>${esc(playerName.slice(0,1))}</i><b>${esc(playerName)}</b></span><strong>斗地主<small>好友同桌</small></strong></div>
+  const friendRows = data.friends.length ? data.friends.map((friend)=>friendUserRow(friend,`<div class="friend-user-actions"><button class="btn primary" data-action="friend-invite" data-friend-id="${esc(friend.id)}" data-friend-name="${esc(friend.name)}">开房邀请</button><button class="friend-more" data-action="friend-remove" data-friend-id="${esc(friend.id)}" data-friend-name="${esc(friend.name)}" aria-label="删除好友 ${esc(friend.name)}">移除</button></div>`)).join('') : `<div class="friends-empty"><i aria-hidden="true">＋</i><b>好友列表还是空的</b><p>搜索准确的 KAI 号或昵称，发送第一份好友申请。</p><button class="btn" data-action="friend-section" data-friend-target="new-friends">去添加好友</button></div>`;
+  const incomingRows = data.incoming.length ? data.incoming.map((request)=>friendUserRow(request.user,`<div class="friend-user-actions"><button class="btn primary" data-action="friend-accept" data-request-id="${esc(request.id)}">接受</button><button class="btn" data-action="friend-decline" data-request-id="${esc(request.id)}">忽略</button></div>`)).join('') : '<p class="friends-quiet">暂时没有新的好友申请。</p>';
+  const outgoingRows = data.outgoing.length ? data.outgoing.map((request)=>friendUserRow(request.user,`<span class="friend-relation is-pending">${friendRequestDate(request.createdAt)} 已申请</span>`)).join('') : '';
+  const searchRows = state.friendSearchResults.length ? state.friendSearchResults.map((result)=>friendUserRow(result,friendSearchAction(result))).join('') : state.friendSearchQuery ? '<p class="friends-quiet">没有找到匹配的玩家，请核对 KAI 号或昵称。</p>' : '<p class="friends-quiet">输入完整 KAI 号最准确，也可以输入至少两个昵称字符。</p>';
+  return `<div class="shell page-shell friends-page">${header('default','friends')}<main class="friends-social-main" ${state.friendsStatus==='loading'?'aria-busy="true"':''}>${loadError}
+    <section class="friends-social-hero" aria-labelledby="friends-title">
+      <div class="friends-self"><span class="friends-self-avatar" aria-hidden="true">${friendAvatar(profile)}</span><div><span class="section-kicker">KAI 好友</span><h1 id="friends-title">${esc(profile.name || '牌友')}</h1><p>像通讯录一样管理真实好友，再用六位房号约一局斗地主。</p></div></div>
+      <div class="friends-self-code"><small>我的 KAI 号</small><strong>${friendCode(profile)}</strong><button class="btn" data-action="copy-friend-code" data-friend-code="${friendCode(profile)}">复制</button></div>
+      <dl class="friends-social-stats"><div><dt>好友</dt><dd>${data.friends.length}</dd></div><div><dt>新申请</dt><dd>${data.incoming.length}</dd></div><div><dt>完成牌局</dt><dd>${Number(profile.games)||0}</dd></div></dl>
     </section>
 
-    <section class="friends-entry-grid" aria-label="创建或加入好友房">
-      <article class="friends-entry-card is-create"><span class="friends-entry-icon" aria-hidden="true">＋</span><div><small>我是房主</small><h2>创建新房间</h2><p>系统会生成一个六位房号。把房号发给朋友，等人到齐后由你开始牌局。</p></div><ul><li>创建后自动入座</li><li>人数不足时可让智能牌友补位</li></ul><button class="btn primary" data-action="create-room">创建好友房 <b aria-hidden="true">→</b></button></article>
-      <article class="friends-entry-card is-join"><span class="friends-entry-icon" aria-hidden="true">#</span><div><small>我有房号</small><h2>加入朋友的房间</h2><p>输入朋友分享的六位数字。房间有效且有空座时，你会直接进入牌桌。</p></div><label for="room-code">六位房号</label><div class="friends-room-code"><input class="input" id="room-code" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" aria-describedby="room-code-help" placeholder="例如 123456" value="${esc(roomCodeDraft)}"><button class="btn" data-action="join-room">加入房间</button></div><p class="friends-code-status" id="room-code-help" data-room-code-status aria-live="polite">${roomCodeStatus}</p></article>
-    </section>
+    <div class="friends-social-layout">
+      <aside class="friends-directory" aria-label="好友页面目录">
+        <button data-action="friend-section" data-friend-target="friend-list"><i aria-hidden="true">友</i><span><b>我的好友</b><small>${data.friends.length} 位已添加</small></span><strong>›</strong></button>
+        <button data-action="friend-section" data-friend-target="new-friends"><i aria-hidden="true">＋</i><span><b>新的朋友</b><small>${data.incoming.length ? `${data.incoming.length} 条待处理` : '搜索 KAI 号添加'}</small></span><strong>›</strong></button>
+        <button data-action="friend-section" data-friend-target="friend-rooms"><i aria-hidden="true">#</i><span><b>好友房</b><small>创建或输入房号</small></span><strong>›</strong></button>
+        <article class="friend-history-card"><span>我的记录</span><h2>${tierName(profile)}</h2><p>${Number(profile.games)||0} 局已保存 · 胜率 ${winRatePercent(profile)}%</p><button class="text-link" data-view="history">查看完整战绩 →</button></article>
+      </aside>
 
-    <section class="friends-how" aria-labelledby="friends-how-title"><div class="section-head"><div><span class="section-kicker">好友房说明</span><h2 id="friends-how-title">三步同桌开局</h2></div><p>当前版本仅支持三人斗地主好友房</p></div><ol class="friends-steps"><li><span>01</span><div><b>创建或加入</b><p>房主创建房间，其他玩家凭六位房号加入。</p></div></li><li><span>02</span><div><b>确认座位</b><p>最多三位真人入座；未满三人时，房主可用智能牌友补位。</p></div></li><li><span>03</span><div><b>房主开局</b><p>发牌、回合和结算继续由服务端统一判定，并写入正常战绩。</p></div></li></ol><p class="muted">房间说明：好友房不提供公开房间列表、在线好友或陌生人匹配；请只把房号分享给想邀请的人。</p></section>
-  </main>${nav('friends')}</div>`;
+      <div class="friends-content">
+        <section class="friends-panel" id="friend-list" aria-labelledby="friend-list-title"><div class="friends-panel-head"><div><span>CONTACTS</span><h2 id="friend-list-title">我的好友</h2></div><strong>${data.friends.length}</strong></div><div class="friend-user-list">${friendRows}</div></section>
+
+        <section class="friends-panel" id="new-friends" aria-labelledby="new-friends-title"><div class="friends-panel-head"><div><span>NEW FRIENDS</span><h2 id="new-friends-title">添加好友</h2></div>${data.incoming.length?`<strong aria-label="${data.incoming.length} 条待处理申请">${data.incoming.length}</strong>`:''}</div><div class="friend-search"><i aria-hidden="true">⌕</i><label class="sr-only" for="friend-search-input">搜索 KAI 号或昵称</label><input id="friend-search-input" type="search" maxlength="32" autocomplete="off" placeholder="输入 KAI 号或昵称" value="${esc(state.friendSearchQuery)}"><button class="btn primary" data-action="friend-search">搜索</button></div><div class="friend-search-results" aria-live="polite">${searchRows}</div><div class="friend-request-groups"><section><h3>收到的申请</h3>${incomingRows}</section>${outgoingRows?`<section><h3>我发出的申请</h3>${outgoingRows}</section>`:''}</div></section>
+
+        <section class="friends-panel friends-room-panel" id="friend-rooms" aria-labelledby="friend-rooms-title"><div class="friends-panel-head"><div><span>FRIEND TABLE</span><h2 id="friend-rooms-title">好友房</h2></div><small>当前支持三人斗地主</small></div><article class="friends-portal"><span class="friends-portal-icon" aria-hidden="true">＋</span><div><span>叫上好友</span><h3>创建牌桌，分享六位房号</h3><p>站内暂不发送消息；开房后复制房号，通过你常用的聊天工具发给好友。</p></div><button class="btn primary" data-action="create-room">创建好友房 <b aria-hidden="true">→</b></button></article><div class="friends-room-join"><div><span class="friends-entry-icon" aria-hidden="true">#</span><div><small>已有邀请</small><h3>加入朋友的房间</h3><p>输入朋友分享的六位数字，房间有效且有空座时直接进入牌桌。</p></div></div><label for="room-code">六位房号</label><div class="friends-room-code"><input class="input" id="room-code" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" aria-describedby="room-code-help" placeholder="例如 123456" value="${esc(roomCodeDraft)}"><button class="btn" data-action="join-room">加入房间</button></div><p class="friends-code-status" id="room-code-help" data-room-code-status aria-live="polite">${roomCodeStatus}</p></div><p class="friends-room-truth">好友关系会保存在服务端；在线状态、站内聊天和自动发送邀请暂未开放。</p></section>
+      </div>
+    </div>
+  </main></div>`;
 }
 
 function room() {
@@ -1911,10 +1978,10 @@ function bestWinStreak(matches) {
 
 function history() {
   if (state.historyStatus === 'loading' && !state.history) {
-    return `<div class="shell page-shell season-page">${header()}<section class="history-state-card" aria-live="polite"><i class="history-state-spinner" aria-hidden="true"></i><span>正在整理战绩</span><h1>读取最近牌局…</h1><p>竞技分与已结算记录正在从服务端同步。</p></section>${nav('history')}</div>`;
+    return `<div class="shell page-shell season-page">${header('default','history')}<section class="history-state-card" aria-live="polite"><i class="history-state-spinner" aria-hidden="true"></i><span>正在整理战绩</span><h1>读取最近牌局…</h1><p>竞技分与已结算记录正在从服务端同步。</p></section></div>`;
   }
   if (state.historyStatus === 'error' && !state.history) {
-    return `<div class="shell page-shell season-page">${header()}<section class="history-state-card is-error" role="alert"><span>暂时无法读取</span><h1>战绩没有被清空</h1><p>${esc(state.historyError || '网络连接暂时不可用，请稍后重试。')}</p><button class="btn primary" data-action="retry-history">重新读取</button></section>${nav('history')}</div>`;
+    return `<div class="shell page-shell season-page">${header('default','history')}<section class="history-state-card is-error" role="alert"><span>暂时无法读取</span><h1>战绩没有被清空</h1><p>${esc(state.historyError || '网络连接暂时不可用，请稍后重试。')}</p><button class="btn primary" data-action="retry-history">重新读取</button></section></div>`;
   }
   const matches=Array.isArray(state.history?.games) ? state.history.games : [];
   const profile=state.profile || {};
@@ -1936,15 +2003,14 @@ function history() {
     return `<article class="recent-match"><span class="${won?'positive':'negative'}">${won?'胜':'负'}</span><div><b>斗地主 · ${match.role==='landlord'?'领队':'协作位'}</b><small>${esc(dateLabel)} · ${Number(match.multiplier)||1} 倍结算</small></div><strong class="${delta>=0?'positive':'negative'}">${delta>=0?'+':''}${money(delta)}</strong></article>`;
   }).join('') : `<div class="empty-state"><b>还没有完成的牌局</b><p>你的段位、趋势和最近对局会在首局结算后出现在这里。</p><button class="btn primary" data-action="quick">开始第一局</button></div>`;
   const statusNotice=state.historyStatus==='error' ? `<div class="history-inline-error" role="alert"><span>显示上次成功读取的记录</span><b>${esc(state.historyError || '最新战绩同步失败')}</b><button class="btn" data-action="retry-history">重试</button></div>` : '';
-  return `<div class="shell page-shell season-page">${header()}${statusNotice}
+  return `<div class="shell page-shell season-page">${header('default','history')}${statusNotice}
     <section class="season-hero"><div class="season-rank"><span>我的战绩</span><h1>${tierName(profile)}</h1><p>当前账户 · 全部已保存对局</p></div><div class="score-overview"><small>竞技分</small><strong>${money(competitiveScore(profile))}</strong></div></section>
     <section class="season-metrics" aria-label="战绩摘要"><div><strong>${totalGames}</strong><span>完成对局</span></div><div><strong>${totalGames?winRatePercent(profile):0}%</strong><span>总胜率</span></div><div><strong>${totalWins}</strong><span>累计胜局</span></div><div><strong>${currentWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局当前连胜</span></div><div><strong>${bestWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局最佳连胜</span></div></section>
     <section class="trend-strip"><div class="history-summary"><div><span>近期走势</span><h2>最近 ${trend.length} 局</h2></div><strong class="${recentDelta>=0?'positive':'negative'}">${recentDelta>=0?'+':''}${money(recentDelta)}<small> 分</small></strong></div><div class="trend-bars" aria-label="最近对局竞技分变化">${trendBars}</div></section>
-    <section class="history-list"><div class="section-head"><div><span class="section-kicker">最近牌局</span><h2>${matches.length?'逐局记录':'等待第一场记录'}</h2></div><p>最多展示服务端返回的最近 20 局</p></div>${recentMatches}</section>
-    ${nav('history')}</div>`;
+    <section class="history-list"><div class="section-head"><div><span class="section-kicker">最近牌局</span><h2>${matches.length?'逐局记录':'等待第一场记录'}</h2></div><p>最多展示服务端返回的最近 20 局</p></div>${recentMatches}</section></div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header()}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}${nav('rules')}</div>`; }
+function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
 
 function render() {
   app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
@@ -3443,7 +3509,50 @@ app.addEventListener('click', e => {
   }
   if(el.dataset.bid!==undefined) act(async()=>{const current=state.game;const body={score:Number(el.dataset.bid),expectedSequence:current.sequence};const r=await api(`/v1/games/${current.id}/bid`,{method:'POST',body:JSON.stringify(body),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);});
   const a=el.dataset.action;
-  if(a==='view-friends'){state.view='friends';stopMahjongBotSequence();stopGameSync();stopRoomSync();render();globalThis.scrollTo?.(0,0);return;}
+  if(a==='view-friends'){
+    state.view='friends';stopMahjongBotSequence();stopGameSync();stopRoomSync();render();globalThis.scrollTo?.(0,0);
+    act(loadFriendsData);return;
+  }
+  if(a==='friend-section'){
+    document.getElementById(el.dataset.friendTarget)?.scrollIntoView({block:'start',behavior:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});return;
+  }
+  if(a==='copy-friend-code'){
+    const code=el.dataset.friendCode||state.profile?.friendCode||'';
+    if(navigator.clipboard?.writeText)navigator.clipboard.writeText(code).then(()=>toast('KAI 号已复制')).catch(()=>toast(`KAI 号：${code}`));
+    else toast(`KAI 号：${code}`);
+    return;
+  }
+  if(a==='friend-search'){
+    const query=document.querySelector('#friend-search-input')?.value||'';
+    act(()=>searchFriendsData(query));return;
+  }
+  if(a==='friend-retry'){act(loadFriendsData);return;}
+  if(a==='friend-request'){
+    const friendId=el.dataset.friendId;
+    act(()=>updateFriendsFromMutation('/v1/friends/requests',{method:'POST',body:JSON.stringify({userId:friendId})}));return;
+  }
+  if(a==='friend-accept'){
+    const requestId=el.dataset.requestId;
+    act(()=>updateFriendsFromMutation(`/v1/friends/requests/${encodeURIComponent(requestId)}/accept`,{method:'POST',body:'{}'}));return;
+  }
+  if(a==='friend-decline'){
+    const requestId=el.dataset.requestId;
+    act(()=>updateFriendsFromMutation(`/v1/friends/requests/${encodeURIComponent(requestId)}/decline`,{method:'POST',body:'{}'}));return;
+  }
+  if(a==='friend-remove'){
+    const friendId=el.dataset.friendId;
+    const friendName=el.dataset.friendName||'这位好友';
+    if(!globalThis.confirm?.(`确定从好友列表移除“${friendName}”吗？`))return;
+    act(()=>updateFriendsFromMutation(`/v1/friends/${encodeURIComponent(friendId)}/remove`,{method:'POST',body:'{}'}));return;
+  }
+  if(a==='friend-invite'){
+    const friendName=el.dataset.friendName||'好友';
+    act(async()=>{
+      state.room=(await api('/v1/rooms',{method:'POST',body:'{}'})).room;
+      state.roomCodeDraft='';state.roomExitConfirm=false;state.view='room';startRoomSync();
+      toast(`好友房已创建，请把房号分享给 ${friendName}`);
+    });return;
+  }
   if(a==='hero-select'){switchHero(el.dataset.heroGame,el.dataset.heroGame==='ddz'?'previous':'next');return;}
   if(a==='world-prev'){scrollWorldCarousel(-1);return;}
   if(a==='world-next'){scrollWorldCarousel(1);return;}
@@ -3788,6 +3897,7 @@ app.addEventListener('click', e => {
 
 app.addEventListener('input', (event) => {
   if(event.target?.matches?.('[data-catalog-search]'))applyCatalogDiscovery();
+  if(event.target?.matches?.('#friend-search-input'))state.friendSearchQuery=event.target.value.slice(0,32);
   if(event.target?.matches?.('#room-code')){
     const digits=event.target.value.replace(/\D/g,'').slice(0,6);
     if(event.target.value!==digits)event.target.value=digits;
@@ -3909,6 +4019,11 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', (event) => { finishWorldCarouselPointer(event,{cancelled:true});heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
+  if(state.view==='friends'&&event.target?.matches?.('#friend-search-input')&&event.key==='Enter'){
+    event.preventDefault();
+    document.querySelector('[data-action="friend-search"]')?.click();
+    return;
+  }
   if(state.view==='friends'&&event.target?.matches?.('#room-code')&&event.key==='Enter'){
     event.preventDefault();
     document.querySelector('[data-action="join-room"]')?.click();

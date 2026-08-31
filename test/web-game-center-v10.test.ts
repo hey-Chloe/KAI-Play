@@ -116,17 +116,19 @@ function renderLobbyWithSaves({
   });
 }
 
-test('game discovery leads while room and record tools remain available later', () => {
+test('game discovery stays focused while room and record tools move to Friends', () => {
   const intro = lobby.indexOf('game-center-intro');
   const discovery = lobby.indexOf('hub-discovery');
   const catalog = lobby.indexOf('id="game-selection"');
   const tools = lobby.indexOf('id="lobby-tools"');
   assert.ok(intro >= 0 && intro < discovery);
   assert.ok(discovery < catalog);
-  assert.ok(catalog < tools);
+  assert.equal(tools, -1);
   assert.match(lobby, /现在，想玩点什么？/);
   assert.match(lobby, /data-action="view-friends"/);
   assert.doesNotMatch(lobby, /data-action="create-room"|data-action="join-room"|id="room-code"/);
+  assert.match(appSource, /class="friend-history-card"/);
+  assert.match(appSource, /class="friends-portal"/);
   assert.match(productSource, /Game Center V10 信息架构/);
 });
 
@@ -333,7 +335,6 @@ test('phone discovery is compact, swipeable, and motion-safe', () => {
   assert.match(phone, /\.lobby-game-center \.lobby-game-carousel,[\s\S]*height:\s*245px/);
   assert.match(phone, /width:\s*min\(82vw, 320px\)/);
   assert.match(phone, /grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
-  assert.match(phone, /\.lobby-game-center > \.nav[\s\S]*env\(safe-area-inset-bottom\)/);
   assert.match(v10Styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.lobby-game-center \.game-world/);
 });
 
@@ -346,7 +347,6 @@ test('phone discovery keeps every primary touch target at least 44 CSS pixels', 
     '.resume-card .btn',
     '.lobby-game-center .mode-entry',
     '.lobby-game-center .world-copy .btn',
-    '.lobby-game-center > .nav .btn',
   ]) assertPixelDeclarationAtLeast(phone, selector, 'min-height', 44);
   assertPixelDeclarationAtLeast(phone, '.lobby-game-center .world-carousel-controls button', 'width', 44);
   assertPixelDeclarationAtLeast(phone, '.lobby-game-center .world-carousel-controls button', 'height', 44);

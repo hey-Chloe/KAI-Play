@@ -43,6 +43,7 @@ if (cloudPayMode === 'sandbox') await sandboxBillingStore.load();
 const billing = new CloudPayBillingService(cloudPayMode as CloudPayMode, sandboxBillingStore);
 const requestLimiter = new SlidingWindowLimiter();
 const guestLimiter = new SlidingWindowLimiter();
+const friendSearchLimiter = new SlidingWindowLimiter();
 const pendingWaitsByUser = new Map<string, number>();
 const pendingWaitsByAddress = new Map<string, number>();
 const activeWaitControllers = new Set<AbortController>();
@@ -192,6 +193,32 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/v1/games/quick') return json(response, 201, { ok: true, game: await platform.quickGame(user.id) });
     if (request.method === 'POST' && url.pathname === '/v1/relief') return json(response, 200, { ok: true, ...(await platform.relief(user.id)) });
     if (request.method === 'GET' && url.pathname === '/v1/history') return json(response, 200, { ok: true, ...platform.history(user.id) });
+    if (request.method === 'GET' && url.pathname === '/v1/friends') {
+      return json(response, 200, { ok: true, ...platform.friends(user.id) });
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/friends/search') {
+      const searchRate = friendSearchLimiter.consume(`${requesterAddress}:${user.id}`, 60, 60_000);
+      if (!searchRate.allowed) {
+        throw new PlatformError(429, 'FRIEND_SEARCH_RATE_LIMITED', `搜索好友过于频繁，请在 ${searchRate.retryAfterSeconds} 秒后重试。`);
+      }
+      return json(response, 200, { ok: true, ...platform.searchFriends(user.id, url.searchParams.get('q') ?? '') });
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/friends/requests') {
+      const input = await body(request);
+      const result = await platform.sendFriendRequest(user.id, typeof input.userId === 'string' ? input.userId : '');
+      return json(response, result.created ? 201 : 200, { ok: true, ...result });
+    }
+    const friendRequestMatch = url.pathname.match(/^\/v1\/friends\/requests\/([^/]+)\/(accept|decline)$/);
+    if (friendRequestMatch && request.method === 'POST') {
+      const result = friendRequestMatch[2] === 'accept'
+        ? await platform.acceptFriendRequest(user.id, friendRequestMatch[1]!)
+        : await platform.declineFriendRequest(user.id, friendRequestMatch[1]!);
+      return json(response, 200, { ok: true, ...result });
+    }
+    const friendRemoveMatch = url.pathname.match(/^\/v1\/friends\/([^/]+)\/remove$/);
+    if (friendRemoveMatch && request.method === 'POST') {
+      return json(response, 200, { ok: true, ...(await platform.removeFriend(user.id, friendRemoveMatch[1]!)) });
+    }
     if (request.method === 'POST' && url.pathname === '/v1/reports') {
       const input = await body(request);
       return json(response, 201, { ok: true, report: await platform.report(user.id, {

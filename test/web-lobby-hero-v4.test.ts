@@ -24,7 +24,7 @@ test('the Lobby opens with a compact, local KAI PLAY wordmark and no marketing i
   assert.match(headerSource, /data-wordmark/);
   assert.match(headerSource, /aria-label="返回 KAI PLAY 大厅"/);
   assert.match(headerSource, /<b>KAI<\/b><em>PLAY<\/em>/);
-  assert.match(lobbySource, /header\('lobby'\)/);
+  assert.match(lobbySource, /header\('lobby','lobby'\)/);
   assert.doesNotMatch(lobbySource, /lobby-intro|现在开一局|点击后创建牌局，两位智能牌友/);
   assert.doesNotMatch(stylesSource, /@font-face|@import\s+url|url\(["']?https?:/i);
 });

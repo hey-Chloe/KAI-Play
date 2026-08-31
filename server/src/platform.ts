@@ -1,8 +1,8 @@
 import { advanceBotTurn, advanceTimedOutPlayer, bid, createGame, forfeit, pass, play } from '../../core/engine.ts';
 import { gameView } from '../../core/view.ts';
 import { GameRuleError } from '../../core/types.ts';
-import { JsonGameStore } from './store.ts';
-import type { RoomRecord } from './store.ts';
+import { friendshipId, JsonGameStore } from './store.ts';
+import type { FriendRequestRecord, FriendshipRecord, RoomRecord } from './store.ts';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { ChangeBroker } from './change-broker.ts';
 
@@ -39,6 +39,21 @@ function cachedAction(value: unknown): { requestFingerprint: string; result: unk
     : null;
 }
 
+export type FriendRelationship = 'self' | 'friend' | 'incoming' | 'outgoing' | 'none';
+
+export function friendCodeForUserId(userId: string) {
+  const compact = createHash('sha256').update(`kai-play-friend:${userId}`).digest('hex').slice(0, 16).toUpperCase();
+  return `KAI-${compact.match(/.{1,4}/g)!.join('-')}`;
+}
+
+function normalizedFriendCode(value: string) {
+  return value.normalize('NFKC').toUpperCase().replace(/[\s-]/g, '');
+}
+
+function normalizedUserSearch(value: string) {
+  return value.normalize('NFKC').trim().toLocaleLowerCase('zh-CN');
+}
+
 export class DouJoyPlatform {
   readonly store: JsonGameStore;
   readonly turnTimeoutMs: number;
@@ -47,6 +62,7 @@ export class DouJoyPlatform {
   readonly botThinkMaxMs: number;
   private readonly botTurnSchedules = new Map<string, { sequence: number; durationMs: number; deadlineMs: number }>();
   private actionQueue: Promise<void> = Promise.resolve();
+  private socialQueue: Promise<void> = Promise.resolve();
   private readonly inFlightActions = new Map<string, {
     requestFingerprint: string;
     promise: ReturnType<DouJoyPlatform['performAction']>;
@@ -135,10 +151,148 @@ export class DouJoyPlatform {
       return game.settlement && ((role === 'landlord') === (game.settlement.winner === 'landlord'));
     }).length;
     return {
-      id: user.id, name: user.name, balance: this.store.balance(userId),
+      id: user.id, name: user.name, friendCode: friendCodeForUserId(user.id), balance: this.store.balance(userId),
       games: games.length, wins, winRate: games.length ? Math.round(wins / games.length * 100) : 0,
       tokenPolicy: { purchasable: false, withdrawable: false, transferable: false, redeemable: false },
     };
+  }
+
+  private publicUser(userId: string) {
+    const user = this.store.user(userId);
+    if (!user) throw new PlatformError(404, 'USER_NOT_FOUND', '玩家不存在。');
+    return { id: user.id, name: user.name, friendCode: friendCodeForUserId(user.id) };
+  }
+
+  private relationship(userId: string, otherUserId: string): Readonly<{
+    relationship: FriendRelationship;
+    requestId: string | null;
+  }> {
+    if (userId === otherUserId) return { relationship: 'self', requestId: null };
+    if (this.store.friendship(userId, otherUserId)) return { relationship: 'friend', requestId: null };
+    const request = this.store.friendRequestBetween(userId, otherUserId);
+    if (!request) return { relationship: 'none', requestId: null };
+    return request.fromUserId === userId
+      ? { relationship: 'outgoing', requestId: request.id }
+      : { relationship: 'incoming', requestId: request.id };
+  }
+
+  private friendRequestView(request: FriendRequestRecord, userId: string) {
+    const otherUserId = request.fromUserId === userId ? request.toUserId : request.fromUserId;
+    return { id: request.id, user: this.publicUser(otherUserId), createdAt: request.createdAt };
+  }
+
+  friends(userId: string) {
+    const profile = this.publicUser(userId);
+    const friends = this.store.friendshipsForUser(userId).map((friendship) => {
+      const friendId = friendship.userIds.find((candidate) => candidate !== userId)!;
+      return { ...this.publicUser(friendId), createdAt: friendship.createdAt };
+    }).sort((first, second) => first.name.localeCompare(second.name, 'zh-CN') || first.id.localeCompare(second.id));
+    const requests = this.store.friendRequestsForUser(userId);
+    const incoming = requests.filter((request) => request.toUserId === userId)
+      .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
+      .map((request) => this.friendRequestView(request, userId));
+    const outgoing = requests.filter((request) => request.fromUserId === userId)
+      .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
+      .map((request) => this.friendRequestView(request, userId));
+    return { profile, friends, incoming, outgoing };
+  }
+
+  searchFriends(userId: string, queryInput: string) {
+    this.publicUser(userId);
+    const query = normalizedUserSearch(queryInput);
+    if (!query) throw new PlatformError(400, 'FRIEND_SEARCH_REQUIRED', '请输入 KAI 号或昵称。');
+    if (query.length > 64) throw new PlatformError(400, 'FRIEND_SEARCH_INVALID', '搜索内容过长。');
+    const friendCodeQuery = normalizedFriendCode(queryInput);
+    const codeLike = friendCodeQuery.startsWith('KAI');
+    const results = this.store.users().filter((candidate) => {
+      const candidateCode = normalizedFriendCode(friendCodeForUserId(candidate.id));
+      if (codeLike) return candidateCode === friendCodeQuery;
+      return normalizedUserSearch(candidate.name).includes(query)
+        || candidateCode.slice(3) === friendCodeQuery;
+    }).sort((first, second) => {
+      const firstExact = Number(normalizedUserSearch(first.name) === query);
+      const secondExact = Number(normalizedUserSearch(second.name) === query);
+      return secondExact - firstExact || first.name.localeCompare(second.name, 'zh-CN') || first.id.localeCompare(second.id);
+    }).slice(0, 20).map((candidate) => ({
+      ...this.publicUser(candidate.id),
+      ...this.relationship(userId, candidate.id),
+    }));
+    return { results };
+  }
+
+  private queueSocialMutation<T>(mutation: () => Promise<T>) {
+    const operation = this.socialQueue.catch(() => undefined).then(mutation);
+    this.socialQueue = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  async sendFriendRequest(userId: string, otherUserId: string) {
+    return this.queueSocialMutation(async () => {
+      this.publicUser(userId);
+      if (!otherUserId) throw new PlatformError(400, 'FRIEND_USER_REQUIRED', '请选择要添加的玩家。');
+      this.publicUser(otherUserId);
+      if (userId === otherUserId) throw new PlatformError(409, 'FRIEND_SELF', '不能添加自己为好友。');
+      if (this.store.friendship(userId, otherUserId)) {
+        throw new PlatformError(409, 'FRIEND_ALREADY_EXISTS', '你们已经是好友。');
+      }
+      const existing = this.store.friendRequestBetween(userId, otherUserId);
+      if (existing) {
+        if (existing.fromUserId !== userId) {
+          throw new PlatformError(409, 'FRIEND_REQUEST_INCOMING', '对方已经向你发送好友申请，请先处理这条申请。');
+        }
+        return { created: false, ...this.friends(userId) };
+      }
+      const request: FriendRequestRecord = {
+        id: randomUUID(), fromUserId: userId, toUserId: otherUserId, createdAt: new Date().toISOString(),
+      };
+      this.store.putFriendRequest(request);
+      await this.store.save();
+      return { created: true, ...this.friends(userId) };
+    });
+  }
+
+  async acceptFriendRequest(userId: string, requestId: string) {
+    return this.queueSocialMutation(async () => {
+      const request = this.store.friendRequest(requestId);
+      if (!request) throw new PlatformError(404, 'FRIEND_REQUEST_NOT_FOUND', '好友申请不存在或已经处理。');
+      if (request.toUserId !== userId) throw new PlatformError(403, 'FRIEND_REQUEST_FORBIDDEN', '你不能处理这条好友申请。');
+      if (!this.store.friendship(request.fromUserId, request.toUserId)) {
+        const friendship: FriendshipRecord = {
+          id: friendshipId(request.fromUserId, request.toUserId),
+          userIds: [request.fromUserId, request.toUserId].sort() as [string, string],
+          createdAt: new Date().toISOString(),
+        };
+        this.store.putFriendship(friendship);
+      }
+      this.store.deleteFriendRequestsBetween(request.fromUserId, request.toUserId);
+      await this.store.save();
+      return this.friends(userId);
+    });
+  }
+
+  async declineFriendRequest(userId: string, requestId: string) {
+    return this.queueSocialMutation(async () => {
+      const request = this.store.friendRequest(requestId);
+      if (!request) throw new PlatformError(404, 'FRIEND_REQUEST_NOT_FOUND', '好友申请不存在或已经处理。');
+      if (request.toUserId !== userId) throw new PlatformError(403, 'FRIEND_REQUEST_FORBIDDEN', '你不能处理这条好友申请。');
+      this.store.deleteFriendRequest(request.id);
+      await this.store.save();
+      return this.friends(userId);
+    });
+  }
+
+  async removeFriend(userId: string, friendId: string) {
+    return this.queueSocialMutation(async () => {
+      this.publicUser(userId);
+      this.publicUser(friendId);
+      if (userId === friendId) throw new PlatformError(409, 'FRIEND_SELF', '不能删除自己。');
+      const removed = Boolean(this.store.friendship(userId, friendId));
+      if (removed) {
+        this.store.deleteFriendship(userId, friendId);
+        await this.store.save();
+      }
+      return { removed, ...this.friends(userId) };
+    });
   }
 
   async quickGame(userId: string) {

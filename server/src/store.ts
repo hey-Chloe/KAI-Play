@@ -31,6 +31,19 @@ export type RoomRecord = {
   updatedAt: string;
 };
 
+export type FriendRequestRecord = {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  createdAt: string;
+};
+
+export type FriendshipRecord = {
+  id: string;
+  userIds: [string, string];
+  createdAt: string;
+};
+
 export type ReportRecord = {
   id: string;
   reporterId: string;
@@ -55,6 +68,8 @@ type PersistedState = {
   balances: Record<string, number>;
   games: Record<string, GameState>;
   rooms: Record<string, RoomRecord>;
+  friendRequests: Record<string, FriendRequestRecord>;
+  friendships: Record<string, FriendshipRecord>;
   reports: ReportRecord[];
   ledgerTransactions: LedgerTransaction[];
   ledgerEntries: LedgerEntry[];
@@ -70,15 +85,21 @@ type PersistedEnvelope = {
 
 export type JsonGameStoreOptions = Readonly<{ backupCount?: number }>;
 
-const CURRENT_SCHEMA_VERSION = 1 as const;
+const CURRENT_SCHEMA_VERSION = 2 as const;
+const LEGACY_SCHEMA_VERSION = 1 as const;
 const DEFAULT_BACKUP_COUNT = 3;
 const MAX_BACKUP_COUNT = 10;
 export const MAX_ACTION_RESULT_ENTRIES = 512;
 
 const initialState = (): PersistedState => ({
   users: {}, sessions: {}, balances: { treasury: 0 }, games: {}, rooms: {}, reports: [],
+  friendRequests: {}, friendships: {},
   ledgerTransactions: [], ledgerEntries: [], actionResults: {},
 });
+
+export const friendshipId = (firstUserId: string, secondUserId: string) => (
+  [firstUserId, secondUserId].sort().join(':')
+);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -166,6 +187,39 @@ const validateState = (value: unknown): asserts value is PersistedState => {
     requireString(room.updatedAt, `${field}.updatedAt`);
   });
 
+  const pendingPairs = new Set<string>();
+  validateRecordValues(state.friendRequests, 'state.friendRequests', (entry, field, id) => {
+    const request = requireRecord(entry, field);
+    if (requireString(request.id, `${field}.id`) !== id) throw new Error(`${field}.id must match its key`);
+    const fromUserId = requireString(request.fromUserId, `${field}.fromUserId`);
+    const toUserId = requireString(request.toUserId, `${field}.toUserId`);
+    if (fromUserId === toUserId) throw new Error(`${field} cannot target the same user`);
+    if (!isRecord(state.users) || !(fromUserId in state.users) || !(toUserId in state.users)) {
+      throw new Error(`${field} references an unknown user`);
+    }
+    const pairId = friendshipId(fromUserId, toUserId);
+    if (pendingPairs.has(pairId)) throw new Error(`${field} duplicates a pending request for the same users`);
+    pendingPairs.add(pairId);
+    requireString(request.createdAt, `${field}.createdAt`);
+  });
+
+  validateRecordValues(state.friendships, 'state.friendships', (entry, field, id) => {
+    const friendship = requireRecord(entry, field);
+    if (requireString(friendship.id, `${field}.id`) !== id) throw new Error(`${field}.id must match its key`);
+    if (!Array.isArray(friendship.userIds) || friendship.userIds.length !== 2
+      || friendship.userIds.some((userId) => typeof userId !== 'string')) {
+      throw new Error(`${field}.userIds must contain exactly two user ids`);
+    }
+    const [firstUserId, secondUserId] = friendship.userIds as [string, string];
+    if (firstUserId === secondUserId) throw new Error(`${field} cannot relate the same user`);
+    if (friendshipId(firstUserId, secondUserId) !== id) throw new Error(`${field}.id must be the canonical user pair`);
+    if (pendingPairs.has(id)) throw new Error(`${field} cannot coexist with a pending request for the same users`);
+    if (!isRecord(state.users) || !(firstUserId in state.users) || !(secondUserId in state.users)) {
+      throw new Error(`${field} references an unknown user`);
+    }
+    requireString(friendship.createdAt, `${field}.createdAt`);
+  });
+
   if (!Array.isArray(state.reports)) throw new Error('state.reports must be an array');
   for (const [index, entry] of state.reports.entries()) {
     const field = `state.reports.${index}`;
@@ -240,17 +294,20 @@ const decodeSnapshot = (contents: string, snapshotPath: string): PersistedState 
   try {
     const parsed = JSON.parse(contents) as unknown;
     const envelope = requireRecord(parsed, 'snapshot');
-    if (envelope.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    if (envelope.schemaVersion !== LEGACY_SCHEMA_VERSION && envelope.schemaVersion !== CURRENT_SCHEMA_VERSION) {
       throw new Error(`unsupported schemaVersion ${String(envelope.schemaVersion)}`);
     }
     requireString(envelope.savedAt, 'snapshot.savedAt');
     const checksum = requireRecord(envelope.checksum, 'snapshot.checksum');
     if (checksum.algorithm !== 'sha256') throw new Error('snapshot.checksum.algorithm must be sha256');
     const expectedChecksum = requireString(checksum.value, 'snapshot.checksum.value');
-    validateState(envelope.state);
     const actualChecksum = checksumFor(JSON.stringify(envelope.state));
     if (actualChecksum !== expectedChecksum) throw new Error('snapshot checksum mismatch');
-    return envelope.state;
+    const state = envelope.schemaVersion === LEGACY_SCHEMA_VERSION
+      ? { ...requireRecord(envelope.state, 'snapshot.state'), friendRequests: {}, friendships: {} }
+      : envelope.state;
+    validateState(state);
+    return state;
   } catch (error) {
     if (error instanceof StoreSnapshotError) throw error;
     const reason = error instanceof Error ? error.message : String(error);
@@ -419,6 +476,7 @@ export class JsonGameStore {
   }
 
   user(id: string) { return this.state.users[id] ?? null; }
+  users() { return Object.values(this.state.users); }
   balance(id: string) { return this.state.balances[id] ?? 0; }
   game(id: string) { return this.state.games[id] ?? null; }
   putGame(game: GameState) { this.state.games[game.id] = game; }
@@ -433,6 +491,43 @@ export class JsonGameStore {
   roomByCode(code: string) { return Object.values(this.state.rooms).find((room) => room.code === code && room.status === 'waiting') ?? null; }
   putRoom(room: RoomRecord) { this.state.rooms[room.id] = room; }
   roomsForUser(userId: string) { return Object.values(this.state.rooms).filter((room) => room.memberIds.includes(userId)); }
+
+  friendRequest(id: string) { return this.state.friendRequests[id] ?? null; }
+  friendRequestBetween(firstUserId: string, secondUserId: string) {
+    return Object.values(this.state.friendRequests).find((request) => (
+      request.fromUserId === firstUserId && request.toUserId === secondUserId
+      || request.fromUserId === secondUserId && request.toUserId === firstUserId
+    )) ?? null;
+  }
+  friendRequestsForUser(userId: string) {
+    return Object.values(this.state.friendRequests).filter((request) => (
+      request.fromUserId === userId || request.toUserId === userId
+    ));
+  }
+  putFriendRequest(request: FriendRequestRecord) { this.state.friendRequests[request.id] = request; }
+  deleteFriendRequest(id: string) { return delete this.state.friendRequests[id]; }
+  deleteFriendRequestsBetween(firstUserId: string, secondUserId: string) {
+    let deleted = 0;
+    for (const request of Object.values(this.state.friendRequests)) {
+      if ((request.fromUserId === firstUserId && request.toUserId === secondUserId)
+        || (request.fromUserId === secondUserId && request.toUserId === firstUserId)) {
+        delete this.state.friendRequests[request.id];
+        deleted += 1;
+      }
+    }
+    return deleted;
+  }
+
+  friendship(firstUserId: string, secondUserId: string) {
+    return this.state.friendships[friendshipId(firstUserId, secondUserId)] ?? null;
+  }
+  friendshipsForUser(userId: string) {
+    return Object.values(this.state.friendships).filter((friendship) => friendship.userIds.includes(userId));
+  }
+  putFriendship(friendship: FriendshipRecord) { this.state.friendships[friendship.id] = friendship; }
+  deleteFriendship(firstUserId: string, secondUserId: string) {
+    return delete this.state.friendships[friendshipId(firstUserId, secondUserId)];
+  }
 
   createReport(input: Omit<ReportRecord, 'id' | 'status' | 'createdAt'>) {
     const existing = this.state.reports.find((report) => report.reporterId === input.reporterId && report.gameId === input.gameId && report.reason === input.reason);
