@@ -29,28 +29,32 @@ function sourceBetween(source: string, start: string, end: string) {
   return source.slice(startIndex, endIndex);
 }
 
-test('the catalog publishes exactly twelve games in the reviewed order', () => {
+test('the catalog publishes exactly fifteen games in the reviewed order', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
   const ids = [...lobby.matchAll(/data-world-card data-world-id="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(ids, [
-    'ddz', 'xiangqi', 'gomoku', 'mahjong', '1048', 'sudoku6',
-    'minesweeper', 'memory', 'snake', 'farm', 'three', 'reels',
+    'ddz', 'xiangqi', 'gomoku', 'reversi', 'mahjong', '1048', 'sudoku6',
+    'minesweeper', 'sokoban', 'sliding', 'memory', 'snake', 'farm', 'three', 'reels',
   ]);
-  assert.match(lobby, /12 款即开即玩的牌桌、策略、益智与经营游戏/);
-  assert.match(lobby, /12 款玩法，即刻开局/);
-  assert.match(lobby, /1 款竞技 · 11 款免费畅玩/);
-  assert.match(lobby, /data-world-status[^>]*aria-live="polite">1 \/ 12/);
-  assert.match(indexSource, /十二款即开即玩的牌桌、策略、益智与经营玩法/);
+  assert.match(lobby, /15 款即开即玩的牌桌、策略、益智与经营游戏/);
+  assert.match(lobby, /15 款玩法，即刻开局/);
+  assert.match(lobby, /1 款竞技 · 14 款免费畅玩/);
+  assert.match(lobby, /data-world-status[^>]*aria-live="polite">1 \/ 15/);
+  assert.match(indexSource, /十五款即开即玩的牌桌、策略、益智与经营玩法/);
 });
 
-test('the local-save promise is limited to its exact eight game ids', () => {
+test('the local-save promise is limited to its exact eleven game ids', () => {
   const declaration = appSource.match(/const LOCAL_GAME_IDS = new Set\(\[([^\]]+)\]\)/);
   assert.ok(declaration);
   const ids = [...declaration[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
-  assert.deepEqual(ids, ['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake', 'farm']);
+  assert.equal(ids.length, 11);
+  assert.deepEqual(new Set(ids), new Set([
+    'xiangqi', 'gomoku', 'reversi', '1048', 'sudoku6', 'minesweeper',
+    'sokoban', 'sliding', 'memory', 'snake', 'farm',
+  ]));
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /8 款本地自动保存/);
-  assert.doesNotMatch(lobby, /12 款本地自动保存/);
+  assert.match(lobby, /11 款本地自动保存/);
+  assert.doesNotMatch(lobby, /15 款本地自动保存/);
 });
 
 test('Gomoku, Memory Match, and Snake are wired as playable local routes', () => {
@@ -75,6 +79,18 @@ test('all three V14 engines ship in syntax checks, the Web image, preflight, and
     assert.match(proxyTestSource, new RegExp("['\"]\\/" + escapedModule + "['\"]"));
     const engine = await read('web/' + module);
     assert.match(engine, /\bexport\s+(?:const|function|class)\b/);
+  }
+});
+
+test('Reversi, Sokoban, and Sliding Puzzle are assembled into every production surface', async () => {
+  for (const module of ['reversi.js', 'sokoban.js', 'sliding-puzzle.js']) {
+    const escapedModule = module.replace('.', '\\.');
+    assert.match(appSource, new RegExp("from ['\"]\\.\\/" + escapedModule + "['\"]"));
+    assert.match(packageSource, new RegExp('node --check web\\/' + escapedModule));
+    assert.match(dockerSource, new RegExp('COPY[^\\n]*web\\/' + escapedModule + '[^\\n]*\\.\\/'));
+    assert.match(preflightSource, new RegExp("['\"]web\\/" + escapedModule + "['\"]"));
+    assert.match(proxyTestSource, new RegExp("['\"]\\/" + escapedModule + "['\"]"));
+    assert.match(await read('web/' + module), /\bexport\s+(?:const|function|class)\b/);
   }
 });
 

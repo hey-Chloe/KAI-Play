@@ -13,15 +13,15 @@ function sourceBetween(start: string, end: string) {
   return appSource.slice(from, to);
 }
 
-test('all twelve games publish one honest gameplay content contract', () => {
+test('all fifteen games publish one honest gameplay content contract', () => {
   const content = sourceBetween('const GAME_CONTENT', 'const TURN_TIMEOUT_MS');
   const ids = [...content.matchAll(/^  (?:'([^']+)'|([a-z0-9]+)): \{/gm)].map((match) => match[1] || match[2]);
   assert.deepEqual(ids, [
-    'ddz', 'xiangqi', 'gomoku', 'mahjong', '1048', 'sudoku6',
-    'minesweeper', 'memory', 'snake', 'farm', 'three', 'reels',
+    'ddz', 'xiangqi', 'gomoku', 'reversi', 'mahjong', '1048', 'sudoku6',
+    'minesweeper', 'sokoban', 'sliding', 'memory', 'snake', 'farm', 'three', 'reels',
   ]);
   for (const field of ['name', 'duration', 'mode', 'persistence', 'goal', 'loop', 'finish', 'limits', 'action', 'actionLabel']) {
-    assert.equal([...content.matchAll(new RegExp(`\\b${field}:`, 'g'))].length, 12, `${field} must describe every game`);
+    assert.equal([...content.matchAll(new RegExp(`\\b${field}:`, 'g'))].length, 15, `${field} must describe every game`);
   }
   assert.match(content, /mahjong:[\s\S]*?单局不保存[\s\S]*?暂不含吃碰杠与完整番型计分/);
   assert.match(content, /farm:[\s\S]*?无好友偷菜、跨设备同步或现金兑换/);
@@ -36,7 +36,7 @@ test('the current-card playbook and full rules index reuse the gameplay content 
   assert.match(playbook, /catalog-playbook-meta/);
   const guide = sourceBetween('function rulesGameGuide', 'function lobby');
   assert.match(guide, /CATALOG_GAME_IDS\.map/);
-  assert.match(guide, /12 款玩法，一次看懂/);
+  assert.match(guide, /15 款玩法，一次看懂/);
   assert.match(sourceBetween('function rules()', 'function render()'), /rulesGameGuide\(\)/);
   assert.match(styles, /\.catalog-playbook\s*\{/);
   assert.match(styles, /\.rules-game-index\s*\{/);

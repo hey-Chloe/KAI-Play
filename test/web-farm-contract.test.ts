@@ -51,7 +51,7 @@ test('KAI Farm ships as a standalone browser module through every production pat
   assert.match(await read('web/farm.js'), /export const FARM_CROPS/);
 });
 
-test('the twelve-card catalog makes the farm searchable, filterable, and playable in place', () => {
+test('the fifteen-card catalog makes the farm searchable, filterable, and playable in place', () => {
   assert.match(lobby, /class="game-world world-farm"[^>]*data-world-card[^>]*data-world-id="farm"/);
   assert.match(lobby, /<h3>KAI 农场<\/h3>/);
   assert.match(lobby, /经典农场经营 · 20 秒首获/);

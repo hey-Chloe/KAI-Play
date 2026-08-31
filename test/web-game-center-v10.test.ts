@@ -42,6 +42,9 @@ function renderLobbyWithSaves({
   merge1048 = null,
   xiangqi = null,
   gomoku = null,
+  reversi = null,
+  sokoban = null,
+  sliding = null,
   memory = null,
   snake = null,
   farm = null,
@@ -52,6 +55,9 @@ function renderLobbyWithSaves({
   merge1048?: Record<string, unknown> | null;
   xiangqi?: Record<string, unknown> | null;
   gomoku?: Record<string, unknown> | null;
+  reversi?: Record<string, unknown> | null;
+  sokoban?: Record<string, unknown> | null;
+  sliding?: Record<string, unknown> | null;
   memory?: Record<string, unknown> | null;
   snake?: Record<string, unknown> | null;
   farm?: Record<string, unknown> | null;
@@ -66,6 +72,9 @@ function renderLobbyWithSaves({
     loadSaved1048Game: () => merge1048,
     loadSavedXiangqiSession: () => xiangqi,
     loadGomokuGame: () => gomoku,
+    loadSavedReversiGame: () => reversi,
+    loadSavedSokobanGame: () => sokoban,
+    loadSavedSlidingPuzzleGame: () => sliding,
     loadMemoryMatchSession: () => memory || {
       restored:false,
       game:null,
@@ -85,9 +94,16 @@ function renderLobbyWithSaves({
     isResumableSudoku6Game: (game: any) => game?.status === 'playing'
       && (game.values?.some((value: number, index: number) => game.puzzle?.[index] === 0 && value !== 0)
         || game.notes?.some((mask: number) => mask !== 0)),
+    isResumableReversiGame: (game: any) => game?.status === 'playing' && Number(game?.moveCount) > 0,
+    isResumableSokobanGame: (game: any) => game?.status === 'playing' && Number(game?.steps) > 0,
+    isResumableSlidingPuzzleGame: (game: any) => game?.status === 'playing' && Number(game?.moveCount) > 0,
     MINESWEEPER_DIFFICULTIES: { beginner:{ label:'入门' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
     SUDOKU6_DIFFICULTIES: { easy:{ label:'入门' }, medium:{ label:'标准' }, hard:{ label:'挑战' } },
     XIANGQI_DIFFICULTIES: { beginner:{ label:'初学' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
+    REVERSI_CELL_COUNT: 64,
+    REVERSI_DIFFICULTIES: { beginner:{ label:'入门' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
+    SOKOBAN_LEVELS: [{ name:'初次推动' }],
+    SLIDING_PUZZLE_DIFFICULTIES: { easy:{ label:'入门' }, standard:{ label:'标准' }, challenge:{ label:'挑战' } },
     MEMORY_MATCH_DIFFICULTIES: {
       easy:{ label:'轻松', rows:3, columns:4 },
       medium:{ label:'标准', rows:4, columns:4 },
@@ -112,6 +128,7 @@ function renderLobbyWithSaves({
     winRatePercent: () => 0,
     tierName: () => '启航段位',
     money: (value: unknown) => String(value ?? 0),
+    formatSudoku6Time: (seconds: unknown) => `${Number(seconds) || 0}s`,
     Date,
   });
 }
@@ -135,7 +152,8 @@ test('game discovery stays focused while room and record tools move to Friends',
 test('continuation uses real local state and has an honest first-time fallback', () => {
   for (const loader of [
     'loadSavedMinesweeperGame', 'loadSavedSudoku6Game', 'loadSaved1048Game', 'loadSavedXiangqiSession',
-    'loadGomokuGame', 'loadMemoryMatchSession', 'loadSavedSnakeGame', 'loadSavedFarmGame',
+    'loadGomokuGame', 'loadSavedReversiGame', 'loadSavedSokobanGame', 'loadSavedSlidingPuzzleGame',
+    'loadMemoryMatchSession', 'loadSavedSnakeGame', 'loadSavedFarmGame',
   ]) assert.match(lobby, new RegExp(loader));
   assert.match(lobby, /revealedCount/);
   assert.match(lobby, /已填 \$\{completed\}\/\$\{blanks\} 格/);
@@ -159,6 +177,9 @@ test('continuation prefers the most recently opened game but only while it can r
   const playing1048 = { status:'playing', bestTile:64, moves:18 };
   const playingXiangqi = { game:{ status:'playing', difficulty:'standard', moveCount:9 } };
   const playingGomoku = { status:'playing', moveCount:7 };
+  const playingReversi = { status:'playing', difficulty:'standard', moveCount:8, score:{ black:7, white:5, empty:52 } };
+  const playingSokoban = { status:'playing', levelIndex:0, steps:3, boxes:[8], targets:[9] };
+  const playingSliding = { status:'playing', difficulty:'easy', size:3, moveCount:5, elapsedSeconds:12 };
   const playingMemory = {
     restored:true,
     game:{ status:'playing', difficulty:'easy', moveCount:4, faceUp:[], matchedPairs:2, pairCount:6 },
@@ -187,6 +208,12 @@ test('continuation prefers the most recently opened game but only while it can r
 
   const recentGomoku = renderLobbyWithSaves({ gomoku:playingGomoku, last:'gomoku' });
   assert.match(recentGomoku, /继续游玩[\s\S]*KAI 五子棋[\s\S]*已落 7 手/);
+  const recentReversi = renderLobbyWithSaves({ reversi:playingReversi, last:'reversi' });
+  assert.match(recentReversi, /继续对弈[\s\S]*KAI 黑白棋[\s\S]*黑 7 : 5 白/);
+  const recentSokoban = renderLobbyWithSaves({ sokoban:playingSokoban, last:'sokoban' });
+  assert.match(recentSokoban, /继续闯关[\s\S]*KAI 推箱子[\s\S]*已归位 0\/1/);
+  const recentSliding = renderLobbyWithSaves({ sliding:playingSliding, last:'sliding' });
+  assert.match(recentSliding, /继续拼图[\s\S]*KAI 数字华容道[\s\S]*已移动 5 步/);
   const recentMemory = renderLobbyWithSaves({ memory:playingMemory, last:'memory' });
   assert.match(recentMemory, /继续游玩[\s\S]*KAI 记忆翻牌[\s\S]*已配对 2\/6/);
   const recentSnake = renderLobbyWithSaves({ snake:playingSnake, last:'snake' });
@@ -285,7 +312,7 @@ test('quick entries complement the featured card tables instead of repeating the
   for (const name of ['1048', '五子棋', '记忆翻牌', '贪吃蛇']) assert.match(quickRail, new RegExp(name));
 });
 
-test('each of the eight persisted local games records itself as the most recently opened candidate', () => {
+test('each of the eleven persisted local games records itself as the most recently opened candidate', () => {
   assert.match(appSource, /const LAST_LOCAL_GAME_KEY\s*=\s*'kai\.play\.last-local-game'/);
   assert.match(appSource, /function rememberLastLocalGame\(game\)[\s\S]{0,500}safeStorageSet\(LAST_LOCAL_GAME_KEY,\s*game\)/);
   for (const [start, end, game] of [
@@ -300,12 +327,40 @@ test('each of the eight persisted local games records itself as the most recentl
   ] as const) {
     assert.match(between(appSource, start, end), new RegExp(`rememberLastLocalGame\\('${game}'\\)`));
   }
+  for (const [opener, game] of [
+    ['openReversi', 'reversi'],
+    ['openSokoban', 'sokoban'],
+    ['openSlidingPuzzle', 'sliding'],
+  ] as const) {
+    assert.match(appSource, new RegExp(`function ${opener}\\([^)]*\\)[\\s\\S]{0,2400}rememberLastLocalGame\\('${game}'\\)`));
+  }
 });
 
-test('the global trust row scopes local persistence to the eight games that provide it', () => {
-  assert.match(lobby, /<span>8 款本地自动保存<\/span>/);
+test('the global trust row scopes local persistence to the eleven games that provide it', () => {
+  assert.match(lobby, /<span>11 款本地自动保存<\/span>/);
   assert.doesNotMatch(lobby, /<span>本地自动保存<\/span>/);
-  assert.match(productSource, /8 款本地自动保存/);
+  assert.match(productSource, /11 款本地自动保存/);
+});
+
+test('the three new local routes recover safely and keep one accessible interaction surface', () => {
+  const reversiOpen = between(appSource, 'function openReversi()', 'function newReversiSession(');
+  assert.match(reversiOpen, /game\.turn === 'white'/);
+  assert.match(reversiOpen, /chooseReversiMove\(game\)/);
+  assert.match(reversiOpen, /playReversiMove\(game, aiMove\.index\)/);
+
+  const sokoban = between(appSource, 'function sokobanCell(', 'function slidingPuzzleGame(');
+  assert.match(sokoban, /class="sokoban-row" role="row"/);
+  assert.match(sokoban, /data-sokoban-board role="grid"/);
+  assert.match(sokoban, /aria-rowindex=/);
+  assert.match(sokoban, /aria-colindex=/);
+  assert.match(sokoban, /aria-describedby="sokoban-position-summary"/);
+  assert.doesNotMatch(sokoban, /role="application"/);
+
+  const sliding = between(appSource, 'function slidingPuzzleGame()', 'function historyMatchWon(');
+  assert.match(sliding, /data-sliding-tile="\$\{index\}"[^>]*tabindex="-1"/);
+  assert.doesNotMatch(sliding, /<h1>/);
+  assert.match(stylesSource, /\.sokoban-row\s*\{\s*display:contents/);
+  assert.match(stylesSource, /\.reversi-route \.table-exit[^\{]*\{\s*min-height:44px/);
 });
 
 test('mood shortcuts navigate only to known playable destinations', () => {
@@ -315,15 +370,15 @@ test('mood shortcuts navigate only to known playable destinations', () => {
   }
   assert.match(lobby, /data-action="view-friends"[^>]*>[\s\S]*?和朋友玩/);
   const jump = between(appSource, 'function jumpToLobbyTarget(', "app.addEventListener('click'");
-  assert.match(jump, /new Set\(\['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels'\]\)/);
+  assert.match(jump, /new Set\(\['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','snake','farm','three','reels'\]\)/);
   assert.match(jump, /target==='friends'/);
   assert.match(appSource, /if\(a==='jump-world'\)\{jumpToLobbyTarget/);
 });
 
-test('all twelve games use equal poster cards with one horizontal rail', () => {
-  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 12);
-  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 12);
-  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 12);
+test('all fifteen games use equal poster cards with one horizontal rail', () => {
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 15);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 15);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 15);
   assert.match(lobby, /data-world-status/);
   assert.match(appSource, /function updateWorldCarouselStatus/);
   assert.match(v10Styles, /\.lobby-game-center \.game-world[\s\S]*flex:\s*0 0 clamp\(236px, 22vw, 274px\)/);

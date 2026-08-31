@@ -101,7 +101,8 @@ test('web preview serves cache-aware local assets and proxies a complete authent
 
     for (const path of [
       '/styles.css', '/app.js', '/catalog-carousel.js', '/sudoku6.js',
-      '/gomoku.js', '/memory-match.js', '/snake.js', '/farm.js',
+      '/gomoku.js', '/reversi.js', '/sokoban.js', '/sliding-puzzle.js',
+      '/memory-match.js', '/snake.js', '/farm.js',
     ]) {
       const compressed = await fetch(`${webOrigin}${path}`, { headers: { 'accept-encoding': 'br' } });
       assert.equal(compressed.status, 200);

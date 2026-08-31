@@ -31,7 +31,7 @@ for (const required of [
   'docs/DEPLOYMENT.md', 'docs/ENGINEERING_QUALITY.md', '.github/workflows/ci.yml',
   'mobile/package-lock.json', 'server/data/.gitignore', 'Dockerfile', 'docker-compose.yml', '.env.example',
   'scripts/benchmark-web.mjs',
-  'web/index.html', 'web/app.js', 'web/catalog-carousel.js', 'web/sudoku6.js', 'web/xiangqi.js', 'web/minesweeper.js', 'web/gomoku.js', 'web/memory-match.js', 'web/snake.js', 'web/farm.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
+  'web/index.html', 'web/app.js', 'web/catalog-carousel.js', 'web/sudoku6.js', 'web/xiangqi.js', 'web/minesweeper.js', 'web/gomoku.js', 'web/reversi.js', 'web/sokoban.js', 'web/sliding-puzzle.js', 'web/memory-match.js', 'web/snake.js', 'web/farm.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
 ]) assert.equal((await stat(resolve(root, required))).isFile(), true, `Required artifact missing: ${required}`);
 
 const engine = await read('core/engine.ts');
@@ -61,6 +61,9 @@ assert.match(webDocker, /web\/sudoku6\.js/, 'The Web production image must inclu
 assert.match(webDocker, /web\/xiangqi\.js/, 'The Web production image must include the standalone Xiangqi engine');
 assert.match(webDocker, /web\/minesweeper\.js/, 'The Web production image must include the standalone Minesweeper engine');
 assert.match(webDocker, /web\/gomoku\.js/, 'The Web production image must include the standalone Gomoku engine');
+assert.match(webDocker, /web\/reversi\.js/, 'The Web production image must include the standalone Reversi engine');
+assert.match(webDocker, /web\/sokoban\.js/, 'The Web production image must include the standalone Sokoban engine');
+assert.match(webDocker, /web\/sliding-puzzle\.js/, 'The Web production image must include the standalone Sliding Puzzle engine');
 assert.match(webDocker, /web\/memory-match\.js/, 'The Web production image must include the standalone Memory Match engine');
 assert.match(webDocker, /web\/snake\.js/, 'The Web production image must include the standalone Snake engine');
 assert.match(webDocker, /web\/farm\.js/, 'The Web production image must include the standalone Farm engine');
@@ -69,6 +72,9 @@ assert.match(webApp, /from ['"]\.\/catalog-carousel\.js['"]/, 'The Web applicati
 assert.match(webApp, /from ['"]\.\/xiangqi\.js['"]/, 'The Web application must load the standalone Xiangqi engine');
 assert.match(webApp, /from ['"]\.\/minesweeper\.js['"]/, 'The Web application must load the standalone Minesweeper engine');
 assert.match(webApp, /from ['"]\.\/gomoku\.js['"]/, 'The Web application must load the standalone Gomoku engine');
+assert.match(webApp, /from ['"]\.\/reversi\.js['"]/, 'The Web application must load the standalone Reversi engine');
+assert.match(webApp, /from ['"]\.\/sokoban\.js['"]/, 'The Web application must load the standalone Sokoban engine');
+assert.match(webApp, /from ['"]\.\/sliding-puzzle\.js['"]/, 'The Web application must load the standalone Sliding Puzzle engine');
 assert.match(webApp, /from ['"]\.\/memory-match\.js['"]/, 'The Web application must load the standalone Memory Match engine');
 assert.match(webApp, /from ['"]\.\/snake\.js['"]/, 'The Web application must load the standalone Snake engine');
 assert.match(webApp, /from ['"]\.\/farm\.js['"]/, 'The Web application must load the standalone Farm engine');
@@ -94,6 +100,9 @@ assert.match(rootPackage.scripts.build ?? '', /node --check web\/catalog-carouse
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/xiangqi\.js/, 'The build must syntax-check the Xiangqi engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/minesweeper\.js/, 'The build must syntax-check the Minesweeper engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/gomoku\.js/, 'The build must syntax-check the Gomoku engine');
+assert.match(rootPackage.scripts.build ?? '', /node --check web\/reversi\.js/, 'The build must syntax-check the Reversi engine');
+assert.match(rootPackage.scripts.build ?? '', /node --check web\/sokoban\.js/, 'The build must syntax-check the Sokoban engine');
+assert.match(rootPackage.scripts.build ?? '', /node --check web\/sliding-puzzle\.js/, 'The build must syntax-check the Sliding Puzzle engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/memory-match\.js/, 'The build must syntax-check the Memory Match engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/snake\.js/, 'The build must syntax-check the Snake engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/farm\.js/, 'The build must syntax-check the Farm engine');

@@ -78,6 +78,40 @@ import {
   saveGomokuGame,
 } from './gomoku.js';
 import {
+  REVERSI_CELL_COUNT,
+  REVERSI_DIFFICULTIES,
+  REVERSI_SIZE,
+  REVERSI_STORAGE_KEY,
+  chooseReversiMove,
+  getReversiLegalMoves,
+  newReversiGame,
+  playReversiHumanMove,
+  playReversiMove,
+  restoreReversiGame,
+} from './reversi.js';
+import {
+  SOKOBAN_LEVELS,
+  hasNextSokobanLevel,
+  moveSokoban,
+  newSokobanGame,
+  nextSokobanLevel,
+  restoreSokobanGame,
+  selectSokobanLevel,
+  sokobanCoordinates,
+  sokobanDirectionFromKey,
+  undoSokoban,
+} from './sokoban.js';
+import {
+  SLIDING_PUZZLE_DIFFICULTIES,
+  advanceSlidingPuzzleTime,
+  getSlidingPuzzleMovableIndexes,
+  moveSlidingPuzzleDirection,
+  moveSlidingPuzzleTile,
+  newSlidingPuzzleGame,
+  reshuffleSlidingPuzzleGame,
+  restoreSlidingPuzzleGame,
+} from './sliding-puzzle.js';
+import {
   MEMORY_MATCH_DIFFICULTIES,
   advanceMemoryMatchTime,
   flipMemoryMatchCard,
@@ -117,23 +151,28 @@ const SNAKE_SAVE_KEY = 'kai.play.snake.game.v1';
 const SNAKE_DIFFICULTY_KEY = 'kai.play.snake.difficulty.v1';
 const SNAKE_BEST_KEY = 'kai.play.snake.best.v1';
 const FARM_SAVE_KEY = 'kai.play.farm.game.v1';
+const SOKOBAN_SAVE_KEY = 'kai.play.sokoban.game.v1';
+const SLIDING_PUZZLE_SAVE_KEY = 'kai.play.sliding-puzzle.game.v1';
 const LAST_LOCAL_GAME_KEY = 'kai.play.last-local-game';
-const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'memory', 'snake', 'farm']);
+const LOCAL_GAME_IDS = new Set(['xiangqi', '1048', 'sudoku6', 'minesweeper', 'gomoku', 'reversi', 'sokoban', 'sliding', 'memory', 'snake', 'farm']);
 const CATALOG_DISCOVERY = Object.freeze({
   ddz: { categories:['card','competitive'], search:'斗地主 ddz dou dizhu fighting the landlord 扑克 牌桌 三人 竞技 快速人机' },
   xiangqi: { categories:['board','save'], search:'KAI 象棋 中国象棋 xiangqi chinese chess 棋类 策略 人机 自动保存' },
   gomoku: { categories:['board','save'], search:'KAI 五子棋 gomoku five in a row 连五 棋类 策略 人机 自动保存' },
+  reversi: { categories:['board','quick','save'], search:'KAI 黑白棋 reversi othello 翻转棋 棋类 策略 人机 短局 自动保存' },
   mahjong: { categories:['card'], search:'KAI 麻将 麻雀 mahjong 牌桌 四人 人机' },
   '1048': { categories:['puzzle','quick','save'], search:'1048 2048 数字 合并 益智 短局 自动保存' },
   sudoku6: { categories:['puzzle','quick','save'], search:'KAI 数独 sudoku 逻辑 填数 益智 短局 自动保存' },
   minesweeper: { categories:['puzzle','quick','save'], search:'KAI 扫雷 minesweeper 雷区 推理 益智 短局 自动保存' },
+  sokoban: { categories:['puzzle','quick','save'], search:'KAI 推箱子 sokoban 仓库 箱子 关卡 空间 益智 短局 自动保存' },
+  sliding: { categories:['puzzle','quick','save'], search:'KAI 数字华容道 sliding puzzle 华容道 数字 拼图 益智 短局 自动保存' },
   memory: { categories:['puzzle','quick','save'], search:'KAI 记忆翻牌 memory match 配对 记忆 益智 短局 自动保存' },
   snake: { categories:['arcade','quick','save'], search:'KAI 贪吃蛇 snake 反应 街机 即时 短局 自动保存' },
   farm: { categories:['quick','save'], search:'KAI 农场 QQ农场 qq farm farming 种菜 收菜 种植 经营 养成 休闲 自动保存 离线成长' },
   three: { categories:['card','quick'], search:'炸金花 zha jin hua three card poker 三张牌 扑克 牌桌 比牌 短局' },
   reels: { categories:['arcade','quick'], search:'算力转轮 转轮 reels slots spin 轻娱乐 街机 短局' },
 });
-const CATALOG_GAME_IDS = Object.freeze(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels']);
+const CATALOG_GAME_IDS = Object.freeze(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','snake','farm','three','reels']);
 const GAME_CONTENT = Object.freeze({
   ddz: {
     name:'斗地主', eyebrow:'竞技牌桌', duration:'约 5–10 分钟', mode:'3 人 · 两位智能牌友', persistence:'服务端战绩与断线恢复',
@@ -155,6 +194,13 @@ const GAME_CONTENT = Object.freeze({
     loop:'选择空位落黑子 → KAI 落白子 → 兼顾进攻与封堵',
     finish:'任一方连成五子立即结束；棋盘落满且无人连五则和棋。',
     limits:'当前为固定强度的人机对手，不宣称在线匹配或多档难度。', action:'open-gomoku', actionLabel:'进入五子棋',
+  },
+  reversi: {
+    name:'KAI 黑白棋', eyebrow:'翻转攻防', duration:'约 3–10 分钟', mode:'单人 · 三档 KAI 对手', persistence:'本地自动保存',
+    goal:'你执黑先行，夹住并翻转白子，在终局让自己的棋子数量更多。',
+    loop:'选择合法落点 → 翻转夹住的棋子 → KAI 回应 → 调整边角控制',
+    finish:'棋盘填满或双方都无合法落点时结束，棋子更多的一方获胜。',
+    limits:'支持自动跳过无棋可下的一方；当前为本地人机局，不含在线匹配。', action:'open-reversi', actionLabel:'开始黑白棋',
   },
   mahjong: {
     name:'KAI 麻将', eyebrow:'四人牌桌', duration:'约 6–12 分钟', mode:'1 人 + 3 位智能牌友', persistence:'单局不保存',
@@ -183,6 +229,20 @@ const GAME_CONTENT = Object.freeze({
     loop:'安全揭格 → 读取邻雷数字 → 插旗标记 → 和弦展开',
     finish:'揭开全部安全格获胜；点中地雷则本局结束。',
     limits:'首击必安全；触屏可切换揭开/插旗，长按格子也可插旗。', action:'open-minesweeper', actionLabel:'开始排雷',
+  },
+  sokoban: {
+    name:'KAI 推箱子', eyebrow:'空间解谜', duration:'约 2–8 分钟', mode:'单人 · 6 个原创关卡', persistence:'本地自动保存',
+    goal:'规划行走路线，把关卡里的每只箱子都推到发光目标点。',
+    loop:'观察墙体与目标 → 绕到箱子后方 → 单步推动 → 必要时撤销',
+    finish:'所有箱子同时位于目标点即通关，可直接进入下一关。',
+    limits:'箱子只能推不能拉；靠墙死角需要提前规避，支持逐步撤销。', action:'open-sokoban', actionLabel:'开始推箱子',
+  },
+  sliding: {
+    name:'KAI 数字华容道', eyebrow:'顺序拼图', duration:'约 1–8 分钟', mode:'单人 · 3×3 / 4×4 / 5×5', persistence:'本地自动保存',
+    goal:'利用唯一空位移动相邻数字，让所有数字从左到右、从上到下归位。',
+    loop:'寻找空位 → 移动相邻数字 → 建立连续顺序 → 收拢最后一行',
+    finish:'数字全部按升序排列且空位回到右下角即完成。',
+    limits:'每次洗牌都保证可解且不会直接完成；盘面越大，规划步数越多。', action:'open-sliding', actionLabel:'开始华容道',
   },
   memory: {
     name:'KAI 记忆翻牌', eyebrow:'图案配对', duration:'约 2–6 分钟', mode:'单人 · 三档牌阵', persistence:'本地自动保存',
@@ -436,6 +496,56 @@ function saveFarmGame(game, casual = state.casual, { force = false } = {}) {
   return saved;
 }
 
+function loadSavedReversiGame() {
+  const raw = safeStorageGet(REVERSI_STORAGE_KEY);
+  if (!raw) return null;
+  const game = restoreReversiGame(raw);
+  if (!game) safeStorageRemove(REVERSI_STORAGE_KEY);
+  return game;
+}
+
+function saveCurrentReversiGame(game, casual = state.casual) {
+  if (!game || casual?.kind !== 'reversi') return false;
+  const saved = safeStorageSet(REVERSI_STORAGE_KEY, JSON.stringify(game));
+  casual.saveAvailable = saved;
+  return saved;
+}
+
+function loadSavedSokobanGame() {
+  try {
+    const raw = safeStorageGet(SOKOBAN_SAVE_KEY);
+    if (!raw) return null;
+    const game = restoreSokobanGame(JSON.parse(raw));
+    if (!game) safeStorageRemove(SOKOBAN_SAVE_KEY);
+    return game;
+  } catch {
+    safeStorageRemove(SOKOBAN_SAVE_KEY);
+    return null;
+  }
+}
+
+function saveSokobanGame(game, casual = state.casual) {
+  if (!game || casual?.kind !== 'sokoban') return false;
+  const saved = safeStorageSet(SOKOBAN_SAVE_KEY, JSON.stringify(game));
+  casual.saveAvailable = saved;
+  return saved;
+}
+
+function loadSavedSlidingPuzzleGame() {
+  const raw = safeStorageGet(SLIDING_PUZZLE_SAVE_KEY);
+  if (!raw) return null;
+  const game = restoreSlidingPuzzleGame(raw);
+  if (!game) safeStorageRemove(SLIDING_PUZZLE_SAVE_KEY);
+  return game;
+}
+
+function saveSlidingPuzzleGame(game, casual = state.casual) {
+  if (!game || casual?.kind !== 'sliding') return false;
+  const saved = safeStorageSet(SLIDING_PUZZLE_SAVE_KEY, JSON.stringify(game));
+  casual.saveAvailable = saved;
+  return saved;
+}
+
 function localDateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -455,6 +565,18 @@ function isResumableSudoku6Game(game) {
 function isResumableMinesweeperGame(game) {
   if (game?.status === 'playing') return safeLocalCounter(game.revealedCount) > 0;
   return game?.status === 'ready' && safeLocalCounter(game.flagCount) > 0;
+}
+
+function isResumableReversiGame(game) {
+  return game?.status === 'playing' && safeLocalCounter(game.moveCount) > 0;
+}
+
+function isResumableSokobanGame(game) {
+  return game?.status === 'playing' && safeLocalCounter(game.steps) > 0;
+}
+
+function isResumableSlidingPuzzleGame(game) {
+  return game?.status === 'playing' && safeLocalCounter(game.moveCount) > 0;
 }
 
 function loadSavedSudoku6Game(mode = null) {
@@ -649,7 +771,7 @@ function rulesGameGuide() {
     <button class="btn" data-action="${esc(content.action)}">${esc(content.actionLabel)} <b aria-hidden="true">→</b></button>
   </article>`;
   }).join('');
-  return `<section class="rules-game-guide" aria-labelledby="rules-game-guide-title"><div class="section-head"><div><span class="section-kicker">GAME PLAYBOOK</span><h2 id="rules-game-guide-title">12 款玩法，一次看懂</h2></div><p>目标、循环、终局与保存范围均以当前版本为准</p></div><div class="rules-game-index">${cards}</div></section>`;
+  return `<section class="rules-game-guide" aria-labelledby="rules-game-guide-title"><div class="section-head"><div><span class="section-kicker">GAME PLAYBOOK</span><h2 id="rules-game-guide-title">15 款玩法，一次看懂</h2></div><p>目标、循环、终局与保存范围均以当前版本为准</p></div><div class="rules-game-index">${cards}</div></section>`;
 }
 
 function lobby() {
@@ -660,6 +782,9 @@ function lobby() {
   const savedSudoku6 = loadSavedSudoku6Game();
   const savedMinesweeper = loadSavedMinesweeperGame();
   const savedGomoku = loadGomokuGame();
+  const savedReversi = loadSavedReversiGame();
+  const savedSokoban = loadSavedSokobanGame();
+  const savedSliding = loadSavedSlidingPuzzleGame();
   const memorySession = loadMemoryMatchSession() || { restored:false, game:null };
   const savedMemory = memorySession.restored ? memorySession.game : null;
   const savedSnake = loadSavedSnakeGame();
@@ -670,6 +795,9 @@ function lobby() {
   const canContinueXiangqi = savedXiangqi?.game?.status === 'playing'
     && (Number(savedXiangqi.game.moveCount) > 0 || savedXiangqi.game.history?.length > 0);
   const canContinueGomoku = savedGomoku?.status === 'playing' && Number(savedGomoku.moveCount) > 0;
+  const canContinueReversi = isResumableReversiGame(savedReversi);
+  const canContinueSokoban = isResumableSokobanGame(savedSokoban);
+  const canContinueSliding = isResumableSlidingPuzzleGame(savedSliding);
   const canContinueMemory = savedMemory?.status === 'playing'
     && (Number(savedMemory.moveCount) > 0 || savedMemory.faceUp?.length > 0 || Number(savedMemory.matchedPairs) > 0);
   const canContinueSnake = ['playing','paused'].includes(savedSnake?.status) && Number(savedSnake.ticks) > 0;
@@ -679,6 +807,9 @@ function lobby() {
   const sudoku6Action = !savedSudoku6 || (savedSudoku6.status === 'playing' && !canContinueSudoku6) ? '开始数独' : canContinueSudoku6 ? '继续上局' : '查看成绩';
   const minesweeperAction = !savedMinesweeper || !canContinueMinesweeper && ['ready','playing'].includes(savedMinesweeper.status) ? '开始排雷' : canContinueMinesweeper ? '继续排雷' : '查看上局';
   const gomokuAction = !savedGomoku || (savedGomoku.status === 'playing' && !canContinueGomoku) ? '执黑开局' : canContinueGomoku ? '继续对局' : '查看战果';
+  const reversiAction = !savedReversi || (savedReversi.status === 'playing' && !canContinueReversi) ? '执黑开局' : canContinueReversi ? '继续对局' : '查看战果';
+  const sokobanAction = !savedSokoban || (savedSokoban.status === 'playing' && !canContinueSokoban) ? '开始闯关' : canContinueSokoban ? '继续本关' : '查看通关';
+  const slidingAction = !savedSliding || (savedSliding.status === 'ready' && !canContinueSliding) ? '开始拼图' : canContinueSliding ? '继续拼图' : '查看成绩';
   const memoryAction = !savedMemory || (savedMemory.status === 'ready' && !canContinueMemory) ? '开始配对' : canContinueMemory ? '继续配对' : '查看成绩';
   const snakeAction = !savedSnake || !canContinueSnake && ['ready','playing','paused'].includes(savedSnake.status) ? '开始穿行' : canContinueSnake ? '继续穿行' : '查看上轮';
   const farmAction = canContinueFarm ? '继续经营' : '开始种植';
@@ -735,6 +866,32 @@ function lobby() {
       action:'open-gomoku', label:gomokuAction, glyph:'五',
     });
   }
+  if (canContinueReversi) {
+    resumeCandidates.push({
+      id:'reversi', accent:'reversi', eyebrow:'继续对弈', title:'KAI 黑白棋',
+      meta:`${REVERSI_DIFFICULTIES[savedReversi.difficulty].label} KAI · 黑 ${savedReversi.score.black} : ${savedReversi.score.white} 白`,
+      progress:Math.round((REVERSI_CELL_COUNT - savedReversi.score.empty) / REVERSI_CELL_COUNT * 100),
+      action:'open-reversi', label:reversiAction, glyph:'●',
+    });
+  }
+  if (canContinueSokoban) {
+    const level = SOKOBAN_LEVELS[savedSokoban.levelIndex];
+    const placed = savedSokoban.boxes.filter((box) => savedSokoban.targets.includes(box)).length;
+    resumeCandidates.push({
+      id:'sokoban', accent:'sokoban', eyebrow:'继续闯关', title:'KAI 推箱子',
+      meta:`第 ${savedSokoban.levelIndex + 1} 关 · ${level.name} · 已归位 ${placed}/${savedSokoban.boxes.length}`,
+      progress:savedSokoban.boxes.length ? Math.round(placed / savedSokoban.boxes.length * 100) : 0,
+      action:'open-sokoban', label:sokobanAction, glyph:'箱',
+    });
+  }
+  if (canContinueSliding) {
+    resumeCandidates.push({
+      id:'sliding', accent:'sliding', eyebrow:'继续拼图', title:'KAI 数字华容道',
+      meta:`${savedSliding.size}×${savedSliding.size} ${SLIDING_PUZZLE_DIFFICULTIES[savedSliding.difficulty].label}盘 · 已移动 ${savedSliding.moveCount} 步`,
+      progress:null, note:`用时 ${formatSudoku6Time(savedSliding.elapsedSeconds)} · 局面已保存`,
+      action:'open-sliding', label:slidingAction, glyph:'15',
+    });
+  }
   if (canContinueMemory) {
     resumeCandidates.push({
       id:'memory', accent:'memory', eyebrow:'继续游玩', title:'KAI 记忆翻牌',
@@ -788,7 +945,7 @@ function lobby() {
   ];
   const previewRivers = ['north','east','south','west'].map((position,index)=>`<div class="preview-river preview-river--${position}">${previewRiverData[index].map((tile)=>mahjongFace(tile,'preview-river-tile')).join('')}</div>`).join('');
   const hubSide = `<aside class="hub-side">
-    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">12 款可玩</span>'}</div>
+    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">15 款可玩</span>'}</div>
     <article class="resume-card resume-${resumeGame.accent}">
       <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
       <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
@@ -805,7 +962,7 @@ function lobby() {
   return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby','lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
-        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>12 款即开即玩的牌桌、策略、益智与经营游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>15 款即开即玩的牌桌、策略、益智与经营游戏，无需下载，点开就能玩。</p></div>
         <div class="catalog-search-wrap">
           <label class="catalog-search" for="catalog-search-input">
             <i aria-hidden="true">⌕</i>
@@ -815,13 +972,13 @@ function lobby() {
           </label>
           <button class="catalog-search-jump" type="button" data-action="catalog-show-results" hidden><span data-catalog-search-feedback aria-live="polite">查看搜索结果</span><b aria-hidden="true">↓</b></button>
         </div>
-        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>8 款本地自动保存</span></div>
+        <div class="game-center-trust" aria-label="游玩保障"><span>免注册试玩</span><span>无广告</span><span>11 款本地自动保存</span></div>
         <nav class="mood-rail" aria-label="按心情选择玩法">
-          <button data-action="jump-world" data-world-target="minesweeper"><i>⚑</i>短局放松</button>
-          <button data-action="jump-world" data-world-target="sudoku6"><i>6</i>动脑解谜</button>
-          <button data-action="jump-world" data-world-target="xiangqi"><i>帅</i>棋桌对战</button>
-          <button data-action="jump-world" data-world-target="ddz"><i>♠</i>牌桌对战</button>
-          <button data-action="view-friends"><i>＋</i>和朋友玩</button>
+          <button data-action="jump-world" data-world-target="minesweeper"><i aria-hidden="true">⚑</i>短局放松</button>
+          <button data-action="jump-world" data-world-target="sudoku6"><i aria-hidden="true">6</i>动脑解谜</button>
+          <button data-action="jump-world" data-world-target="xiangqi"><i aria-hidden="true">帅</i>棋桌对战</button>
+          <button data-action="jump-world" data-world-target="ddz"><i aria-hidden="true">♠</i>牌桌对战</button>
+          <button data-action="view-friends"><i aria-hidden="true">＋</i>和朋友玩</button>
         </nav>
       </section>
 
@@ -859,7 +1016,7 @@ function lobby() {
       </section>
 
       <section class="section-block game-catalog" id="game-selection">
-        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>12 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 11 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 12</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>15 款玩法，即刻开局</h2></div><div class="world-carousel-meta"><span class="catalog-summary">1 款竞技 · 14 款免费畅玩</span><span class="world-position" data-world-status aria-live="polite">1 / 15</span><div class="world-carousel-controls" aria-label="切换全部玩法"><button type="button" data-action="world-prev" aria-label="上一张玩法卡片">←</button><button type="button" data-action="world-next" aria-label="下一张玩法卡片">→</button></div></div></div>
         <div class="catalog-command" aria-label="筛选全部玩法">
           <div class="catalog-filters" role="group" aria-label="按玩法类型筛选">
             <button class="is-active" data-action="catalog-filter" data-catalog-filter="all" aria-pressed="true">全部</button>
@@ -871,17 +1028,20 @@ function lobby() {
             <button data-action="catalog-filter" data-catalog-filter="arcade" aria-pressed="false">街机</button>
             <button data-action="catalog-filter" data-catalog-filter="save" aria-pressed="false">自动保存</button>
           </div>
-          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 12 款</span>
+          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 15 款</span>
         </div>
         <p class="world-swipe-hint" id="world-carousel-hint">左右滑动或使用箭头，下一款游戏已经露出来了</p>
         <div class="world-strip" data-world-strip tabindex="0" role="region" aria-label="全部玩法卡片轮播" aria-describedby="world-carousel-hint">
           <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
           <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"${canContinueXiangqi?' data-world-resumable="true"':''}><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
           <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"${canContinueGomoku?' data-world-resumable="true"':''}><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>
+          <article class="game-world world-reversi" data-world-card data-world-id="reversi"${canContinueReversi?' data-world-resumable="true"':''}><span class="world-badge">${canContinueReversi?'可继续':savedReversi?.status==='finished'?'战果已保存':'策略新作'}</span><div class="world-cover"><div class="world-reversi-board" aria-hidden="true">${Array.from({length:36},(_,index)=>`<i class="${[8,15,22].includes(index)?'black':[14,21,27].includes(index)?'white':index===16?'hint':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">翻</i></div><div class="world-copy"><span>8×8 翻转棋 · 三档 KAI</span><h3>KAI 黑白棋</h3><p>你执黑先行，抢占边角，夹住白子，把局势一面面翻过来。</p><button class="btn" data-action="open-reversi">${reversiAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-mahjong" data-world-card data-world-id="mahjong"><span class="world-badge">牌桌经典</span><div class="world-cover"><div class="world-mahjong-tiles" aria-hidden="true"><i>一<small>万</small></i><i>三<small>条</small></i><i>●<small>筒</small></i><i>發</i></div><i class="world-cover-mark" aria-hidden="true">東</i></div><div class="world-copy"><span>四人东一局 · 人机速战</span><h3>KAI 麻将</h3><p>摸牌、理牌、弃牌，和三位 KAI 牌友打到结算。</p><button class="btn" data-action="open-mahjong">开始麻将 <b>→</b></button></div></article>
           <article class="game-world world-1048" data-world-card data-world-id="1048"${canContinue1048?' data-world-resumable="true"':''}><span class="world-badge">${canContinue1048?'可继续':saved1048?.status==='playing'?'等待开局':saved1048?'上局已保存':'稀有目标'}</span><div class="world-cover"><div class="world-1048-board" aria-hidden="true"><i>2</i><i></i><i>4</i><i></i><i></i><i>8</i><i></i><i>16</i><i>32</i><i></i><i>128</i><i></i><i></i><i>512</i><i></i><i>1048</i></div><i class="world-cover-mark" aria-hidden="true">＋</i></div><div class="world-copy"><span>数字合并 · 单机益智 · 冲击 1048</span><h3>1048</h3><p>逐级合并数字，让最后两枚 512 特别融合为 1048。</p><button class="btn" data-action="open-1048">${merge1048Action} <b>→</b></button></div></article>
           <article class="game-world world-sudoku6" data-world-card data-world-id="sudoku6"${canContinueSudoku6?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSudoku6?'可继续':savedSudoku6?.status==='playing'?'待你开题':savedSudoku6?'成绩已保存':'每日一局'}</span><div class="world-cover"><div class="world-sudoku6-board" aria-hidden="true">${[1,0,3,0,5,0,0,5,0,1,0,3,2,0,4,0,6,0,0,6,0,2,0,4,3,0,5,0,1,0,0,1,0,3,0,5].map((value)=>`<i>${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">6×6</i></div><div class="world-copy"><span>6×6 逻辑填数 · 单机益智</span><h3>KAI 数独</h3><p>填满盘面，用一局让思路重新清晰，支持随手记笔记。</p><button class="btn" data-action="open-sudoku6">${sudoku6Action} <b>→</b></button></div></article>
           <article class="game-world world-minesweeper" data-world-card data-world-id="minesweeper"${canContinueMinesweeper?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMinesweeper?'可继续':savedMinesweeper?.status==='ready'?'首击安全':savedMinesweeper?'上局已保存':'首击安全'}</span><div class="world-cover"><div class="world-minesweeper-board" aria-hidden="true">${minesweeperPreview}</div><i class="world-cover-mark" aria-hidden="true">⚑</i></div><div class="world-copy"><span>从数字推理 · 入门盘 10 颗雷</span><h3>KAI 扫雷</h3><p>首击必安全，揭开空地、标出地雷、清空整张盘。</p><button class="btn" data-action="open-minesweeper">${minesweeperAction} <b>→</b></button></div></article>
+          <article class="game-world world-sokoban" data-world-card data-world-id="sokoban"${canContinueSokoban?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSokoban?'可继续':savedSokoban?.status==='won'?'本关已通':'6 个关卡'}</span><div class="world-cover"><div class="world-sokoban-board" aria-hidden="true">${['wall','wall','wall','wall','wall','wall','wall','wall','','target','','','wall','wall','','box','','player','wall','wall','','','target','','wall','wall','wall','wall','wall','wall'].map((cell)=>`<i class="${cell}">${cell==='box'?'箱':cell==='player'?'人':''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">仓</i></div><div class="world-copy"><span>原创关卡 · 可逐步撤销</span><h3>KAI 推箱子</h3><p>绕到箱子后方再推动，避开死角，把每只箱子送进目标点。</p><button class="btn" data-action="open-sokoban">${sokobanAction} <b aria-hidden="true">→</b></button></div></article>
+          <article class="game-world world-sliding" data-world-card data-world-id="sliding"${canContinueSliding?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSliding?'可继续':savedSliding?.status==='won'?'成绩已保存':'三档盘面'}</span><div class="world-cover"><div class="world-sliding-board" aria-hidden="true">${[1,2,3,4,5,6,7,0,8].map((value)=>`<i class="${value?'':'blank'}">${value||''}</i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">15</i></div><div class="world-copy"><span>3×3 至 5×5 · 保证可解</span><h3>KAI 数字华容道</h3><p>利用空位移动数字，把打乱的顺序一步步重新拼回完整。</p><button class="btn" data-action="open-sliding">${slidingAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-memory" data-world-card data-world-id="memory"${canContinueMemory?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMemory?'可继续':savedMemory?.status==='won'?'成绩已保存':'轻松短局'}</span><div class="world-cover"><div class="world-memory-cards" aria-hidden="true"><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i><i><b>🌙</b></i><i><b>K</b></i><i><b>⭐</b></i></div><i class="world-cover-mark" aria-hidden="true">PAIR</i></div><div class="world-copy"><span>翻开配对 · 三档牌阵</span><h3>KAI 记忆翻牌</h3><p>记住每张卡的位置，用更少步数找齐所有相同图案。</p><button class="btn" data-action="open-memory">${memoryAction} <b>→</b></button></div></article>
           <article class="game-world world-snake" data-world-card data-world-id="snake"${canContinueSnake?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
           <article class="game-world world-farm" data-world-card data-world-id="farm"${canContinueFarm?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFarm?'可继续':'新上线'}</span><div class="world-cover"><div class="world-farm-field" aria-hidden="true"><i class="crop-wheat stage-ready"><b>麦</b></i><i class="crop-carrot stage-growing"><b>萝</b></i><i></i><i class="crop-strawberry stage-ready"><b>莓</b></i><i class="crop-wheat stage-growing"><b>麦</b></i><i></i></div><i class="world-cover-mark" aria-hidden="true">丰</i></div><div class="world-copy"><span>经典农场经营 · 20 秒首获</span><h3>KAI 农场</h3><p>播种、浇水、等待成熟，再把收获投入下一季。</p><button class="btn" data-action="open-farm">${farmAction} <b>→</b></button></div></article>
@@ -1951,6 +2111,120 @@ function farmGame() {
   </main><p class="casual-disclaimer">${persistenceAvailable ? '农场在当前浏览器本地运行并自动保存' : casual.saveConflict ? '检测到另一标签页的更新，本页为只读状态' : '当前浏览器存储不可用，本次仍可游玩但刷新后不会恢复'}。离开后作物只继续成长，不会自动产币；暂不支持好友拜访、偷菜或跨设备同步。农场金币不可购买、提现、转让或兑换，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
+function reversiCell(game, index, legalMoves, focused) {
+  const side = game.board[index];
+  const legal = legalMoves.has(index);
+  const last = game.lastMove?.index === index;
+  const flipped = game.lastMove?.flipped?.includes(index);
+  const row = Math.floor(index / REVERSI_SIZE);
+  const column = index % REVERSI_SIZE;
+  const classes = ['reversi-cell'];
+  if (side) classes.push(`is-${side}`);
+  if (legal) classes.push('is-legal');
+  if (last) classes.push('is-last');
+  if (flipped) classes.push('was-flipped');
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${side === 'black' ? '黑子' : side === 'white' ? '白子' : legal ? '可落子' : '空位'}${last ? '，上一手落点' : ''}`;
+  return `<button type="button" class="${classes.join(' ')}" data-reversi-cell="${index}" role="gridcell" aria-label="${label}" aria-disabled="${!legal}" tabindex="${focused === index ? '0' : '-1'}"><span aria-hidden="true">${side ? '<i></i>' : legal ? '<b></b>' : ''}</span></button>`;
+}
+
+function reversiResult(game) {
+  if (game.status !== 'finished') return '';
+  const draw = game.winner === null;
+  const won = game.winner === 'black';
+  const title = draw ? '势均力敌，平局' : won ? '黑方胜，边角尽收' : '白方胜，再谋一局';
+  return `<section class="local-puzzle-result ${won ? 'is-win' : draw ? 'is-draw' : 'is-over'}" data-reversi-result role="status" aria-live="polite" tabindex="-1"><span>本地人机对局完成</span><h2>${title}</h2><p>黑 ${game.score.black} : ${game.score.white} 白 · 共 ${game.moveCount} 手 · ${game.passCount ? `自动跳过 ${game.passCount} 次` : '双方全程有棋可下'}</p><div><button class="btn primary" data-action="reversi-new">同难度再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+}
+
+function reversiGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'reversi') return lobby();
+  const legal = game.status === 'playing' && game.turn === 'black' ? getReversiLegalMoves(game.board, 'black') : [];
+  const legalMoves = new Set(legal.map((move) => move.index));
+  const focused = Number.isInteger(casual.focusedCell) && casual.focusedCell >= 0 && casual.focusedCell < REVERSI_CELL_COUNT ? casual.focusedCell : legal[0]?.index ?? 0;
+  const difficulties = Object.values(REVERSI_DIFFICULTIES).map((entry) => `<button type="button" data-action="reversi-difficulty" data-reversi-difficulty="${entry.key}" class="${entry.key === game.difficulty ? 'active' : ''}" aria-pressed="${entry.key === game.difficulty}"><b>${entry.label}</b><small>${entry.key === 'beginner' ? '认识夹子' : entry.key === 'standard' ? '争夺边角' : '四层推演'}</small></button>`).join('');
+  const lastSide = game.lastMove?.side === 'black' ? '你' : game.lastMove?.side === 'white' ? 'KAI' : null;
+  const status = game.status === 'finished' ? '棋盘已经结算'
+    : game.lastPass === 'white' ? 'KAI 无棋可下，继续由你落子'
+      : game.lastPass === 'black' ? '你无棋可下，KAI 已继续行动'
+        : casual.announcement || (lastSide ? `${lastSide}刚刚翻转 ${game.lastMove.flipped.length} 枚棋子` : '你执黑先行 · 选择绿色落点');
+  return `<div class="shell casual-shell reversi-route">${casualHeader('KAI 黑白棋','REVERSI',`${REVERSI_DIFFICULTIES[game.difficulty].label} KAI · 本地自动保存`)}<main class="local-puzzle-stage reversi-stage">
+    <section class="local-puzzle-copy"><div><span>8×8 翻转攻防 · 你执黑</span><h2>守住四角<br><b>翻转局势</b></h2><p>把棋子落在绿色提示处，横、竖或斜线夹住的白子都会翻黑。终局棋子更多的一方获胜。</p></div><div class="local-difficulty-rail" aria-label="选择黑白棋难度">${difficulties}</div><ol><li><i>1</i><span><b>寻找夹线</b><small>绿点都是合法落点</small></span></li><li><i>2</i><span><b>优先边角</b><small>角落棋子不会再被翻转</small></span></li><li><i>3</i><span><b>控制行动力</b><small>让对手可选位置更少</small></span></li></ol></section>
+    <section class="local-puzzle-play"><div class="local-puzzle-metrics" aria-label="本局数据"><div><small>你的黑子</small><strong>${game.score.black}</strong></div><div><small>KAI 白子</small><strong>${game.score.white}</strong></div><div><small>剩余空位</small><strong>${game.score.empty}</strong></div></div>
+      <div class="local-puzzle-status ${game.status === 'finished' ? 'is-finished' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status === 'playing' ? `${legal.length} 个落点` : '已结算'}</b></div>
+      <div class="reversi-board" data-reversi-board role="grid" aria-label="8 乘 8 黑白棋棋盘，方向键移动，回车或空格落子" aria-rowcount="8" aria-colcount="8" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${Array.from({length:REVERSI_CELL_COUNT},(_,index)=>reversiCell(game,index,legalMoves,focused)).join('')}</div>
+      <div class="local-puzzle-actions"><button class="btn" data-action="reversi-new">重新开局</button><span><i class="black"></i>你 · 黑方</span><span><i class="white"></i>KAI · 白方</span></div><p class="local-key-hint">键盘：方向键移动 · Enter / 空格落子</p>${reversiResult(game)}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '棋局在当前浏览器自动保存'}。这是免费本地人机训练，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function sokobanCell(game, index) {
+  const { row, column } = sokobanCoordinates(index, game.rows, game.columns);
+  const wall = game.walls.includes(index);
+  const target = game.targets.includes(index);
+  const box = game.boxes.includes(index);
+  const player = game.player === index;
+  const classes = ['sokoban-cell', wall ? 'is-wall' : '', target ? 'is-target' : '', box ? 'is-box' : '', box && target ? 'is-placed' : '', player ? 'is-player' : ''].filter(Boolean);
+  const content = wall ? '墙体' : box && target ? '已归位箱子' : box ? '箱子' : player ? '玩家' : target ? '目标点' : '地面';
+  const label = `第 ${row + 1} 行第 ${column + 1} 列，${content}`;
+  return `<span class="${classes.join(' ')}" role="gridcell" aria-rowindex="${row + 1}" aria-colindex="${column + 1}" aria-label="${label}"><i aria-hidden="true">${box ? '箱' : player ? '人' : target ? '◎' : ''}</i></span>`;
+}
+
+function sokobanRows(game) {
+  return Array.from({ length:game.rows }, (_, row) => `<span class="sokoban-row" role="row">${Array.from({ length:game.columns }, (_, column) => sokobanCell(game, row * game.columns + column)).join('')}</span>`).join('');
+}
+
+function sokobanPositionSummary(game) {
+  const coordinateLabel = (index) => {
+    const { row, column } = sokobanCoordinates(index, game.rows, game.columns);
+    return `第 ${row + 1} 行第 ${column + 1} 列`;
+  };
+  return `玩家位于${coordinateLabel(game.player)}。箱子位于${game.boxes.map(coordinateLabel).join('、')}。目标点位于${game.targets.map(coordinateLabel).join('、')}。`;
+}
+
+function sokobanGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'sokoban') return lobby();
+  const level = SOKOBAN_LEVELS[game.levelIndex];
+  const placed = game.boxes.filter((box) => game.targets.includes(box)).length;
+  const levels = SOKOBAN_LEVELS.map((entry,index)=>`<button type="button" data-action="sokoban-level" data-sokoban-level="${index}" class="${index === game.levelIndex ? 'active' : ''}" aria-pressed="${index === game.levelIndex}"><b>${index + 1}</b><small>${entry.name}</small></button>`).join('');
+  const status = game.status === 'won' ? `第 ${game.levelIndex + 1} 关完成 · 所有箱子已经归位` : casual.announcement || '使用方向键或屏幕按钮开始推动';
+  return `<div class="shell casual-shell sokoban-route">${casualHeader('KAI 推箱子','SOKOBAN',`第 ${game.levelIndex + 1}/${SOKOBAN_LEVELS.length} 关 · 本地自动保存`)}<main class="local-puzzle-stage sokoban-stage">
+    <section class="local-puzzle-copy"><div><span>原创空间谜题 · ${esc(level.name)}</span><h2>绕开死角<br><b>把箱子送回家</b></h2><p>你只能推动箱子，不能拉回。先观察目标与墙角，再规划自己能否绕到下一次推动的位置。</p></div><div class="sokoban-level-rail" aria-label="选择推箱子关卡">${levels}</div><ol><li><i>1</i><span><b>走到箱后</b><small>推动方向取决于站位</small></span></li><li><i>2</i><span><b>避开死角</b><small>箱子靠墙后可能无法救回</small></span></li><li><i>3</i><span><b>随时撤销</b><small>一步一步尝试路线</small></span></li></ol></section>
+    <section class="local-puzzle-play"><div class="local-puzzle-metrics" aria-label="本关数据"><div><small>步数</small><strong>${game.steps}</strong></div><div><small>推动</small><strong>${game.pushes}</strong></div><div><small>已归位</small><strong>${placed}/${game.boxes.length}</strong></div></div>
+      <div class="local-puzzle-status ${game.status === 'won' ? 'is-finished' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${esc(level.name)}</b></div>
+      <p class="sr-only" id="sokoban-position-summary">${sokobanPositionSummary(game)}</p><div class="sokoban-board" data-sokoban-board role="grid" aria-label="${game.rows} 行 ${game.columns} 列推箱子，使用方向键或 WASD 移动" aria-describedby="sokoban-position-summary" aria-rowcount="${game.rows}" aria-colcount="${game.columns}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D" tabindex="0" style="--sokoban-columns:${game.columns}">${sokobanRows(game)}</div>
+      <div class="local-direction-pad" aria-label="推箱子方向控制"><span></span><button type="button" data-action="sokoban-move" data-sokoban-direction="up" aria-label="向上移动" ${game.status === 'won' ? 'disabled' : ''}>↑</button><span></span><button type="button" data-action="sokoban-move" data-sokoban-direction="left" aria-label="向左移动" ${game.status === 'won' ? 'disabled' : ''}>←</button><button type="button" data-action="sokoban-move" data-sokoban-direction="down" aria-label="向下移动" ${game.status === 'won' ? 'disabled' : ''}>↓</button><button type="button" data-action="sokoban-move" data-sokoban-direction="right" aria-label="向右移动" ${game.status === 'won' ? 'disabled' : ''}>→</button></div>
+      <div class="local-puzzle-actions"><button class="btn" data-action="sokoban-undo" ${game.moves.length ? '' : 'disabled'}>撤销一步</button><button class="btn" data-action="sokoban-restart">重置本关</button>${game.status === 'won' && hasNextSokobanLevel(game) ? '<button class="btn primary" data-action="sokoban-next">下一关</button>' : ''}</div><p class="local-key-hint">键盘：方向键 / WASD 移动 · 每次成功移动都会自动保存</p>${game.status === 'won' ? `<section class="local-puzzle-result is-win" data-sokoban-result role="status" aria-live="polite" tabindex="-1"><span>第 ${game.levelIndex + 1} 关完成</span><h2>${esc(level.name)} · 箱子归位</h2><p>${game.steps} 步 · ${game.pushes} 次推动</p><div>${hasNextSokobanLevel(game) ? '<button class="btn primary" data-action="sokoban-next">进入下一关</button>' : '<button class="btn primary" data-action="sokoban-level" data-sokoban-level="0">从第一关再挑战</button>'}<button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本关仍可继续' : '当前关卡与每一步进度都会保存在本地'}。这是免费本地空间谜题，不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
+function slidingPuzzleGame() {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (!game || game.kind !== 'sliding-puzzle') return lobby();
+  const movable = new Set(getSlidingPuzzleMovableIndexes(game));
+  const difficulties = Object.values(SLIDING_PUZZLE_DIFFICULTIES).map((entry)=>`<button type="button" data-action="sliding-difficulty" data-sliding-difficulty="${entry.key}" class="${entry.key === game.difficulty ? 'active' : ''}" aria-pressed="${entry.key === game.difficulty}"><b>${entry.size}×${entry.size}</b><small>${entry.label}</small></button>`).join('');
+  const tiles = game.tiles.map((tile,index)=>{
+    const canMove = movable.has(index);
+    const last = game.lastMove?.tile === tile && game.lastMove?.to === index;
+    const classes = ['sliding-tile', tile === 0 ? 'is-blank' : '', canMove ? 'is-movable' : '', last ? 'is-last' : ''].filter(Boolean);
+    const label = tile === 0 ? '空位' : `数字 ${tile}${canMove ? '，可移动' : ''}`;
+    return `<button type="button" class="${classes.join(' ')}" data-sliding-tile="${index}" role="gridcell" aria-label="${label}" aria-disabled="${!canMove}" tabindex="-1"><span aria-hidden="true">${tile || ''}</span></button>`;
+  }).join('');
+  const status = game.status === 'won' ? '全部数字归位，拼图完成' : game.status === 'ready' ? '盘面已打乱 · 移动空位旁的数字' : casual.announcement || `刚刚移动数字 ${game.lastMove?.tile}`;
+  return `<div class="shell casual-shell sliding-route">${casualHeader('KAI 数字华容道','SLIDING PUZZLE',`${game.size}×${game.size} ${SLIDING_PUZZLE_DIFFICULTIES[game.difficulty].label}盘 · 本地自动保存`)}<main class="local-puzzle-stage sliding-stage">
+    <section class="local-puzzle-copy"><div><span>保证可解 · 三档盘面</span><h2>留出空位<br><b>让顺序归位</b></h2><p>点击空位旁的数字，或用方向键推动数字。最终让数字依次排列，空位回到右下角。</p></div><div class="local-difficulty-rail" aria-label="选择数字华容道盘面">${difficulties}</div><ol><li><i>1</i><span><b>先拼前列</b><small>从左上角开始建立顺序</small></span></li><li><i>2</i><span><b>保留回旋</b><small>空位是调整路线的空间</small></span></li><li><i>3</i><span><b>收拢末行</b><small>最后完成右下角区域</small></span></li></ol></section>
+    <section class="local-puzzle-play"><div class="local-puzzle-metrics" aria-label="本局数据"><div><small>盘面</small><strong>${game.size}×${game.size}</strong></div><div><small>移动</small><strong>${game.moveCount}</strong></div><div><small>用时</small><strong data-sliding-time>${formatSudoku6Time(game.elapsedSeconds)}</strong></div></div>
+      <div class="local-puzzle-status ${game.status === 'won' ? 'is-finished' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${SLIDING_PUZZLE_DIFFICULTIES[game.difficulty].label}</b></div>
+      <div class="sliding-board size-${game.size}" data-sliding-board role="grid" aria-label="${game.size} 乘 ${game.size} 数字华容道，方向键移动数字" aria-rowcount="${game.size}" aria-colcount="${game.size}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight" tabindex="0" style="--sliding-size:${game.size}">${tiles}</div>
+      <div class="local-puzzle-actions"><button class="btn" data-action="sliding-new">重新洗牌</button><span>保证可解</span><span>每步自动保存</span></div><p class="local-key-hint">键盘：方向键移动数字 · 触屏：点击空位旁的数字</p>${game.status === 'won' ? `<section class="local-puzzle-result is-win" data-sliding-result role="status" aria-live="polite" tabindex="-1"><span>${game.size}×${game.size} 拼图完成</span><h2>顺序归位</h2><p>${game.moveCount} 步 · 用时 ${formatSudoku6Time(game.elapsedSeconds)}</p><div><button class="btn primary" data-action="sliding-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
+    </section>
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '盘面、步数与用时在当前浏览器自动保存'}。每次洗牌都保证可解且不会直接完成；本玩法不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
 function historyMatchWon(match) {
   if (match.role === 'landlord') return match.winner === 'landlord';
   if (match.role === 'farmer') return match.winner === 'farmers';
@@ -2010,10 +2284,10 @@ function history() {
     <section class="history-list"><div class="section-head"><div><span class="section-kicker">最近牌局</span><h2>${matches.length?'逐局记录':'等待第一场记录'}</h2></div><p>最多展示服务端返回的最近 20 局</p></div>${recentMatches}</section></div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、麻将、1048、数独、扫雷、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
+function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、黑白棋、麻将、1048、数独、扫雷、推箱子、数字华容道、记忆翻牌、贪吃蛇、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='reversi'?reversiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='sokoban'?sokobanGame():state.view==='sliding'?slidingPuzzleGame():state.view==='memory'?memoryMatchGame():state.view==='snake'?snakeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
   if(state.view==='lobby')updateWorldCarouselStatus(app.querySelector('[data-world-strip]'));
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
@@ -3087,6 +3361,183 @@ function performFarmPlot(index) {
   }
 }
 
+function focusReversiInteraction(index = state.casual?.focusedCell) {
+  const result = document.querySelector('[data-reversi-result]');
+  if (result) { result.focus({ preventScroll:true }); result.scrollIntoView?.({ block:'nearest' }); return; }
+  const preferred = Number.isInteger(index) ? document.querySelector(`[data-reversi-cell="${index}"]`) : null;
+  const cell = preferred || document.querySelector('.reversi-cell.is-legal');
+  cell?.focus({ preventScroll:true });
+  cell?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function startReversiSession(game, announcement = '你执黑先行 · 选择绿色落点') {
+  stopCasualTimers();
+  const firstLegal = game.status === 'playing' ? getReversiLegalMoves(game.board, 'black')[0]?.index : game.lastMove?.index;
+  state.casual = { kind:'reversi', game, focusedCell:firstLegal ?? 0, announcement, saveAvailable:true };
+  state.view = 'reversi';
+  if (!saveCurrentReversiGame(game)) state.casual.announcement = '当前浏览器无法保存 · 本局仍可继续';
+}
+
+function openReversi() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const saved = loadSavedReversiGame();
+  let game = saved || newReversiGame();
+  let resumedAiTurn = false;
+  if (game.status === 'playing' && game.turn === 'white') {
+    const aiMove = chooseReversiMove(game);
+    if (aiMove) {
+      game = playReversiMove(game, aiMove.index);
+      resumedAiTurn = true;
+    }
+  }
+  const announcement = !saved || game.moveCount === 0 ? '你执黑先行 · 选择绿色落点' : game.status === 'finished' ? '上局战果已保留' : resumedAiTurn ? '已恢复棋局并完成 KAI 回合' : '已恢复本地棋局';
+  startReversiSession(game, announcement);
+  rememberLastLocalGame('reversi');
+}
+
+function newReversiSession(difficulty = state.casual?.game?.difficulty || 'standard') {
+  const normalized = Object.hasOwn(REVERSI_DIFFICULTIES, difficulty) ? difficulty : 'standard';
+  startReversiSession(newReversiGame({ difficulty:normalized }), `已切换到${REVERSI_DIFFICULTIES[normalized].label} KAI · 你执黑先行`);
+}
+
+function performReversiMove(index) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'reversi' || casual?.kind !== 'reversi' || !game || game.status !== 'playing' || !Number.isInteger(index)) return;
+  casual.focusedCell = index;
+  try {
+    const next = playReversiHumanMove(game, index);
+    casual.game = next;
+    const nextLegal = next.status === 'playing' ? getReversiLegalMoves(next.board, 'black') : [];
+    casual.focusedCell = nextLegal[0]?.index ?? next.lastMove?.index ?? index;
+    casual.announcement = next.status === 'finished' ? '棋盘已经结算'
+      : next.lastPass === 'white' ? 'KAI 无棋可下 · 继续由你落子'
+        : `你和 KAI 已完成一回合 · 当前黑 ${next.score.black} : ${next.score.white} 白`;
+    if (!saveCurrentReversiGame(next)) casual.announcement += ' · 当前进度无法保存';
+    render();focusReversiInteraction();
+  } catch (error) {
+    casual.announcement = error?.message === 'REVERSI_MOVE_ILLEGAL' ? '这里不能夹住白子，请选择绿色落点' : '这个位置暂时不能落子';
+    render();focusReversiInteraction(index);
+  }
+}
+
+function focusSokobanInteraction() {
+  const result = document.querySelector('[data-sokoban-result]');
+  if (result) { result.focus({ preventScroll:true }); result.scrollIntoView?.({ block:'nearest' }); return; }
+  const board = document.querySelector('[data-sokoban-board]');
+  board?.focus({ preventScroll:true });
+  board?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function startSokobanSession(game, announcement = '使用方向键或屏幕按钮开始推动') {
+  stopCasualTimers();
+  state.casual = { kind:'sokoban', game, announcement, saveAvailable:true };
+  state.view = 'sokoban';
+  if (!saveSokobanGame(game)) state.casual.announcement = '当前浏览器无法保存 · 本关仍可继续';
+}
+
+function openSokoban() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const saved = loadSavedSokobanGame();
+  const game = saved || newSokobanGame();
+  const announcement = !saved || game.steps === 0 ? '使用方向键或屏幕按钮开始推动' : game.status === 'won' ? '本关已经完成，可以进入下一关' : '已恢复本地闯关进度';
+  startSokobanSession(game, announcement);
+  rememberLastLocalGame('sokoban');
+}
+
+function commitSokobanGame(next, announcement) {
+  const casual = state.casual;
+  if (state.view !== 'sokoban' || casual?.kind !== 'sokoban') return;
+  casual.game = next;
+  casual.announcement = announcement;
+  if (!saveSokobanGame(next)) casual.announcement += ' · 当前进度无法保存';
+  render();focusSokobanInteraction();
+}
+
+function performSokobanMove(direction) {
+  const casual = state.casual;
+  const game = casual?.game;
+  if (state.view !== 'sokoban' || casual?.kind !== 'sokoban' || !game || game.status === 'won') return;
+  try {
+    const next = moveSokoban(game, direction);
+    if (next.steps === game.steps) {
+      casual.announcement = '这个方向被墙或箱子挡住了';
+      render();focusSokobanInteraction();return;
+    }
+    const pushed = next.pushes > game.pushes;
+    commitSokobanGame(next, next.status === 'won' ? '所有箱子已经归位 · 本关完成' : pushed ? '箱子向目标更近了一步' : '位置已移动');
+  } catch {
+    casual.announcement = '当前无法向这个方向移动';
+    render();focusSokobanInteraction();
+  }
+}
+
+function focusSlidingPuzzleInteraction() {
+  const result = document.querySelector('[data-sliding-result]');
+  if (result) { result.focus({ preventScroll:true }); result.scrollIntoView?.({ block:'nearest' }); return; }
+  const board = document.querySelector('[data-sliding-board]');
+  board?.focus({ preventScroll:true });
+  board?.scrollIntoView?.({ block:'nearest', inline:'nearest' });
+}
+
+function startSlidingPuzzleSession(game, announcement = '盘面已打乱 · 移动空位旁的数字') {
+  stopCasualTimers();
+  state.casual = { kind:'sliding', game, announcement, saveAvailable:true };
+  state.view = 'sliding';
+  if (!saveSlidingPuzzleGame(game)) state.casual.announcement = '当前浏览器无法保存 · 本局仍可继续';
+}
+
+function openSlidingPuzzle() {
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const saved = loadSavedSlidingPuzzleGame();
+  const game = saved || newSlidingPuzzleGame();
+  const announcement = !saved || game.status === 'ready' ? '盘面已打乱 · 移动空位旁的数字' : game.status === 'won' ? '上局成绩已保留' : '已恢复本地拼图进度';
+  startSlidingPuzzleSession(game, announcement);
+  rememberLastLocalGame('sliding');
+}
+
+function commitSlidingPuzzleGame(next, announcement) {
+  const casual = state.casual;
+  if (state.view !== 'sliding' || casual?.kind !== 'sliding') return;
+  casual.game = next;
+  casual.announcement = announcement;
+  if (!saveSlidingPuzzleGame(next)) casual.announcement += ' · 当前进度无法保存';
+  render();focusSlidingPuzzleInteraction();
+}
+
+function performSlidingPuzzleTile(index) {
+  const game = state.casual?.game;
+  if (state.view !== 'sliding' || state.casual?.kind !== 'sliding' || !game || game.status === 'won') return;
+  try {
+    const next = moveSlidingPuzzleTile(game, index);
+    if (next.moveCount === game.moveCount) { state.casual.announcement = '只能移动空位旁边的数字'; render();focusSlidingPuzzleInteraction(); return; }
+    commitSlidingPuzzleGame(next, next.status === 'won' ? '全部数字归位 · 拼图完成' : `数字 ${next.lastMove.tile} 已移动`);
+  } catch {
+    state.casual.announcement = '这个数字暂时不能移动';render();focusSlidingPuzzleInteraction();
+  }
+}
+
+function performSlidingPuzzleDirection(direction) {
+  const game = state.casual?.game;
+  if (state.view !== 'sliding' || state.casual?.kind !== 'sliding' || !game || game.status === 'won') return;
+  try {
+    const next = moveSlidingPuzzleDirection(game, direction);
+    if (next.moveCount === game.moveCount) { state.casual.announcement = '这个方向已经到边缘了';render();focusSlidingPuzzleInteraction();return; }
+    commitSlidingPuzzleGame(next, next.status === 'won' ? '全部数字归位 · 拼图完成' : `数字 ${next.lastMove.tile} 已移动`);
+  } catch {
+    state.casual.announcement = '当前无法向这个方向移动';render();focusSlidingPuzzleInteraction();
+  }
+}
+
+function updateSlidingPuzzleClock() {
+  const casual = state.casual;
+  if (document.visibilityState === 'hidden' || state.view !== 'sliding' || casual?.kind !== 'sliding' || casual.game?.status !== 'playing') return;
+  casual.game = advanceSlidingPuzzleTime(casual.game, 1);
+  const clock = document.querySelector('[data-sliding-time]');
+  if (clock) clock.textContent = formatSudoku6Time(casual.game.elapsedSeconds);
+  if (casual.game.elapsedSeconds % 5 === 0) saveSlidingPuzzleGame(casual.game);
+}
+
 function openSlots() {
   stopGameSync();
   stopRoomSync();
@@ -3415,7 +3866,7 @@ function jumpToLobbyTarget(target) {
     globalThis.scrollTo?.(0,0);
     return;
   }
-  const allowed=new Set(['ddz','xiangqi','gomoku','mahjong','1048','sudoku6','minesweeper','memory','snake','farm','three','reels']);
+  const allowed=new Set(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','snake','farm','three','reels']);
   if(!allowed.has(target))return;
   resetCatalogDiscovery();
   const strip=document.querySelector('[data-world-strip]');
@@ -3459,6 +3910,14 @@ app.addEventListener('click', e => {
   }
   if(el.dataset.gomokuCell!==undefined){
     performGomokuMove(Number(el.dataset.gomokuCell));
+    return;
+  }
+  if(el.dataset.reversiCell!==undefined){
+    performReversiMove(Number(el.dataset.reversiCell));
+    return;
+  }
+  if(el.dataset.slidingTile!==undefined){
+    performSlidingPuzzleTile(Number(el.dataset.slidingTile));
     return;
   }
   if(el.dataset.memoryCard!==undefined){
@@ -3574,6 +4033,9 @@ app.addEventListener('click', e => {
   if(a==='open-sudoku6'){openSudoku6();render();globalThis.scrollTo?.(0,0);focusSudoku6Interaction();}
   if(a==='open-minesweeper'){openMinesweeper();render();globalThis.scrollTo?.(0,0);focusMinesweeperInteraction();}
   if(a==='open-gomoku'){openGomoku();render();globalThis.scrollTo?.(0,0);focusGomokuInteraction();}
+  if(a==='open-reversi'){openReversi();render();globalThis.scrollTo?.(0,0);focusReversiInteraction();}
+  if(a==='open-sokoban'){openSokoban();render();globalThis.scrollTo?.(0,0);focusSokobanInteraction();}
+  if(a==='open-sliding'){openSlidingPuzzle();render();globalThis.scrollTo?.(0,0);focusSlidingPuzzleInteraction();}
   if(a==='open-memory'){openMemoryMatch();render();globalThis.scrollTo?.(0,0);focusMemoryInteraction();}
   if(a==='open-snake'){openSnake();render();globalThis.scrollTo?.(0,0);focusSnakeInteraction();}
   if(a==='open-farm'){openFarm();render();globalThis.scrollTo?.(0,0);focusFarmInteraction();queueFarmTick();}
@@ -3586,6 +4048,9 @@ app.addEventListener('click', e => {
     if(state.view==='sudoku6')settleAndSaveSudoku6();
     if(state.view==='minesweeper')settleAndSaveMinesweeper();
     if(state.view==='gomoku'&&state.casual?.game)saveGomokuGame(state.casual.game);
+    if(state.view==='reversi'&&state.casual?.game)saveCurrentReversiGame(state.casual.game);
+    if(state.view==='sokoban'&&state.casual?.game)saveSokobanGame(state.casual.game);
+    if(state.view==='sliding'&&state.casual?.game)saveSlidingPuzzleGame(state.casual.game);
     if(state.view==='memory')saveCurrentMemorySession();
     if(state.view==='snake'&&state.casual?.game){
       if(state.casual.game.status==='playing')state.casual.game=toggleSnakePause(state.casual.game);
@@ -3593,6 +4058,53 @@ app.addEventListener('click', e => {
     }
     if(state.view==='farm'&&state.casual?.game)saveFarmGame(state.casual.game);
     stopMahjongBotSequence();stopCasualTimers();state.casual=null;state.view='lobby';render();return;
+  }
+  if(a==='reversi-new'&&state.view==='reversi'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(game.status==='playing'&&game.moveCount>0,'当前黑白棋尚未结束，确定重新开局吗？'))return;
+    newReversiSession(game.difficulty);render();focusReversiInteraction();return;
+  }
+  if(a==='reversi-difficulty'&&state.view==='reversi'){
+    const difficulty=el.dataset.reversiDifficulty;const game=state.casual?.game;
+    if(!game||!Object.hasOwn(REVERSI_DIFFICULTIES,difficulty))return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个难度';render();focusReversiInteraction();return;}
+    if(!confirmLocalGameReplacement(game.status==='playing'&&game.moveCount>0,'切换难度会开始新棋局，确定继续吗？'))return;
+    newReversiSession(difficulty);render();focusReversiInteraction();return;
+  }
+  if(a==='sokoban-move'&&state.view==='sokoban'){performSokobanMove(el.dataset.sokobanDirection);return;}
+  if(a==='sokoban-undo'&&state.view==='sokoban'){
+    const game=state.casual?.game;if(!game)return;
+    const next=undoSokoban(game);
+    if(next.steps===game.steps){state.casual.announcement='还没有可以撤销的步骤';render();focusSokobanInteraction();return;}
+    commitSokobanGame(next,'已撤销一步');return;
+  }
+  if(a==='sokoban-restart'&&state.view==='sokoban'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(game.status==='playing'&&game.steps>0,'重置会清除本关已走步骤，确定继续吗？'))return;
+    commitSokobanGame(selectSokobanLevel(game,game.levelIndex),'本关已重置 · 重新规划路线');return;
+  }
+  if(a==='sokoban-level'&&state.view==='sokoban'){
+    const game=state.casual?.game;const level=Number(el.dataset.sokobanLevel);
+    if(!game||!Number.isInteger(level)||!SOKOBAN_LEVELS[level])return;
+    if(level===game.levelIndex&&game.steps===0){state.casual.announcement='当前已经是这一关';render();focusSokobanInteraction();return;}
+    if(!confirmLocalGameReplacement(game.status==='playing'&&game.steps>0,'切换关卡会清除当前步骤，确定继续吗？'))return;
+    commitSokobanGame(selectSokobanLevel(game,level),`已进入第 ${level+1} 关 · ${SOKOBAN_LEVELS[level].name}`);return;
+  }
+  if(a==='sokoban-next'&&state.view==='sokoban'){
+    const game=state.casual?.game;if(!game||!hasNextSokobanLevel(game))return;
+    const next=nextSokobanLevel(game);commitSokobanGame(next,`已进入第 ${next.levelIndex+1} 关 · ${SOKOBAN_LEVELS[next.levelIndex].name}`);return;
+  }
+  if(a==='sliding-new'&&state.view==='sliding'){
+    const game=state.casual?.game;if(!game)return;
+    if(!confirmLocalGameReplacement(game.status==='playing'&&game.moveCount>0,'当前拼图尚未完成，确定重新洗牌吗？'))return;
+    startSlidingPuzzleSession(reshuffleSlidingPuzzleGame(game),'新盘面已生成 · 保证可解');render();focusSlidingPuzzleInteraction();return;
+  }
+  if(a==='sliding-difficulty'&&state.view==='sliding'){
+    const game=state.casual?.game;const difficulty=el.dataset.slidingDifficulty;
+    if(!game||!Object.hasOwn(SLIDING_PUZZLE_DIFFICULTIES,difficulty))return;
+    if(difficulty===game.difficulty){state.casual.announcement='当前已是这个盘面';render();focusSlidingPuzzleInteraction();return;}
+    if(!confirmLocalGameReplacement(game.status==='playing'&&game.moveCount>0,'切换盘面会开始新拼图，确定继续吗？'))return;
+    startSlidingPuzzleSession(reshuffleSlidingPuzzleGame(game,{difficulty}),`已生成 ${SLIDING_PUZZLE_DIFFICULTIES[difficulty].size}×${SLIDING_PUZZLE_DIFFICULTIES[difficulty].size} 盘面`);render();focusSlidingPuzzleInteraction();return;
   }
   if(a==='three-guess'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed&&THREE_CARD_LABELS.includes(el.dataset.threeGuess)){
     state.casual.guess=el.dataset.threeGuess;render();return;
@@ -4089,6 +4601,28 @@ app.addEventListener('keydown', (event) => {
     focusXiangqiDialog();
     return;
   }
+  const reversiCellNode = event.target.closest?.('[data-reversi-cell]');
+  if (state.view === 'reversi' && reversiCellNode) {
+    const index = Number(reversiCellNode.dataset.reversiCell);
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();performReversiMove(index);return;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) {
+      event.preventDefault();
+      const row=Math.floor(index/REVERSI_SIZE);const column=index%REVERSI_SIZE;
+      const nextIndex=event.key==='Home'?0:event.key==='End'?REVERSI_CELL_COUNT-1:
+        (event.key==='ArrowUp'?Math.max(0,row-1):event.key==='ArrowDown'?Math.min(REVERSI_SIZE-1,row+1):row)*REVERSI_SIZE+
+        (event.key==='ArrowLeft'?Math.max(0,column-1):event.key==='ArrowRight'?Math.min(REVERSI_SIZE-1,column+1):column);
+      state.casual.focusedCell=nextIndex;render();focusReversiInteraction(nextIndex);return;
+    }
+  }
+  if (state.view === 'sokoban' && event.target.closest?.('[data-sokoban-board]')) {
+    const direction=sokobanDirectionFromKey(event.key);
+    if(direction){event.preventDefault();performSokobanMove(direction);return;}
+  }
+  if (state.view === 'sliding' && event.target.closest?.('[data-sliding-board]') && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) {
+    event.preventDefault();performSlidingPuzzleDirection(event.key);return;
+  }
   const gomokuCellNode = event.target.closest?.('[data-gomoku-cell]');
   if (state.view === 'gomoku' && gomokuCellNode) {
     const index = Number(gomokuCellNode.dataset.gomokuCell);
@@ -4280,6 +4814,7 @@ setInterval(() => {
   updateXiangqiClock();
   updateMinesweeperClock();
   updateMemoryMatchClock();
+  updateSlidingPuzzleClock();
 }, 1000);
 
 document.addEventListener('visibilitychange', () => {
@@ -4308,6 +4843,9 @@ document.addEventListener('visibilitychange', () => {
     if (!state.casual.confirmAction) resumeMinesweeperClock();
   }
   if (state.view === 'gomoku' && document.visibilityState === 'hidden') saveGomokuGame(state.casual.game);
+  if (state.view === 'reversi' && document.visibilityState === 'hidden') saveCurrentReversiGame(state.casual.game);
+  if (state.view === 'sokoban' && document.visibilityState === 'hidden') saveSokobanGame(state.casual.game);
+  if (state.view === 'sliding' && document.visibilityState === 'hidden') saveSlidingPuzzleGame(state.casual.game);
   if (state.view === 'memory') {
     if (document.visibilityState === 'hidden') {
       if (memoryMismatchTimer) clearTimeout(memoryMismatchTimer);
