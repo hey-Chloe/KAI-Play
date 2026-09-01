@@ -9139,6 +9139,351 @@ body:has(.lobby-game-center) {
   .farm-plot.is-ready .farm-crop { animation:none!important; }
 }
 
+/* V19: KAI Farm — nine-day strategy surface with original raster farm media. */
+.farm-route {
+  --farm-ink:#243126;
+  --farm-green:#315d3d;
+  --farm-green-deep:#183c2a;
+  --farm-gold:#d5a93f;
+  --farm-paper:#f5f0e6;
+  --farm-line:rgba(38,53,38,.14);
+  min-height:100dvh;
+  background:
+    radial-gradient(circle at 16% 8%,rgba(236,220,164,.22),transparent 26%),
+    linear-gradient(180deg,#f5f3ec,#ece9df 68%,#e7e3d8);
+  color:var(--farm-ink);
+}
+.farm-route .casual-top > b { border-color:rgba(49,93,61,.16);background:#e7eddf;color:#315d3d; }
+.farm-stage {
+  width:min(1180px,calc(100% - 32px));
+  margin:18px auto 0;
+  display:block;
+}
+.farm-play {
+  position:relative;
+  overflow:hidden;
+  padding:clamp(18px,2.5vw,30px);
+  border:1px solid rgba(48,59,43,.12);
+  border-radius:24px;
+  background:rgba(250,247,239,.86);
+  box-shadow:0 24px 70px rgba(54,58,42,.11);
+  backdrop-filter:blur(18px);
+}
+.farm-scene-head {
+  display:flex;
+  align-items:end;
+  justify-content:space-between;
+  gap:24px;
+  margin-bottom:14px;
+}
+.farm-scene-head > div:first-child > span {
+  color:#6d7b62;
+  font-size:.72rem;
+  font-weight:850;
+  letter-spacing:.13em;
+}
+.farm-scene-head h1 {
+  margin:4px 0 0;
+  color:#243126;
+  font-size:clamp(1.55rem,3vw,2.7rem);
+  line-height:1.08;
+  letter-spacing:-.045em;
+}
+.farm-scene-head h1 b { color:#997027; }
+.farm-metrics {
+  width:min(100%,520px);
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:0;
+  margin:0;
+  border-block:1px solid var(--farm-line);
+}
+.farm-metrics > div {
+  min-height:64px;
+  display:grid;
+  align-content:center;
+  gap:2px;
+  padding:9px 14px;
+  border:0;
+  border-right:1px solid var(--farm-line);
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.farm-metrics > div:last-child { border-right:0; }
+.farm-metrics small { color:#737a6b;font-size:.72rem;font-weight:760; }
+.farm-metrics strong { color:#2a3d2e;font-size:1.3rem;font-variant-numeric:tabular-nums; }
+.farm-metrics strong i { color:#8c9187;font-size:.67em;font-style:normal;font-weight:700; }
+.farm-metrics > div:first-child strong { color:#8d6928; }
+.farm-metrics > div > span[role="progressbar"] { height:3px;margin-top:3px;overflow:hidden;border-radius:99px;background:rgba(49,93,61,.13); }
+.farm-metrics > div > span[role="progressbar"] > i { display:block;width:var(--farm-xp,0%);height:100%;background:#66914f; }
+.farm-market {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:18px;
+  margin:0 0 10px;
+  padding:12px 16px;
+  border-radius:16px;
+  background:linear-gradient(105deg,#193d2b,#2f6040 62%,#416f46);
+  color:#f8f3e6;
+  box-shadow:0 10px 24px rgba(27,54,38,.16);
+}
+.farm-market > div:first-child { display:grid;grid-template-columns:auto auto;align-items:baseline;gap:1px 8px; }
+.farm-market > div:first-child span { grid-column:1 / -1;color:#c7d7b2;font-size:.67rem;font-weight:800;letter-spacing:.1em; }
+.farm-market > div:first-child strong { color:#fff1b1;font-size:1.02rem; }
+.farm-market > div:first-child small { color:rgba(255,255,255,.62);font-size:.66rem; }
+.farm-market-prices { display:flex;justify-content:center;gap:8px; }
+.farm-market-prices span { min-width:82px;display:flex;justify-content:space-between;gap:10px;padding:7px 9px;border:1px solid rgba(255,255,255,.1);border-radius:9px;color:rgba(255,255,255,.7);font-size:.7rem; }
+.farm-market-prices span b { color:#fff;font-variant-numeric:tabular-nums; }
+.farm-market-prices span.is-focus { border-color:rgba(255,231,142,.5);background:rgba(255,226,128,.12);color:#fff2bd; }
+.farm-market > p { margin:0;color:rgba(255,255,255,.64);font-size:.68rem;white-space:nowrap; }
+.farm-market > p b { color:#fff1b1; }
+.farm-status {
+  min-height:40px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  margin:0 0 10px;
+  padding:7px 12px;
+  border:1px solid rgba(66,94,54,.1);
+  border-radius:12px;
+  background:#ebf0e2;
+  color:#52604d;
+  font-size:.76rem;
+}
+.farm-status > i { width:8px;height:8px;flex:none;border-radius:50%;background:#6f9a50;box-shadow:0 0 0 4px rgba(111,154,80,.12); }
+.farm-status span { flex:1; }
+.farm-status b { color:#32492f; }
+.farm-status.is-ready { border-color:rgba(190,142,34,.16);background:#fff0c8;color:#71571f; }
+.farm-status.is-ready > i { background:#d0a53d;box-shadow:0 0 0 4px rgba(208,165,61,.14); }
+.farm-status.has-weeds { border-color:rgba(174,91,42,.2); }
+.farm-status.is-warning { background:#fff0e6;color:#7b4932; }
+.farm-field {
+  position:relative;
+  aspect-ratio:1672 / 941;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:repeat(2,minmax(0,1fr));
+  gap:4.5% 2.4%;
+  padding:8.2% 10.2% 9.4% 11.5%;
+  overflow:hidden;
+  border:1px solid rgba(41,68,39,.18);
+  border-radius:20px;
+  background:#5f7a39 url('/assets/farm/kai-farm-field-v1.webp') center/cover no-repeat;
+  box-shadow:inset 0 1px rgba(255,255,255,.5),0 18px 38px rgba(52,65,41,.18);
+}
+.farm-field::before { display:none; }
+.farm-plot {
+  appearance:none;
+  position:relative;
+  min-width:0;
+  min-height:0;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-direction:column;
+  gap:2px;
+  padding:7px;
+  overflow:visible;
+  border:1px solid transparent;
+  border-radius:14px;
+  background:transparent;
+  color:#fff8e9;
+  text-align:center;
+  cursor:pointer;
+  box-shadow:none;
+  transition:background .16s ease,border-color .16s ease,transform .16s ease;
+}
+.farm-plot::after {
+  content:"";
+  position:absolute;
+  z-index:1;
+  inset:auto 7% 2% 7%;
+  height:42%;
+  border-radius:10px;
+  background:linear-gradient(180deg,transparent,rgba(25,19,12,.72));
+  pointer-events:none;
+}
+.farm-plot > * { position:relative;z-index:2; }
+.farm-plot > b { color:#fff9ec;font-size:.76rem;line-height:1.25;text-shadow:0 1px 3px rgba(0,0,0,.7); }
+.farm-plot > small { min-height:1.2em;color:rgba(255,249,233,.8);font-size:.67rem;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.7); }
+.farm-soil { display:none; }
+.farm-crop-art {
+  --farm-crop-x:0%;
+  --farm-crop-y:100%;
+  position:absolute;
+  z-index:1;
+  left:50%;
+  bottom:17%;
+  width:min(76%,118px);
+  aspect-ratio:.9;
+  transform:translateX(-50%);
+  transform-origin:50% 90%;
+  background-image:url('/assets/farm/kai-farm-crops-v1.webp');
+  background-size:500% 300%;
+  background-position:var(--farm-crop-x) var(--farm-crop-y);
+  background-repeat:no-repeat;
+  filter:drop-shadow(0 8px 7px rgba(27,21,11,.34));
+}
+.farm-crop-art.crop-wheat { --farm-crop-x:0%; }
+.farm-crop-art.crop-carrot { --farm-crop-x:25%; }
+.farm-crop-art.crop-strawberry { --farm-crop-x:75%; }
+.farm-crop-art.stage-sprout { --farm-crop-y:0%;transform:translateX(-50%) scale(.78); }
+.farm-crop-art.stage-growing { --farm-crop-y:50%;transform:translateX(-50%) scale(.9); }
+.farm-crop-art.stage-ready { --farm-crop-y:100%; }
+.farm-empty-mark {
+  margin:auto 0 0;
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(255,243,205,.46);
+  border-radius:50%;
+  background:rgba(32,26,17,.28);
+  color:#ffe3a2;
+  font-size:1.35rem;
+  backdrop-filter:blur(4px);
+}
+.farm-plot.is-empty { justify-content:flex-end;align-items:center;border-style:dashed;background:rgba(44,31,18,.03);color:#fff;text-align:center; }
+.farm-plot.is-empty::before { display:none; }
+.farm-plot.is-empty > b { margin:0; }
+.farm-weed-art { position:absolute;left:50%;bottom:22%;width:76px;height:72px;transform:translateX(-50%);filter:drop-shadow(0 7px 5px rgba(30,20,10,.3)); }
+.farm-weed-art i { position:absolute;left:50%;bottom:0;width:12px;height:62px;border-radius:100% 0 100% 0;transform-origin:50% 100%;background:linear-gradient(140deg,#47723a,#82a94e); }
+.farm-weed-art i:nth-child(1) { transform:translateX(-50%) rotate(-34deg); }
+.farm-weed-art i:nth-child(2) { height:70px;transform:translateX(-50%) rotate(2deg); }
+.farm-weed-art i:nth-child(3) { transform:translateX(-50%) rotate(38deg); }
+.farm-plot.is-watered { border-color:rgba(159,221,218,.68);background:rgba(95,173,177,.09);box-shadow:inset 0 0 24px rgba(91,180,183,.12); }
+.farm-plot.is-ready { border-color:#f5cf67;background:rgba(248,203,85,.09);box-shadow:inset 0 0 25px rgba(255,217,102,.13),0 0 0 2px rgba(255,221,119,.16); }
+.farm-plot.is-ready .farm-crop-art { animation:farm-art-ready 1.7s ease-in-out infinite; }
+.farm-plot > em { position:absolute;z-index:3;right:5px;top:5px;padding:4px 7px;border:1px solid rgba(255,255,255,.2);border-radius:99px;background:rgba(28,26,18,.62);color:#f0e5ce;font-size:.61rem;font-style:normal;font-weight:850;line-height:1;backdrop-filter:blur(5px); }
+.farm-plot.is-watered > em { background:rgba(38,105,98,.78);color:#d7f3ea; }
+.farm-plot.is-ready > em { background:rgba(147,99,25,.88);color:#fff1b8; }
+.farm-plot > em.is-dry { background:rgba(145,62,35,.84);color:#ffe3d1; }
+.farm-progress { width:74%;height:4px;overflow:hidden;border-radius:99px;background:rgba(24,17,11,.45); }
+.farm-progress > i { display:block;width:var(--farm-progress,0%);height:100%;border-radius:inherit;background:linear-gradient(90deg,#8ab35c,#d9d976);transition:width .25s ease; }
+.farm-plot.is-ready .farm-progress > i { width:100%;background:#f2cf63; }
+.farm-command-dock { display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);align-items:stretch;gap:12px;margin-top:12px; }
+.farm-crop-picker { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0; }
+.farm-crop-choice {
+  appearance:none;
+  min-height:72px;
+  display:grid;
+  grid-template-columns:58px minmax(0,1fr);
+  grid-template-rows:auto auto;
+  align-items:center;
+  gap:1px 10px;
+  padding:8px 11px;
+  border:1px solid var(--farm-line);
+  border-radius:14px;
+  background:#f3efe4;
+  color:#2d3b2f;
+  text-align:left;
+  cursor:pointer;
+  transition:background .16s ease,border-color .16s ease,transform .16s ease;
+}
+.farm-crop-choice .farm-crop-art { grid-row:1 / 3;position:relative;left:auto;bottom:auto;width:58px;transform:none;filter:drop-shadow(0 4px 3px rgba(49,36,18,.18)); }
+.farm-crop-choice .farm-crop-art.stage-ready { transform:none; }
+.farm-crop-choice > span { min-width:0;display:grid;gap:3px; }
+.farm-crop-choice > span > b { color:#2c3c2e;font-size:.78rem; }
+.farm-crop-choice > span > small { color:#747a6e;font-size:.66rem;line-height:1.3; }
+.farm-crop-choice > strong { position:absolute;right:7px;top:6px;padding:3px 5px;border-radius:6px;background:#d8b556;color:#433a1d;font-size:.55rem; }
+.farm-crop-choice.is-selected,.farm-crop-choice[aria-pressed="true"] { border-color:#6b8e51;background:#e8efdc;box-shadow:inset 0 0 0 1px rgba(74,113,55,.18); }
+.farm-crop-choice:disabled,.farm-crop-choice.is-locked { opacity:.48;cursor:not-allowed; }
+.farm-actions { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0; }
+.farm-actions .btn { min-width:0;min-height:44px;border-color:rgba(44,65,45,.17);background:#fffaf0;color:#334331; }
+.farm-actions .btn.primary { border-color:var(--farm-green-deep);background:var(--farm-green-deep);color:#fff; }
+.farm-actions .btn.text { grid-column:1 / -1;min-height:32px;border:0;background:transparent;color:#72786d; }
+.farm-actions .btn:disabled { opacity:.42; }
+.farm-crop-choice:focus-visible,.farm-plot:focus-visible,.farm-actions .btn:focus-visible { outline:3px solid #f0c75e;outline-offset:3px; }
+.farm-guide { margin-top:10px;border-top:1px solid var(--farm-line);color:#65705f;font-size:.72rem; }
+.farm-guide summary { min-height:40px;display:flex;align-items:center;cursor:pointer;font-weight:780; }
+.farm-guide > div { display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 0 10px; }
+.farm-guide p { margin:0;line-height:1.55; }
+.farm-key-hint { margin:2px 0 0;color:#777d72;font-size:.67rem;text-align:center; }
+.farm-result { position:absolute;z-index:10;inset:50% auto auto 50%;width:min(440px,calc(100% - 32px));padding:28px;border:1px solid rgba(238,206,112,.5);border-radius:20px;transform:translate(-50%,-50%);background:rgba(26,57,39,.96);box-shadow:0 28px 80px rgba(20,36,26,.4);color:#fff;text-align:center;backdrop-filter:blur(12px); }
+.farm-result > span { color:#cbdab8;font-size:.72rem;font-weight:850;letter-spacing:.12em; }
+.farm-result > strong { display:block;margin:8px 0;color:#f2d36f;font-size:2.7rem;line-height:1; }
+.farm-result h2 { margin:0;font-size:1.4rem; }
+.farm-result p { color:rgba(255,255,255,.7);font-size:.76rem;line-height:1.6; }
+.farm-result .btn { min-width:150px;min-height:46px;border-color:#e8c75d;background:#e8c75d;color:#2b3b29; }
+@keyframes farm-art-ready { 50% { transform:translateX(-50%) translateY(-5px) rotate(1deg);filter:drop-shadow(0 12px 9px rgba(60,40,14,.38)) saturate(1.08); } }
+@media (hover:hover) and (pointer:fine) {
+  .farm-crop-choice:not(:disabled):hover { border-color:#7d9c62;background:#edf2e5;transform:translateY(-1px); }
+  .farm-plot:not(:disabled):hover { border-color:rgba(255,236,172,.78);background:rgba(255,239,181,.08);transform:translateY(-2px); }
+}
+@media (max-width:860px) {
+  .farm-stage { width:min(100% - 20px,760px); }
+  .farm-scene-head { align-items:stretch;flex-direction:column;gap:12px; }
+  .farm-metrics { width:100%; }
+  .farm-market { grid-template-columns:auto 1fr; }
+  .farm-market > p { grid-column:1 / -1; }
+  .farm-command-dock { grid-template-columns:1fr; }
+  .farm-actions { grid-template-columns:1fr 1fr auto; }
+  .farm-actions .btn.text { grid-column:auto;padding-inline:12px; }
+}
+@media (max-width:540px) {
+  .farm-route .casual-top { margin-inline:2px; }
+  .farm-stage { width:calc(100% - 12px);margin-top:8px; }
+  .farm-play { padding:10px;border-radius:18px; }
+  .farm-scene-head { margin-bottom:8px;gap:8px; }
+  .farm-scene-head > div:first-child { display:flex;align-items:baseline;justify-content:space-between;gap:10px; }
+  .farm-scene-head h1 { font-size:1.18rem;white-space:nowrap; }
+  .farm-scene-head > div:first-child > span { font-size:.64rem; }
+  .farm-metrics > div { min-height:48px;padding:6px 8px; }
+  .farm-metrics small { font-size:.63rem; }
+  .farm-metrics strong { font-size:1rem; }
+  .farm-market { grid-template-columns:auto 1fr;gap:8px;padding:8px 10px;border-radius:12px; }
+  .farm-market > div:first-child small,.farm-market > p { display:none; }
+  .farm-market-prices { justify-content:flex-end;gap:4px; }
+  .farm-market-prices span { min-width:0;gap:4px;padding:5px 6px;font-size:.62rem; }
+  .farm-status { min-height:36px;margin-bottom:7px;padding:5px 8px;font-size:.68rem; }
+  .farm-field { border-radius:13px; }
+  .farm-plot { padding:3px;border-radius:9px; }
+  .farm-plot::after { inset:auto 2% 0 2%;height:48%; }
+  .farm-plot > b { font-size:.66rem; }
+  .farm-plot > small { font-size:.59rem; }
+  .farm-plot > em { right:1px;top:1px;padding:3px 4px;font-size:.54rem; }
+  .farm-empty-mark { width:30px;height:30px;font-size:1rem; }
+  .farm-crop-art { bottom:15%;width:min(82%,78px); }
+  .farm-progress { width:74%;height:3px; }
+  .farm-command-dock { gap:7px;margin-top:7px; }
+  .farm-crop-picker { gap:5px; }
+  .farm-crop-choice { min-height:58px;grid-template-columns:42px minmax(0,1fr);gap:4px;padding:5px;border-radius:10px; }
+  .farm-crop-choice .farm-crop-art { width:42px; }
+  .farm-crop-choice > span > b { font-size:.68rem; }
+  .farm-crop-choice > span > small { font-size:.58rem; }
+  .farm-crop-choice > strong { display:none; }
+  .farm-actions { grid-template-columns:1fr 1fr;gap:5px; }
+  .farm-actions .btn { min-height:44px;padding-inline:8px;font-size:.68rem; }
+  .farm-actions .btn.text { grid-column:1 / -1;min-height:44px; }
+  .farm-guide { margin-top:6px;font-size:.68rem; }
+  .farm-guide > div { grid-template-columns:1fr;gap:7px; }
+  .farm-key-hint { display:none; }
+}
+@media (max-width:360px) {
+  .farm-scene-head h1 { font-size:1.04rem; }
+  .farm-market-prices span { font-size:.57rem; }
+  .farm-plot > small { display:none; }
+  .farm-crop-choice > span > small { font-size:.54rem; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .farm-crop-choice,.farm-plot,.farm-progress > i { transition:none!important; }
+  .farm-plot.is-ready .farm-crop-art { animation:none!important; }
+}
+
+/* The lobby preview reuses the same KAI crop atlas instead of CSS-drawn plants. */
+.world-farm .world-cover { background:#58773c url('/assets/farm/kai-farm-field-v1.webp') center/cover no-repeat; }
+.world-farm-field { width:176px;height:99px;padding:9px;gap:2px;border:0;border-radius:12px;background:rgba(31,48,27,.22);box-shadow:0 15px 28px rgba(31,35,21,.3);backdrop-filter:blur(2px); }
+.world-farm-field::before { display:none; }
+.world-farm-field > i { border:0;background-color:transparent!important;background-image:url('/assets/farm/kai-farm-crops-v1.webp')!important;background-size:500% 300%!important;background-repeat:no-repeat!important;box-shadow:none; }
+.world-farm-field > i::before,.world-farm-field > i::after { display:none; }
+.world-farm-field > i:empty { background-image:none!important; }
+.world-farm-field > i.crop-wheat { background-position:0 100%!important; }
+.world-farm-field > i.crop-carrot { background-position:25% 50%!important; }
+.world-farm-field > i.crop-strawberry { background-position:75% 100%!important; }
+.world-farm-field > i.stage-growing { filter:saturate(.8); }
+
 /* V18: a calmer, compositor-friendly catalog rail. */
 .lobby-game-center .game-catalog {
   --catalog-rail-gap:14px;

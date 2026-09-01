@@ -55,12 +55,18 @@ import {
   toggleSnakePause,
 } from './snake.js';
 import {
+  FARM_ACTIONS_PER_DAY,
   FARM_CROPS,
+  FARM_SEASON_DAYS,
+  advanceFarmDay,
+  clearFarmPlot,
   farmGrowthRatio,
   farmHasProgress,
+  farmMarketForDay,
   farmNextLevelXp,
   farmPlotStatus,
-  farmRemainingMs,
+  farmRemainingDays,
+  farmSeasonMedal,
   harvestFarmCrop,
   harvestReadyFarmCrops,
   newFarmGame,
@@ -191,7 +197,7 @@ const MINESWEEPER_DIFFICULTY_KEY = 'kai.play.minesweeper.difficulty.v1';
 const SNAKE_SAVE_KEY = 'kai.play.snake.game.v1';
 const SNAKE_DIFFICULTY_KEY = 'kai.play.snake.difficulty.v1';
 const SNAKE_BEST_KEY = 'kai.play.snake.best.v1';
-const FARM_SAVE_KEY = 'kai.play.farm.game.v1';
+const FARM_SAVE_KEY = 'kai.play.farm.season.v2';
 const SOKOBAN_SAVE_KEY = 'kai.play.sokoban.game.v1';
 const SLIDING_PUZZLE_SAVE_KEY = 'kai.play.sliding-puzzle.game.v1';
 const MATCH_THREE_SAVE_KEY = 'kai.play.match-three.game.v1';
@@ -214,7 +220,7 @@ const CATALOG_DISCOVERY = Object.freeze({
   falling: { categories:['arcade','quick','save'], search:'KAI 方块 falling blocks 俄罗斯方块 tetris 下落 消行 街机 反应 短局 自动保存' },
   snake: { categories:['arcade','quick','save'], search:'KAI 贪吃蛇 snake 反应 街机 即时 短局 自动保存' },
   maze: { categories:['puzzle','quick','save'], search:'KAI 迷宫 maze 路线 寻路 空间 益智 短局 自动保存' },
-  farm: { categories:['quick','save'], search:'KAI 农场 QQ农场 qq farm farming 种菜 收菜 种植 经营 养成 休闲 自动保存 离线成长' },
+  farm: { categories:['quick','save'], search:'KAI 农场 QQ农场 qq farm farming 种菜 收菜 种植 经营 养成 休闲 丰收挑战 九日赛季 市场行情 自动保存' },
   three: { categories:['card','quick'], search:'炸金花 zha jin hua three card poker 三张牌 扑克 牌桌 比牌 短局' },
   reels: { categories:['arcade','quick'], search:'算力转轮 转轮 reels slots spin 轻娱乐 街机 短局' },
 });
@@ -326,11 +332,11 @@ const GAME_CONTENT = Object.freeze({
     limits:'每张盘面都保证唯一连通且可解；可随时显示当前位置到出口的提示路线。', action:'open-maze', actionLabel:'进入迷宫',
   },
   farm: {
-    name:'KAI 农场', eyebrow:'轻松经营', duration:'首获约 20 秒', mode:'单人 · 6 块田 / 3 种作物', persistence:'本地自动保存',
-    goal:'循环播种、浇水和收获，积累金币与经验并解锁种子。',
-    loop:'选种子 → 播种 → 浇水加速 → 成熟收获 → 投入下一季',
-    finish:'持续经营玩法没有强制终局，以升级和累计收获作为阶段目标。',
-    limits:'作物会按本地时间继续成熟；无好友偷菜、跨设备同步或现金兑换。', action:'open-farm', actionLabel:'进入农场',
+    name:'KAI 农场', eyebrow:'九日经营', duration:'约 5–8 分钟', mode:'单人 · 6 块田 / 3 种作物', persistence:'本地自动保存',
+    goal:'在九天内安排有限行动，照料作物并在需求旺盛的日子收获，冲击金穗。',
+    loop:'观察行情 → 播种 / 浇水 / 收获 → 结束本日 → 调整下一天计划',
+    finish:'第九日结束后按最终金币结算铜穗、银穗或金穗。',
+    limits:'单人本地经营挑战；无好友偷菜、跨设备同步或现金兑换，不计入竞技分。', action:'open-farm', actionLabel:'开始一季',
   },
   three: {
     name:'炸金花训练', eyebrow:'牌型判断', duration:'约 3 分钟 / 3 手', mode:'单人训练 · 两位牌友', persistence:'单局不保存',
@@ -1072,13 +1078,12 @@ function lobby() {
     });
   }
   if (canContinueFarm) {
-    const farmNow = Math.max(Date.now(), savedFarm.updatedAt);
-    const readyCount = savedFarm.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, farmNow) === 'ready').length;
-    const growingCount = savedFarm.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, farmNow) === 'growing').length;
+    const readyCount = savedFarm.plots.filter((plot) => farmPlotStatus(plot) === 'ready').length;
+    const growingCount = savedFarm.plots.filter((plot) => farmPlotStatus(plot) === 'growing').length;
     resumeCandidates.push({
       id:'farm', accent:'farm', eyebrow:'继续经营', title:'KAI 农场',
-      meta:readyCount ? `${readyCount} 块作物已经成熟` : growingCount ? `${growingCount} 块田正在生长` : `Lv.${savedFarm.level} 农场 · 等待播种`,
-      progress:null, note:`金币 ${savedFarm.coins} · 已收获 ${savedFarm.harvests} 次`,
+      meta:savedFarm.status === 'finished' ? `第九日已结算 · ${savedFarm.coins} 金币` : readyCount ? `${readyCount} 块成熟 · 第 ${savedFarm.day} 日` : growingCount ? `${growingCount} 块生长中 · 第 ${savedFarm.day} 日` : `第 ${savedFarm.day} 日 · 等待播种`,
+      progress:null, note:`剩余 ${savedFarm.actionsLeft} 次行动 · 已收获 ${savedFarm.harvests} 次`,
       action:'open-farm', label:farmAction, glyph:'苗',
     });
   }
@@ -1209,7 +1214,7 @@ function lobby() {
           <article class="game-world world-falling" data-world-card data-world-id="falling"${canContinueFalling?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFalling?'可继续':savedFalling?.status==='over'?'成绩已保存':'经典街机'}</span><div class="world-cover"><i class="world-cover-mark" aria-hidden="true">▦</i></div><div class="world-copy"><span>七种方块 · 消行升级</span><h3>KAI 方块</h3><p>移动、旋转与直落，填满横行，在加速中继续堆叠。</p><button class="btn" data-action="open-falling">${fallingAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-snake" data-world-card data-world-id="snake"${canContinueSnake?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
           <article class="game-world world-maze" data-world-card data-world-id="maze"${canContinueMaze?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMaze?'可继续':savedMaze?.status==='won'?'路线已完成':'三档迷宫'}</span><div class="world-cover"><i class="world-cover-mark" aria-hidden="true">迷</i></div><div class="world-copy"><span>唯一通路 · 三档尺寸</span><h3>KAI 迷宫</h3><p>从左上角走到右下角，需要时点亮当前位置的最短提示路线。</p><button class="btn" data-action="open-maze">${mazeAction} <b aria-hidden="true">→</b></button></div></article>
-          <article class="game-world world-farm" data-world-card data-world-id="farm"${canContinueFarm?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFarm?'可继续':'新上线'}</span><div class="world-cover"><div class="world-farm-field" aria-hidden="true"><i class="crop-wheat stage-ready"><b>麦</b></i><i class="crop-carrot stage-growing"><b>萝</b></i><i></i><i class="crop-strawberry stage-ready"><b>莓</b></i><i class="crop-wheat stage-growing"><b>麦</b></i><i></i></div><i class="world-cover-mark" aria-hidden="true">丰</i></div><div class="world-copy"><span>经典农场经营 · 20 秒首获</span><h3>KAI 农场</h3><p>播种、浇水、等待成熟，再把收获投入下一季。</p><button class="btn" data-action="open-farm">${farmAction} <b>→</b></button></div></article>
+          <article class="game-world world-farm" data-world-card data-world-id="farm"${canContinueFarm?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFarm?'可继续':'九日新作'}</span><div class="world-cover"><div class="world-farm-field" aria-hidden="true"><i class="crop-wheat stage-ready"></i><i class="crop-carrot stage-growing"></i><i></i><i class="crop-strawberry stage-ready"></i><i class="crop-wheat stage-growing"></i><i></i></div><i class="world-cover-mark" aria-hidden="true">9D</i></div><div class="world-copy"><span>九日经营 · 五步一日 · 行情轮换</span><h3>KAI 农场</h3><p>安排有限行动，照料六块田，在旺需日收获更高售价。</p><button class="btn" data-action="open-farm">${farmAction} <b>→</b></button></div></article>
           <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">牌型训练</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三手判断训练 · 单机免费</span><h3>炸金花训练</h3><p>先判断自己的牌型，再揭晓三家结果与本次正确率。</p><button class="btn" data-action="open-three">开始三手训练 <b>→</b></button></div></article>
           <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>发现对子与三连组合，记录本次会话的共振值。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">免费试转 <b>→</b></button></div></article>
         </div>
@@ -2211,68 +2216,77 @@ function snakeGame() {
   </main><p class="casual-disclaimer">${persistenceAvailable ? '本轮完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本轮仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
-function formatFarmDuration(milliseconds) {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
-  if (seconds === 0) return '可收获';
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+function farmReadySignature(game) {
+  return game.plots.map((plot) => farmPlotStatus(plot)).join('|');
 }
 
-function farmEffectiveNow(game) {
-  return Math.max(Date.now(), game?.updatedAt || 0);
+function farmCropStage(plot) {
+  const ratio = farmGrowthRatio(plot);
+  return ratio >= 1 ? 'ready' : ratio >= 0.45 ? 'growing' : 'sprout';
 }
 
-function farmReadySignature(game, now = farmEffectiveNow(game)) {
-  return game.plots.map((plot) => plot.cropId ? farmPlotStatus(plot, now) : 'empty').join('|');
+function farmCropArt(cropId, stage = 'ready') {
+  return `<span class="farm-crop-art crop-${cropId} stage-${stage}" aria-hidden="true"></span>`;
 }
 
-function farmCropStage(plot, now) {
-  const ratio = farmGrowthRatio(plot, now);
-  return ratio >= 0.72 ? 'full' : ratio >= 0.3 ? 'growing' : 'sprout';
-}
-
-function farmPlotMarkup(game, index, now, focused) {
+function farmPlotMarkup(game, index, focused) {
   const plot = game.plots[index];
   const selected = FARM_CROPS[game.selectedCrop];
-  if (!plot.cropId) {
-    return `<button type="button" class="farm-plot is-empty" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块空地，点击播种${selected.label}"><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span><b>空地 ${index + 1}</b><small>播种${selected.label} · ${selected.seedCost} 金币</small></button>`;
+  const disabled = game.status === 'finished' ? ' disabled' : '';
+  const status = farmPlotStatus(plot);
+  if (status === 'empty') {
+    return `<button type="button" class="farm-plot is-empty" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块空地，播种${selected.label}"${disabled}><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span><span class="farm-empty-mark" aria-hidden="true">＋</span><b>第 ${index + 1} 块田</b><small>${selected.label}种子 · ${selected.seedCost} 金币</small></button>`;
+  }
+  if (status === 'weed') {
+    return `<button type="button" class="farm-plot is-weed" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块田长出杂草，点击消耗一次行动清理"${disabled}><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span><span class="farm-weed-art" aria-hidden="true"><i></i><i></i><i></i></span><b>杂草</b><small>清理 · 1 次行动</small><em>缺水两日</em></button>`;
   }
   const crop = FARM_CROPS[plot.cropId];
-  const status = farmPlotStatus(plot, now);
   const ready = status === 'ready';
-  const remaining = farmRemainingMs(plot, now);
-  const ratio = Math.round(farmGrowthRatio(plot, now) * 100);
-  const stage = farmCropStage(plot, now);
-  const stateLabel = ready ? `成熟，点击收获 ${crop.reward} 金币` : plot.watered ? `已浇水，${formatFarmDuration(remaining)} 后成熟` : `生长中，点击浇水可加速`;
-  const helper = ready ? `收获 +${crop.reward} 金币` : plot.watered ? `${formatFarmDuration(remaining)} 成熟` : '浇水加速';
-  return `<button type="button" class="farm-plot crop-${crop.id} ${ready ? 'is-ready' : plot.watered ? 'is-growing is-watered' : 'is-growing'}" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块地，${crop.label}${stateLabel}" aria-describedby="farm-key-hint"><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span><span class="farm-crop stage-${stage}" aria-hidden="true"><i></i><b>${crop.glyph}</b></span><span class="farm-progress" data-farm-progress="${index}" role="progressbar" aria-label="${crop.label}成长进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${ratio}" style="--farm-progress:${ratio}%"><i></i></span><b>${crop.label}</b><small data-farm-countdown="${index}">${helper}</small>${plot.watered && !ready ? '<em>已浇水</em>' : ready ? '<em>已成熟</em>' : '<em>待浇水</em>'}</button>`;
+  const price = farmMarketForDay(game.day).prices[crop.id];
+  const remaining = farmRemainingDays(plot);
+  const ratio = Math.round(farmGrowthRatio(plot) * 100);
+  const stage = farmCropStage(plot);
+  const stateLabel = ready ? `成熟，收获可卖 ${price} 金币` : plot.wateredToday ? `今日已浇水，尚需 ${remaining} 个成长日` : `尚需 ${remaining} 个成长日，点击浇水`;
+  const helper = ready ? `今日售价 ${price}` : plot.wateredToday ? `日终成长 · 还需 ${remaining} 日` : `浇水 · 1 次行动`;
+  return `<button type="button" class="farm-plot crop-${crop.id} ${ready ? 'is-ready' : plot.wateredToday ? 'is-growing is-watered' : 'is-growing'}" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块田，${crop.label}${stateLabel}" aria-describedby="farm-key-hint"${disabled}><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span>${farmCropArt(crop.id,stage)}<span class="farm-progress" role="progressbar" aria-label="${crop.label}成长进度 ${ratio}%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${ratio}" style="--farm-progress:${ratio}%"><i></i></span><b>${crop.label}</b><small>${helper}</small>${plot.wateredToday && !ready ? '<em>今日已浇</em>' : ready ? '<em>可以收获</em>' : plot.dryStreak ? '<em class="is-dry">已缺水 1 日</em>' : '<em>等待照料</em>'}</button>`;
 }
 
 function farmGame() {
   const casual = state.casual;
   const game = casual?.game;
   if (!game || game.kind !== 'farm') return lobby();
-  const now = farmEffectiveNow(game);
-  const readyCount = game.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'ready').length;
-  const growingCount = game.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'growing').length;
+  const readyCount = game.plots.filter((plot) => farmPlotStatus(plot) === 'ready').length;
+  const growingCount = game.plots.filter((plot) => farmPlotStatus(plot) === 'growing').length;
+  const weedCount = game.plots.filter((plot) => farmPlotStatus(plot) === 'weed').length;
   const nextLevelXp = farmNextLevelXp(game.level);
-  const xpProgress = nextLevelXp ? Math.min(100, Math.round(game.xp / nextLevelXp * 100)) : 100;
+  const xpFloor = game.level === 1 ? 0 : game.level === 2 ? 10 : 30;
+  const xpProgress = nextLevelXp ? Math.min(100, Math.round((game.xp - xpFloor) / Math.max(1, nextLevelXp - xpFloor) * 100)) : 100;
   const persistenceAvailable = casual.saveAvailable !== false && !casual.saveConflict;
+  const market = farmMarketForDay(game.day);
+  const focusCrop = FARM_CROPS[market.focusId];
+  const tomorrowCrop = FARM_CROPS[market.tomorrowFocusId];
   const cropChoices = Object.values(FARM_CROPS).map((crop) => {
     const locked = crop.unlockLevel > game.level;
     const selected = crop.id === game.selectedCrop;
-    return `<button type="button" class="farm-crop-choice crop-${crop.id} ${selected ? 'is-selected' : ''} ${locked ? 'is-locked' : ''}" data-action="farm-select" data-farm-crop="${crop.id}" aria-pressed="${selected}" ${locked ? `disabled aria-label="${crop.label}，等级 ${crop.unlockLevel} 解锁"` : `aria-label="选择${crop.label}种子，${crop.seedCost} 金币，成熟收获 ${crop.reward} 金币"`}><i aria-hidden="true">${crop.glyph}</i><span><b>${crop.label}</b><small>${locked ? `Lv.${crop.unlockLevel} 解锁` : `${crop.seedCost} → ${crop.reward} 金币 · ${formatFarmDuration(crop.growMs)}`}</small></span></button>`;
+    const price = market.prices[crop.id];
+    return `<button type="button" class="farm-crop-choice crop-${crop.id} ${selected ? 'is-selected' : ''} ${locked ? 'is-locked' : ''}" data-action="farm-select" data-farm-crop="${crop.id}" aria-pressed="${selected}" ${locked || game.status === 'finished' ? `disabled aria-label="${crop.label}，${locked ? `${crop.unlockXp} 经验解锁` : '本季已结算'}"` : `aria-label="选择${crop.label}种子，成本 ${crop.seedCost} 金币，今日售价 ${price} 金币"`}>${farmCropArt(crop.id,'ready')}<span><b>${crop.label}</b><small>${locked ? `${crop.unlockXp} XP 解锁` : `种 ${crop.seedCost} · 售 ${price} · ${crop.growDays} 个成长日`}</small></span>${market.focusId === crop.id ? '<strong>今日旺需</strong>' : ''}</button>`;
   }).join('');
   const status = casual.saveConflict ? '另一标签页已更新农场，本页已停止写入，请重新打开'
-    : casual.announcement || (readyCount ? `${readyCount} 块作物已经成熟` : growingCount ? `${growingCount} 块作物正在生长` : '选好种子，点击空地开始播种');
-  return `<div class="shell casual-shell farm-route">${casualHeader('KAI 农场','LOCAL FARM',`Lv.${game.level} · ${persistenceAvailable ? '本地自动保存' : '仅本次可玩'}`)}<main class="farm-stage">
-    <section class="farm-copy"><div><span>轻松经营 · 离线继续成长</span><h1>种下一季<br><b>等一场丰收</b></h1><p>选种后点击空地播种，再点击作物浇水加速。成熟不会枯萎，回来后手动收获即可。</p></div><div class="farm-crop-picker" role="group" aria-label="选择要播种的作物">${cropChoices}</div><ol><li><i>1</i><span><b>播种</b><small>点击空地扣除种子金币</small></span></li><li><i>2</i><span><b>浇水</b><small>每块作物可加速一次</small></span></li><li><i>3</i><span><b>收获</b><small>成熟后手动获得金币与经验</small></span></li></ol></section>
-    <section class="farm-play"><div class="farm-metrics" aria-label="农场数据"><div><small>金币</small><strong>${game.coins}</strong></div><div><small>等级</small><strong>Lv.${game.level}</strong></div><div><small>经验</small><strong>${nextLevelXp ? `${game.xp}/${nextLevelXp}` : `${game.xp} MAX`}</strong><span role="progressbar" aria-label="农场升级进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${xpProgress}"><i style="--farm-xp:${xpProgress}%"></i></span></div><div><small>已收获</small><strong>${game.harvests}</strong></div></div>
-      <div class="farm-status ${readyCount ? 'is-ready' : growingCount ? 'is-growing' : ''} ${casual.saveConflict ? 'is-warning' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${readyCount ? `${readyCount} 块可收` : `${growingCount} 块生长中`}</b></div>
-      <div class="farm-field" data-farm-field role="grid" aria-label="2 行 3 列农场地块，方向键移动，回车或空格操作" aria-rowcount="2" aria-colcount="3" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${game.plots.map((_, index) => farmPlotMarkup(game, index, now, casual.focusedPlot === index)).join('')}</div>
-      <div class="farm-actions"><button class="btn primary" data-action="farm-harvest-all" ${readyCount ? '' : 'disabled'}>一键收获${readyCount ? ` · ${readyCount} 块` : ''}</button><button class="btn" data-action="farm-reset">重新开垦</button></div>
-      <div class="farm-legend" aria-label="地块状态图例"><span><i class="empty"></i>空地</span><span><i class="growing"></i>生长中</span><span><i class="watered"></i>已浇水</span><span><i class="ready"></i>已成熟</span></div><p class="farm-key-hint" id="farm-key-hint">键盘：方向键移动 · Enter / 空格执行当前操作</p>
+    : casual.announcement || (game.status === 'finished' ? '本季已经结算' : readyCount ? `${readyCount} 块作物成熟了，看看今天的行情` : growingCount ? `${growingCount} 块作物需要继续照料` : '选种后点击空地，开始安排今天的五次行动');
+  const medalRaw = game.status === 'finished' ? farmSeasonMedal(game.coins) : null;
+  const medalKey = typeof medalRaw === 'string' ? medalRaw : medalRaw?.key;
+  const medalLabel = ({ gold:'金穗', silver:'银穗', bronze:'铜穗', none:'本季完成' })[medalKey] || '本季完成';
+  const result = game.status === 'finished' ? `<section class="farm-result" data-farm-result tabindex="-1"><span>九日经营完成</span><strong>${medalLabel}</strong><h2>${game.coins} 金币</h2><p>共收获 ${game.harvests} 次 · ${game.xp} 经验。地里未收作物不计入结算。</p><button class="btn primary" data-action="farm-reset">再开一季</button></section>` : '';
+  const marketRows = Object.values(FARM_CROPS).map((crop) => `<span class="${market.focusId === crop.id ? 'is-focus' : ''}">${crop.label}<b>${market.prices[crop.id]}</b></span>`).join('');
+  return `<div class="shell casual-shell farm-route">${casualHeader('KAI 农场','NINE DAY HARVEST',`第 ${game.day}/${FARM_SEASON_DAYS} 日 · ${persistenceAvailable ? '本地自动保存' : '仅本次可玩'}`)}<main class="farm-stage">
+    <section class="farm-play"><div class="farm-scene-head"><div><span>九日丰收挑战</span><h1>今天这五步，<b>种在哪里？</b></h1></div><div class="farm-metrics" aria-label="本季数据"><div><small>第几日</small><strong>${game.day}<i> / ${FARM_SEASON_DAYS}</i></strong></div><div><small>剩余行动</small><strong>${game.actionsLeft}<i> / ${FARM_ACTIONS_PER_DAY}</i></strong></div><div><small>金币</small><strong>${game.coins}</strong></div><div><small>经验</small><strong>${game.xp}${nextLevelXp ? `<i> / ${nextLevelXp}</i>` : ''}</strong><span role="progressbar" aria-label="农场升级进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${xpProgress}"><i style="--farm-xp:${xpProgress}%"></i></span></div></div></div>
+      <div class="farm-market" aria-label="今日市场行情"><div><span>今日旺需</span><strong>${focusCrop.label}</strong><small>卖价提升 25%</small></div><div class="farm-market-prices">${marketRows}</div><p>明日旺需：<b>${tomorrowCrop.label}</b></p></div>
+      <div class="farm-status ${readyCount ? 'is-ready' : growingCount ? 'is-growing' : ''} ${weedCount ? 'has-weeds' : ''} ${casual.saveConflict ? 'is-warning' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status === 'finished' ? medalLabel : `${game.actionsLeft} 次行动`}</b></div>
+      <div class="farm-field" data-farm-field role="grid" aria-label="2 行 3 列农场地块，方向键移动，回车或空格操作" aria-rowcount="2" aria-colcount="3" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${game.plots.map((_, index) => farmPlotMarkup(game, index, casual.focusedPlot === index)).join('')}</div>
+      <div class="farm-command-dock"><div class="farm-crop-picker" role="group" aria-label="选择要播种的作物">${cropChoices}</div><div class="farm-actions"><button class="btn" data-action="farm-harvest-all" ${readyCount && game.actionsLeft && game.status !== 'finished' ? '' : 'disabled'}>收获成熟作物${readyCount ? ` · ${Math.min(readyCount,game.actionsLeft)} 块` : ''}</button><button class="btn primary" data-action="farm-next-day" ${game.status === 'finished' ? 'disabled' : ''}>${game.day === FARM_SEASON_DAYS ? '结算本季' : '结束本日'} <b>→</b></button><button class="btn text" data-action="farm-reset">重新开垦</button></div></div>
+      <details class="farm-guide"><summary>玩法与行情规则</summary><div><p>每次播种、浇水、收获或清理杂草消耗 1 次行动。播种当天算已浇水，结束本日后才成长。</p><p>连续两天缺水会变成杂草；成熟作物不会枯萎，可以等到旺需日再卖。第 9 日结束时只按金币结算。</p></div></details><p class="farm-key-hint" id="farm-key-hint">键盘：方向键移动 · Enter / 空格操作地块</p>${result}
     </section>
-  </main><p class="casual-disclaimer">${persistenceAvailable ? '农场在当前浏览器本地运行并自动保存' : casual.saveConflict ? '检测到另一标签页的更新，本页为只读状态' : '当前浏览器存储不可用，本次仍可游玩但刷新后不会恢复'}。离开后作物只继续成长，不会自动产币；暂不支持好友拜访、偷菜或跨设备同步。农场金币不可购买、提现、转让或兑换，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本季在当前浏览器本地运行并自动保存' : casual.saveConflict ? '检测到另一标签页的更新，本页为只读状态' : '当前浏览器存储不可用，本局仍可游玩但刷新后不会恢复'}。农场金币和奖章只用于本地娱乐，不可购买、提现、转让或兑换，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
 function reversiCell(game, index, legalMoves, focused) {
@@ -3486,44 +3500,6 @@ function focusFarmInteraction(index = state.casual?.focusedPlot ?? 0) {
 function queueFarmTick() {
   if (farmTimer) clearTimeout(farmTimer);
   farmTimer = null;
-  const casual = state.casual;
-  const game = casual?.game;
-  if (document.visibilityState === 'hidden' || state.view !== 'farm' || casual?.kind !== 'farm' || !game) return;
-  const now = farmEffectiveNow(game);
-  const remaining = game.plots
-    .filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'growing')
-    .map((plot) => farmRemainingMs(plot, now));
-  if (!remaining.length) return;
-  const delay = Math.max(80, Math.min(1000, Math.min(...remaining) + 20));
-  farmTimer = setTimeout(() => {
-    farmTimer = null;
-    if (state.view !== 'farm' || state.casual !== casual || document.visibilityState === 'hidden') return;
-    const liveGame = casual.game;
-    const liveNow = farmEffectiveNow(liveGame);
-    const signature = farmReadySignature(liveGame, liveNow);
-    if (signature !== casual.readySignature) {
-      const readyCount = liveGame.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, liveNow) === 'ready').length;
-      casual.readySignature = signature;
-      casual.announcement = readyCount ? `${readyCount} 块作物已经成熟，可以收获了` : '农场状态已更新';
-      render();focusFarmInteraction(casual.focusedPlot);
-    } else {
-      liveGame.plots.forEach((plot, index) => {
-        if (!plot.cropId || farmPlotStatus(plot, liveNow) !== 'growing') return;
-        const crop = FARM_CROPS[plot.cropId];
-        const remainingMs = farmRemainingMs(plot, liveNow);
-        const countdown = document.querySelector(`[data-farm-countdown="${index}"]`);
-        if (countdown && plot.watered) countdown.textContent = `${formatFarmDuration(remainingMs)} 成熟`;
-        const progress = document.querySelector(`[data-farm-progress="${index}"]`);
-        if (progress) {
-          const value = Math.round(farmGrowthRatio(plot, liveNow) * 100);
-          progress.setAttribute('aria-valuenow', String(value));
-          progress.setAttribute('aria-label', `${crop.label}成长进度 ${value}%`);
-          progress.style.setProperty('--farm-progress', `${value}%`);
-        }
-      });
-    }
-    queueFarmTick();
-  }, delay);
 }
 
 function startFarmSession(game, announcement = '选好种子，点击空地开始播种') {
@@ -3540,7 +3516,6 @@ function startFarmSession(game, announcement = '选好种子，点击空地开�
   };
   state.view = 'farm';
   if (!saveFarmGame(game)) state.casual.announcement = '本浏览器无法保存进度 · 仍可继续经营';
-  queueFarmTick();
 }
 
 function openFarm() {
@@ -3550,10 +3525,10 @@ function openFarm() {
   stopCasualTimers();
   const saved = loadSavedFarmGame();
   const game = saved || newFarmGame();
-  const now = farmEffectiveNow(game);
-  const readyCount = game.plots.filter((plot) => plot.cropId && farmPlotStatus(plot, now) === 'ready').length;
-  const announcement = !saved || !farmHasProgress(game) ? '欢迎来到农场，先播种一块小麦吧'
-    : readyCount ? `${readyCount} 块作物已经成熟，可以收获了` : '已恢复当前浏览器的农场进度';
+  const readyCount = game.plots.filter((plot) => farmPlotStatus(plot) === 'ready').length;
+  const announcement = !saved || !farmHasProgress(game) ? '第一日开始 · 先种下五块小麦试试'
+    : game.status === 'finished' ? '上一季结果已保存，可以查看或再开一季'
+      : readyCount ? `${readyCount} 块作物已经成熟，看看今天是否旺需` : `已恢复第 ${game.day} 日经营进度`;
   startFarmSession(game, announcement);
   rememberLastLocalGame('farm');
 }
@@ -3566,7 +3541,10 @@ function farmActionError(error) {
     FARM_PLOT_EMPTY:'这是一块空地',
     FARM_CROP_READY:'作物已经成熟，直接收获吧',
     FARM_ALREADY_WATERED:'这块作物已经浇过水了',
-    FARM_CROP_GROWING:'作物还在生长，请再等一会儿',
+    FARM_CROP_GROWING:'作物还需要继续照料',
+    FARM_ACTIONS_REQUIRED:'今天的行动已经用完，请结束本日',
+    FARM_WEED_REQUIRED:'这块地没有杂草',
+    FARM_SEASON_FINISHED:'本季已经结算，请再开一季',
   })[error?.message] || '这次操作没有完成，请再试一次';
 }
 
@@ -3579,7 +3557,9 @@ function commitFarmGame(next, announcement, focusedPlot = state.casual?.focusedP
   casual.readySignature = farmReadySignature(next);
   const saveWasAvailable = casual.saveAvailable !== false;
   if (!saveFarmGame(next) && saveWasAvailable) casual.announcement += casual.saveConflict ? ' · 请重新打开以继续保存' : ' · 当前进度无法保存';
-  render();focusFarmInteraction(focusedPlot);queueFarmTick();
+  render();
+  if (next.status === 'finished') document.querySelector('[data-farm-result]')?.focus({ preventScroll:true });
+  else focusFarmInteraction(focusedPlot);
 }
 
 function performFarmPlot(index) {
@@ -3591,31 +3571,36 @@ function performFarmPlot(index) {
     casual.announcement = '另一标签页已更新农场，请返回大厅后重新打开';
     render();focusFarmInteraction(index);return;
   }
-  const now = farmEffectiveNow(game);
   const plot = game.plots[index];
   try {
-    if (!plot.cropId) {
+    const status = farmPlotStatus(plot);
+    if (status === 'empty') {
       const crop = FARM_CROPS[game.selectedCrop];
-      commitFarmGame(plantFarmCrop(game, index, game.selectedCrop, now), `已在第 ${index + 1} 块地播种${crop.label} · 点击作物浇水可加速`, index);
+      commitFarmGame(plantFarmCrop(game, index, game.selectedCrop), `第 ${index + 1} 块田已种下${crop.label} · 播种当天已浇水`, index);
+      return;
+    }
+    if (status === 'weed') {
+      commitFarmGame(clearFarmPlot(game,index),`第 ${index + 1} 块田的杂草已清理`,index);
       return;
     }
     const crop = FARM_CROPS[plot.cropId];
-    if (farmPlotStatus(plot, now) === 'ready') {
+    if (status === 'ready') {
       const beforeLevel = game.level;
-      const next = harvestFarmCrop(game, index, now);
+      const price = farmMarketForDay(game.day).prices[crop.id];
+      const next = harvestFarmCrop(game, index);
       const levelText = next.level > beforeLevel ? ` · 升到 Lv.${next.level}，新种子已解锁` : '';
-      commitFarmGame(next, `收获${crop.label} · +${crop.reward} 金币、+${crop.xp} 经验${levelText}`, index);
+      commitFarmGame(next, `收获${crop.label} · 售出 ${price} 金币、+${crop.xp} 经验${levelText}`, index);
       return;
     }
-    if (!plot.watered) {
-      commitFarmGame(waterFarmCrop(game, index, now), `已给${crop.label}浇水 · 成熟时间提前 ${Math.round(crop.waterBonusMs / 1000)} 秒`, index);
+    if (!plot.wateredToday) {
+      commitFarmGame(waterFarmCrop(game, index), `已给${crop.label}浇水 · 结束本日后继续成长`, index);
       return;
     }
-    casual.announcement = `${crop.label}还需 ${formatFarmDuration(farmRemainingMs(plot, now))} 成熟`;
-    render();focusFarmInteraction(index);queueFarmTick();
+    casual.announcement = `${crop.label}今天已经浇过水 · 还需 ${farmRemainingDays(plot)} 个成长日`;
+    render();focusFarmInteraction(index);
   } catch (error) {
     casual.announcement = farmActionError(error);
-    render();focusFarmInteraction(index);queueFarmTick();
+    render();focusFarmInteraction(index);
   }
 }
 
@@ -4871,7 +4856,7 @@ app.addEventListener('click', e => {
     if(!game||!Object.hasOwn(FARM_CROPS,cropId))return;
     if(state.casual.saveConflict){state.casual.announcement='另一标签页已更新农场，请重新打开后继续';render();focusFarmInteraction();return;}
     try{
-      const next=selectFarmCrop(game,cropId,farmEffectiveNow(game));
+      const next=selectFarmCrop(game,cropId);
       state.casual.game=next;state.casual.announcement=`已选择${FARM_CROPS[cropId].label}种子 · 点击空地播种`;
       if(!saveFarmGame(next))state.casual.announcement+=' · 当前选择无法保存';
     }catch(error){state.casual.announcement=farmActionError(error);}
@@ -4880,18 +4865,32 @@ app.addEventListener('click', e => {
   if(a==='farm-harvest-all'&&state.view==='farm'){
     const game=state.casual?.game;if(!game)return;
     if(state.casual.saveConflict){state.casual.announcement='另一标签页已更新农场，请重新打开后继续';render();focusFarmInteraction();return;}
-    const now=farmEffectiveNow(game);
-    const readyCount=game.plots.filter((plot)=>plot.cropId&&farmPlotStatus(plot,now)==='ready').length;
+    const readyCount=game.plots.filter((plot)=>farmPlotStatus(plot)==='ready').length;
     if(!readyCount){state.casual.announcement='暂时没有成熟作物';render();focusFarmInteraction();queueFarmTick();return;}
     const beforeLevel=game.level;
-    const next=harvestReadyFarmCrops(game,now);
-    commitFarmGame(next,`一键收获 ${readyCount} 块作物${next.level>beforeLevel?` · 升到 Lv.${next.level}`:''}`,state.casual.focusedPlot);return;
+    const next=harvestReadyFarmCrops(game);
+    const harvested=next.harvests-game.harvests;
+    commitFarmGame(next,`收获 ${harvested} 块成熟作物${harvested<readyCount?' · 今日行动已用完':''}${next.level>beforeLevel?` · 升到 Lv.${next.level}`:''}`,state.casual.focusedPlot);return;
+  }
+  if(a==='farm-next-day'&&state.view==='farm'){
+    const game=state.casual?.game;if(!game)return;
+    if(state.casual.saveConflict){state.casual.announcement='另一标签页已更新农场，请重新打开后继续';render();focusFarmInteraction();return;}
+    try{
+      const next=advanceFarmDay(game);
+      const weeds=next.plots.filter((plot)=>farmPlotStatus(plot)==='weed').length;
+      const ready=next.plots.filter((plot)=>farmPlotStatus(plot)==='ready').length;
+      const announcement=next.status==='finished'?`九日经营完成 · ${next.coins} 金币`
+        : weeds?`进入第 ${next.day} 日 · ${weeds} 块田缺水变成杂草`
+          : ready?`进入第 ${next.day} 日 · ${ready} 块作物可以收获`
+            : `进入第 ${next.day} 日 · 今日旺需 ${FARM_CROPS[farmMarketForDay(next.day).focusId].label}`;
+      commitFarmGame(next,announcement,state.casual.focusedPlot);return;
+    }catch(error){state.casual.announcement=farmActionError(error);render();focusFarmInteraction();return;}
   }
   if(a==='farm-reset'&&state.view==='farm'){
     const game=state.casual?.game;if(!game)return;
     if(!confirmLocalGameReplacement(farmHasProgress(game),'重新开垦会清空当前金币、作物和收获记录，确定继续吗？'))return;
-    const next=newFarmGame(farmEffectiveNow(game));
-    startFarmSession(next,'农场已重新开垦 · 先播种一块小麦吧');render();focusFarmInteraction();return;
+    const next=newFarmGame();
+    startFarmSession(next,'新一季开始 · 先种下五块小麦试试');render();focusFarmInteraction();return;
   }
   if(a==='slots-spin'&&state.view==='slots'&&!state.casual?.spinning){
     const casual=state.casual;
@@ -5448,17 +5447,9 @@ document.addEventListener('visibilitychange', () => {
   if (state.view === 'farm') {
     if (document.visibilityState === 'hidden') {
       saveFarmGame(state.casual.game);
-      if (farmTimer) clearTimeout(farmTimer);
-      farmTimer = null;
       return;
     }
-    const now=farmEffectiveNow(state.casual.game);
-    const signature=farmReadySignature(state.casual.game,now);
-    if(signature!==state.casual.readySignature){
-      const readyCount=state.casual.game.plots.filter((plot)=>plot.cropId&&farmPlotStatus(plot,now)==='ready').length;
-      state.casual.readySignature=signature;state.casual.announcement=readyCount?`${readyCount} 块作物已经成熟，可以收获了`:'农场状态已更新';render();focusFarmInteraction();
-    }
-    queueFarmTick();
+    render();focusFarmInteraction();
   }
 });
 

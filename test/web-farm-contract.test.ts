@@ -1,31 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 const root = resolve(import.meta.dirname, '..');
 const read = (path: string) => readFile(resolve(root, path), 'utf8');
-const [
-  appSource,
-  styleSource,
-  indexSource,
-  packageSource,
-  dockerSource,
-  preflightSource,
-  proxyTestSource,
-  readmeSource,
-  productSource,
-] = await Promise.all([
-  read('web/app.js'),
-  read('web/styles.css'),
-  read('web/index.html'),
-  read('package.json'),
-  read('web/Dockerfile'),
-  read('scripts/preflight.ts'),
-  read('test/web-proxy-e2e.test.ts'),
-  read('README.md'),
-  read('docs/PRODUCT.md'),
+const [appSource, styleSource, indexSource, packageSource, dockerSource, preflightSource, proxyTestSource] = await Promise.all([
+  read('web/app.js'), read('web/styles.css'), read('web/index.html'), read('package.json'),
+  read('web/Dockerfile'), read('scripts/preflight.ts'), read('test/web-proxy-e2e.test.ts'),
 ]);
 
 function between(source: string, start: string, end: string) {
@@ -37,67 +20,97 @@ function between(source: string, start: string, end: string) {
 }
 
 const lobby = between(appSource, 'function lobby()', 'function nav(');
+const farmUi = between(appSource, 'function farmReadySignature(', 'function historyMatchWon(');
 const route = between(appSource, 'function farmGame()', 'function historyMatchWon(');
+const farmImport = between(appSource, 'import {\n  FARM_ACTIONS_PER_DAY,', "} from './farm.js';");
 
-test('KAI Farm ships as a standalone browser module through every production path', async () => {
+test('KAI Farm ships its nine-day rules and media through every production path', async () => {
   assert.match(appSource, /from ['"]\.\/farm\.js['"]/);
+  for (const binding of [
+    'FARM_ACTIONS_PER_DAY', 'FARM_SEASON_DAYS', 'advanceFarmDay', 'clearFarmPlot',
+    'farmMarketForDay', 'farmRemainingDays', 'farmSeasonMedal',
+  ]) assert.match(farmImport, new RegExp(`\\b${binding}\\b`));
   assert.match(packageSource, /node --check web\/farm\.js/);
   assert.match(dockerSource, /COPY[^\n]*web\/farm\.js[^\n]*\.\//);
   assert.match(preflightSource, /['"]web\/farm\.js['"]/);
-  assert.match(preflightSource, /production image must include the standalone Farm engine/);
-  assert.match(preflightSource, /load the standalone Farm engine/);
   assert.match(proxyTestSource, /['"]\/farm\.js['"]/);
   assert.match(indexSource, /KAI 农场/);
-  assert.match(await read('web/farm.js'), /export const FARM_CROPS/);
+  assert.match(await read('web/farm.js'), /export const FARM_SEASON_DAYS\s*=\s*9/);
+  assert.match(styleSource, /url\(['"]?\/assets\/farm\/kai-farm-field-v1\.webp['"]?\)/);
+  assert.match(styleSource, /url\(['"]?\/assets\/farm\/kai-farm-crops-v1\.webp['"]?\)/);
+  await Promise.all([
+    access(resolve(root, 'web/assets/farm/kai-farm-field-v1.webp')),
+    access(resolve(root, 'web/assets/farm/kai-farm-crops-v1.webp')),
+  ]);
 });
 
-test('the fifteen-card catalog makes the farm searchable, filterable, and playable in place', () => {
+test('the eighteen-game catalog presents Farm as a resumable nine-day strategy game', () => {
   assert.match(lobby, /class="game-world world-farm"[^>]*data-world-card[^>]*data-world-id="farm"/);
   assert.match(lobby, /<h3>KAI 农场<\/h3>/);
-  assert.match(lobby, /经典农场经营 · 20 秒首获/);
+  assert.match(lobby, /九日经营 · 五步一日 · 行情轮换/);
   assert.match(lobby, /data-action="open-farm"/);
   assert.ok(lobby.indexOf('world-snake') < lobby.indexOf('world-farm'), 'Farm must follow Snake');
   assert.ok(lobby.indexOf('world-farm') < lobby.indexOf('world-three'), 'Farm must precede Three Card');
   assert.match(appSource, /farm:\s*\{\s*categories:\[['"]quick['"],['"]save['"]\]/);
-  assert.match(appSource.toLowerCase(), /qq农场[^\n]*(?:farm|farming)[^\n]*种菜[^\n]*收菜/);
+  assert.match(appSource.toLowerCase(), /农场[^\n]*(?:farm|farming)[^\n]*九日赛季[^\n]*市场行情/);
   assert.match(appSource, /if\(a===['"]open-farm['"]\)/);
   assert.match(appSource, /state\.view===['"]farm['"]\?farmGame\(\)/);
 });
 
-test('the farm route exposes a complete sow, water, mature, and harvest loop', () => {
-  assert.match(route, /KAI 农场/);
-  assert.match(route, /播种/);
-  assert.match(route, /浇水/);
-  assert.match(route, /成熟/);
-  assert.match(route, /收获/);
-  assert.match(route, /Object\.values\(FARM_CROPS\)/);
+test('the route exposes day, action, market, drought, harvest, and season-result states', () => {
+  assert.match(route, /NINE DAY HARVEST/);
+  assert.match(route, /九日丰收挑战/);
+  assert.match(route, /game\.day/);
+  assert.match(route, /game\.actionsLeft/);
+  assert.match(route, /FARM_SEASON_DAYS/);
+  assert.match(route, /FARM_ACTIONS_PER_DAY/);
+  assert.match(route, /farmMarketForDay\(game\.day\)/);
+  assert.match(route, /今日旺需/);
+  assert.match(route, /明日旺需/);
+  assert.match(farmUi, /farmPlotStatus\(plot\) === ['"]weed['"]/);
+  assert.match(farmUi, /class="farm-plot is-weed"/);
+  assert.match(appSource, /clearFarmPlot\(game,index\)/);
   assert.match(route, /data-action="farm-select"/);
   assert.match(route, /data-action="farm-harvest-all"/);
+  assert.match(route, /data-action="farm-next-day"/);
   assert.match(route, /data-action="farm-reset"/);
-  assert.match(appSource, /function performFarmPlot\(index\)/);
-  assert.match(appSource, /plantFarmCrop\(game, index, game\.selectedCrop, now\)/);
-  assert.match(appSource, /waterFarmCrop\(game, index, now\)/);
-  assert.match(appSource, /harvestFarmCrop\(game, index, now\)/);
-  assert.match(appSource, /harvestReadyFarmCrops\(game,now\)/);
-  assert.match(appSource, /if\s*\(farmPlotStatus\(plot, now\) === ['"]ready['"]\)/);
+  assert.match(route, /data-farm-result/);
+  assert.match(route, /九日经营完成/);
+  assert.match(route, /地里未收作物不计入结算/);
 });
 
-test('six farm plots and all controls remain keyboard and screen-reader operable', () => {
+test('farm-next-day advances the turn, reports weeds or maturity, and settles day nine', () => {
+  const handler = between(appSource, "if(a==='farm-next-day'&&state.view==='farm')", "if(a==='farm-reset'&&state.view==='farm')");
+  assert.match(handler, /advanceFarmDay\(game\)/);
+  assert.match(handler, /farmPlotStatus\(plot\)===['"]weed['"]/);
+  assert.match(handler, /farmPlotStatus\(plot\)===['"]ready['"]/);
+  assert.match(handler, /next\.status===['"]finished['"]/);
+  assert.match(handler, /九日经营完成/);
+  assert.match(handler, /farmMarketForDay\(next\.day\)/);
+  assert.match(handler, /commitFarmGame\(next,announcement/);
+});
+
+test('all season controls and state surfaces remain keyboard and screen-reader operable', () => {
   assert.match(route, /role="grid"/);
   assert.match(route, /aria-rowcount="2"/);
   assert.match(route, /aria-colcount="3"/);
-  assert.match(route, /game\.plots\.map\(\(_, index\) => farmPlotMarkup/);
-  assert.match(appSource, /data-farm-plot="\$\{index\}"[^>]*role="gridcell"/);
   assert.match(route, /aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space"/);
+  assert.match(farmUi, /data-farm-plot="\$\{index\}"[^>]*role="gridcell"/);
+  assert.match(farmUi, /aria-describedby="farm-key-hint"/);
   assert.match(route, /role="status" aria-live="polite"/);
-  assert.match(appSource, /farmPlotNode/);
+  assert.match(route, /aria-label="今日市场行情"/);
+  assert.match(route, /aria-label="本季数据"/);
+  assert.match(route, /role="progressbar"[^>]*aria-label="农场升级进度"[^>]*aria-valuemin="0"[^>]*aria-valuemax="100"/);
+  assert.match(route, /aria-pressed="\$\{selected\}"/);
+  assert.match(route, /data-farm-result[^>]*tabindex="-1"/);
+  assert.match(appSource, /next\.status === ['"]finished['"][^\n]*querySelector\(['"]\[data-farm-result\]['"]\)\?\.focus/);
   assert.match(appSource, /\['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'\]/);
   assert.match(appSource, /if\(el\.dataset\.farmPlot!==undefined\)[\s\S]{0,120}performFarmPlot/);
-  assert.match(route, /role="progressbar"/);
 });
 
-test('farm progress restores defensively and states offline and product boundaries honestly', () => {
-  assert.match(appSource, /const FARM_SAVE_KEY\s*=\s*['"]kai\.play\.farm\.game\.v1['"]/);
+test('season progress restores defensively without API settlement or redeemable coins', () => {
+  assert.match(appSource, /const FARM_SAVE_KEY\s*=\s*['"]kai\.play\.farm\.season\.v2['"]/);
+  assert.doesNotMatch(appSource, /const FARM_SAVE_KEY\s*=\s*['"]kai\.play\.farm\.game\.v1['"]/);
   assert.match(appSource, /restoreFarmGame\(JSON\.parse\(raw\)\)/);
   assert.match(appSource, /safeStorageRemove\(FARM_SAVE_KEY\)/);
   assert.match(appSource, /safeStorageSet\(FARM_SAVE_KEY, serialized\)/);
@@ -105,16 +118,13 @@ test('farm progress restores defensively and states offline and product boundari
   assert.match(appSource, /rememberLastLocalGame\(['"]farm['"]\)/);
   assert.match(appSource, /event\.key !== FARM_SAVE_KEY/);
   assert.match(appSource, /event\.newValue === state\.casual\.farmPersistedSnapshot/);
-  assert.doesNotMatch(route, /api\(/, 'the local farm must not call competitive services');
+  assert.doesNotMatch(farmUi, /\bapi\s*\(/, 'the local season must not call competitive services');
+  assert.doesNotMatch(route, /服务端已完成结算/);
   assert.match(route, /当前浏览器本地运行并自动保存/);
-  assert.match(route, /离开后作物只继续成长，不会自动产币/);
-  assert.match(route, /暂不支持好友拜访、偷菜或跨设备同步/);
+  assert.match(route, /农场金币和奖章只用于本地娱乐/);
   assert.match(route, /不可购买、提现、转让或兑换/);
+  assert.match(route, /不会改变竞技分、Token 或 KAI 卡时/);
   assert.match(route, /刷新后不会恢复/);
-  for (const source of [readmeSource, productSource]) {
-    assert.match(source, /KAI 农场/);
-    assert.match(source, /不会自动产币/);
-  }
 });
 
 test('farm storage refuses to overwrite a newer save from another browser tab', () => {
@@ -123,9 +133,7 @@ test('farm storage refuses to overwrite a newer save from another browser tab', 
   const values = new Map<string, string>([[saveKey, 'newer-tab-value']]);
   let writes = 0;
   const saveFarmGame = runInNewContext(`${saveSource}; saveFarmGame`, {
-    state:{ casual:null },
-    FARM_SAVE_KEY:saveKey,
-    JSON,
+    state:{ casual:null }, FARM_SAVE_KEY:saveKey, JSON,
     safeStorageGet:(key: string) => values.get(key) ?? null,
     safeStorageSet:(key: string, value: string) => {
       writes += 1;
@@ -134,12 +142,10 @@ test('farm storage refuses to overwrite a newer save from another browser tab', 
     },
   });
   const casual = {
-    kind:'farm',
-    farmPersistedSnapshot:'older-local-value',
-    saveAvailable:true,
-    saveConflict:false,
+    kind:'farm', farmPersistedSnapshot:'older-local-value',
+    saveAvailable:true, saveConflict:false,
   };
-  const game = { kind:'farm', coins:32, plots:[] };
+  const game = { kind:'farm', status:'playing', day:4, actionsLeft:2, coins:32, plots:[] };
 
   assert.equal(saveFarmGame(game, casual), false);
   assert.equal(writes, 0, 'a stale farm tab must not overwrite newer storage');
@@ -153,34 +159,16 @@ test('farm storage refuses to overwrite a newer save from another browser tab', 
   assert.equal(casual.farmPersistedSnapshot, JSON.stringify(game));
 });
 
-test('farm timers update countdowns incrementally and respect hidden tabs', () => {
-  const timer = between(appSource, 'function queueFarmTick()', 'function startFarmSession(');
-  assert.match(timer, /document\.visibilityState === ['"]hidden['"]/);
-  assert.match(timer, /data-farm-countdown/);
-  assert.match(timer, /data-farm-progress/);
-  assert.match(timer, /setAttribute\(['"]aria-valuenow['"]/);
-  assert.match(timer, /style\.setProperty\(['"]--farm-progress['"]/);
-  assert.match(timer, /signature !== casual\.readySignature/);
-  assert.match(between(appSource, 'function stopCasualTimers()', 'function queueMahjongBotTurn()'), /clearTimeout\(farmTimer\)/);
-  const visibility = appSource.slice(appSource.indexOf("document.addEventListener('visibilitychange'"));
-  assert.match(visibility, /state\.view === ['"]farm['"]/);
-  assert.match(visibility, /saveFarmGame\(state\.casual\.game\)/);
-  assert.match(visibility, /queueFarmTick\(\)/);
-});
-
-test('farm presentation keeps real status labels, touch targets, responsive grids, and reduced motion', () => {
+test('season presentation uses real media, responsive controls, state labels, and reduced motion', () => {
   assert.match(styleSource, /\.lobby-game-center \.world-farm\s*\{/);
-  assert.match(styleSource, /\.world-farm-field\s*\{/);
-  assert.match(styleSource, /\.farm-field\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
-  assert.match(styleSource, /\.farm-plot\s*\{[\s\S]*?min-height:\s*1[2-9]\dpx/);
-  assert.match(styleSource, /\.farm-crop-choice\s*\{[\s\S]*?min-height:\s*5[4-9]px/);
-  assert.match(styleSource, /\.farm-plot:focus-visible/);
-  assert.match(styleSource, /\.farm-plot\.is-empty/);
-  assert.match(styleSource, /\.farm-plot\.is-growing/);
-  assert.match(styleSource, /\.farm-plot\.is-watered/);
-  assert.match(styleSource, /\.farm-plot\.is-ready/);
-  assert.match(styleSource, /@media \(hover:hover\) and \(pointer:fine\)[\s\S]*?\.farm-plot:hover/);
-  assert.match(styleSource, /@media \(max-width:760px\)[\s\S]*?\.farm-field\s*\{\s*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(styleSource, /@media \(max-width:360px\)[\s\S]*?\.farm-plot/);
-  assert.match(styleSource, /@media \(prefers-reduced-motion:reduce\)[\s\S]*?\.farm-plot\.is-ready \.farm-crop\s*\{\s*animation:none!important/);
+  assert.match(styleSource, /\.world-farm \.world-cover\s*\{[^\n]*kai-farm-field-v1\.webp/);
+  assert.match(styleSource, /\.world-farm-field > i\s*\{[^\n]*kai-farm-crops-v1\.webp/);
+  assert.match(styleSource, /\.farm-field\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)[\s\S]*?kai-farm-field-v1\.webp/);
+  assert.match(styleSource, /\.farm-crop-art\s*\{[\s\S]*?kai-farm-crops-v1\.webp/);
+  assert.match(styleSource, /\.farm-weed-art\s*\{/);
+  assert.match(styleSource, /\.farm-status\.has-weeds/);
+  assert.match(styleSource, /\.farm-result\s*\{/);
+  assert.match(styleSource, /\.farm-crop-choice:focus-visible,\.farm-plot:focus-visible,\.farm-actions \.btn:focus-visible/);
+  assert.match(styleSource, /@media \(max-width:540px\)[\s\S]*?\.farm-actions \.btn\s*\{[^}]*min-height:44px/);
+  assert.match(styleSource, /@media \(prefers-reduced-motion:reduce\)[\s\S]*?\.farm-plot\.is-ready \.farm-crop-art\s*\{\s*animation:none!important/);
 });

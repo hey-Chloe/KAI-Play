@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "assetFamily": "KAI Play original farm field and crop sprites",
+  "scope": "web/assets/farm/*.webp",
+  "createdAt": "2026-09-01",
+  "sourceType": "project-generated original media",
+  "generator": "OpenAI image generation",
+  "referenceUse": "The user-supplied farming-game screenshot informed only the general need for a field-first play surface and readable crop states. No screenshot pixels, brand marks, characters, buildings, UI, text, or layout were incorporated.",
+  "modifications": [
+    "Converted generated PNG sources to WebP for web delivery",
+    "Crop atlas is rendered through CSS background positions while all state, prices, labels and controls remain live DOM"
+  ],
+  "assets": [
+    {
+      "path": "web/assets/farm/kai-farm-crops-v1.webp",
+      "sha256": "36e351495c5fc68a943d2d3a4f48ef04a21a3cc8cc6605ff60889a42356e7303",
+      "bytes": 510026,
+      "dimensions": "1536x1024",
+      "alpha": true,
+      "purpose": "Wheat, carrot and strawberry growth-stage sprites"
+    },
+    {
+      "path": "web/assets/farm/kai-farm-field-v1.webp",
+      "sha256": "eef1ed62546206e074ad3a6b3aa33a154238d09342bad13989b57d5e71886abb",
+      "bytes": 493870,
+      "dimensions": "1672x941",
+      "alpha": false,
+      "purpose": "Six-plot farm play-surface background"
+    }
+  ]
+}

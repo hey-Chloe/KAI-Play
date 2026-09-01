@@ -94,11 +94,19 @@ function renderLobbyWithSaves({
     loadSavedMazeGame: () => maze,
     loadSavedFarmGame: () => farm,
     farmHasProgress: (game: any) => Boolean(game)
-      && (Number(game?.harvests) > 0
+      && (game?.status === 'finished'
+        || Number(game?.day) > 1
+        || Number(game?.actions) > 0
+        || Number(game?.harvests) > 0
         || Number(game?.xp) > 0
         || Number(game?.coins) !== 36
-        || game?.plots?.some((plot: any) => plot?.cropId)),
-    farmPlotStatus: (plot: any, now: number) => now >= Number(plot?.matureAt) ? 'ready' : 'growing',
+        || game?.plots?.some((plot: any) => plot?.kind !== 'empty')),
+    farmPlotStatus: (plot: any) => {
+      if (plot?.kind === 'weed') return 'weed';
+      if (plot?.kind !== 'crop') return 'empty';
+      const required = { wheat:1, carrot:2, strawberry:3 }[plot.cropId] || 1;
+      return Number(plot?.growthDays) >= required ? 'ready' : 'growing';
+    },
     isResumableMinesweeperGame: (game: any) => (game?.status === 'playing' && Number(game?.revealedCount) > 0)
       || (game?.status === 'ready' && Number(game?.flagCount) > 0),
     isResumableSudoku6Game: (game: any) => game?.status === 'playing'
@@ -177,7 +185,7 @@ test('continuation uses real local state and has an honest first-time fallback',
   assert.match(lobby, /已配对 \$\{savedMemory\.matchedPairs\}\/\$\{savedMemory\.pairCount\}/);
   assert.match(lobby, /得分 \$\{savedSnake\.score\}/);
   assert.match(lobby, /savedFarm\.plots\.filter/);
-  assert.match(lobby, /块作物已经成熟|块田正在生长/);
+  assert.match(lobby, /块成熟|块生长中/);
   assert.match(lobby, /新手推荐/);
   assert.match(lobby, /首击必安全/);
   assert.match(lobby, /role="progressbar"/);
@@ -200,11 +208,13 @@ test('continuation prefers the most recently opened game but only while it can r
   };
   const playingSnake = { status:'paused', difficulty:'normal', ticks:24, score:30, snake:[1, 2, 3, 4, 5] };
   const playingFarm = {
-    coins:32, xp:0, level:1, harvests:0, updatedAt:1,
+    schemaVersion:2, kind:'farm', status:'playing', day:2, actionsLeft:5,
+    coins:32, xp:0, level:1, harvests:0, actions:1, revision:2, selectedCrop:'wheat',
     plots:[
-      { cropId:'wheat', plantedAt:0, matureAt:1, watered:false },
-      ...Array.from({ length:5 }, () => ({ cropId:null, plantedAt:null, matureAt:null, watered:false })),
+      { kind:'crop', cropId:'wheat', plantedDay:1, growthDays:1, wateredToday:false, dryStreak:0 },
+      ...Array.from({ length:5 }, () => ({ kind:'empty', cropId:null, plantedDay:null, growthDays:0, wateredToday:false, dryStreak:0 })),
     ],
+    lastAction:'advance_day', result:null,
   };
 
   const recentXiangqi = renderLobbyWithSaves({
@@ -233,7 +243,7 @@ test('continuation prefers the most recently opened game but only while it can r
   const recentSnake = renderLobbyWithSaves({ snake:playingSnake, last:'snake' });
   assert.match(recentSnake, /继续游玩[\s\S]*KAI 贪吃蛇[\s\S]*得分 30/);
   const recentFarm = renderLobbyWithSaves({ farm:playingFarm, last:'farm' });
-  assert.match(recentFarm, /继续经营[\s\S]*KAI 农场[\s\S]*1 块作物已经成熟/);
+  assert.match(recentFarm, /继续经营[\s\S]*KAI 农场[\s\S]*1 块成熟 · 第 2 日/);
 
   const flaggedMinesweeper = renderLobbyWithSaves({
     minesweeper:{ ...playingMinesweeper, status:'ready', revealedCount:0, flagCount:1, moveCount:1 },
