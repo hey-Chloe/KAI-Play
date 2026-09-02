@@ -64,19 +64,19 @@ test('the game center stays focused while social and record utilities live in Fr
 
 test('poster cards keep one real action and a truthful benefit promise', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
-  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 18);
-  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 18);
-  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 18);
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 19);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 19);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 19);
   assert.match(lobby, /首击必安全/);
   assert.match(lobby, /三档 KAI 对手/);
   assert.match(lobby, /无现金下注 · 无提现/);
   assert.doesNotMatch(lobby, /\d+\s*人在线|五星|好评率|今日热门/);
 });
 
-test('all eighteen games form one directly scannable small-icon grid', () => {
+test('all twenty-five games form one directly scannable small-icon grid', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /class="world-strip game-icon-grid"/);
-  assert.match(lobby, /全部 18 款玩法，小图标网格排列/);
+  assert.match(lobby, /全部 25 款玩法，小图标网格排列/);
   assert.doesNotMatch(lobby, /data-action="world-(?:prev|next)"|data-world-status|world-carousel-hint/);
   const v24 = stylesSource.slice(stylesSource.indexOf('/* V24'));
   assert.match(v24, /\.game-icon-grid\s*\{[\s\S]*?grid-template-columns:repeat\(9,minmax\(0,1fr\)\)/);

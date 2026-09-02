@@ -169,6 +169,18 @@ import {
   toggleMazeHint,
 } from './maze.js';
 import {
+  QUICK_GAME_KINDS,
+  QUICK_GAME_META,
+  QUICK_RPS_CHOICES,
+  QUICK_SEQUENCE_COLORS,
+  QUICK_STROOP_COLORS,
+  QUICK_STROOP_LABELS,
+  newQuickGame,
+  playQuickGame,
+  restartQuickGame,
+  startQuickSequence,
+} from './quick-games.js';
+import {
   carouselDragScrollPosition,
   carouselReleaseDecision,
   carouselScrollBounds,
@@ -221,10 +233,17 @@ const CATALOG_DISCOVERY = Object.freeze({
   snake: { categories:['arcade','quick','save'], search:'KAI 贪吃蛇 snake 反应 街机 即时 短局 自动保存' },
   maze: { categories:['puzzle','quick','save'], search:'KAI 迷宫 maze 路线 寻路 空间 益智 短局 自动保存' },
   farm: { categories:['quick','save'], search:'KAI 农场 QQ农场 qq farm farming 种菜 收菜 种植 经营 养成 休闲 丰收挑战 九日赛季 市场行情 自动保存' },
+  tictactoe: { categories:['board','quick'], search:'KAI 井字棋 tic tac toe 三连 棋类 人机 短局' },
+  lights: { categories:['puzzle','quick'], search:'KAI 点灯 lights out 翻转 灯阵 逻辑 益智 短局' },
+  guess: { categories:['puzzle','quick'], search:'KAI 猜数字 guess number 大小 推理 益智 短局' },
+  rps: { categories:['arcade','quick'], search:'KAI 猜拳 石头剪刀布 rock paper scissors 反应 短局' },
+  math: { categories:['puzzle','quick'], search:'KAI 口算 math 数学 加减乘 计算 益智 短局' },
+  sequence: { categories:['arcade','puzzle','quick'], search:'KAI 节奏记忆 simon sequence 颜色 顺序 记忆 短局' },
+  stroop: { categories:['arcade','quick'], search:'KAI 颜色反应 stroop 色彩 注意力 反应 短局' },
   three: { categories:['card','quick'], search:'炸金花 zha jin hua three card poker 三张牌 扑克 牌桌 比牌 短局' },
   reels: { categories:['arcade','quick'], search:'算力转轮 转轮 reels slots spin 轻娱乐 街机 短局' },
 });
-const CATALOG_GAME_IDS = Object.freeze(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','match3','falling','snake','maze','farm','three','reels']);
+const CATALOG_GAME_IDS = Object.freeze(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','match3','falling','snake','maze','farm','tictactoe','lights','guess','rps','math','sequence','stroop','three','reels']);
 const GAME_CONTENT = Object.freeze({
   ddz: {
     name:'斗地主', eyebrow:'竞技牌桌', duration:'约 5–10 分钟', mode:'3 人 · 两位智能牌友', persistence:'服务端战绩与断线恢复',
@@ -337,6 +356,55 @@ const GAME_CONTENT = Object.freeze({
     loop:'观察行情 → 播种 / 浇水 / 收获 → 结束本日 → 调整下一天计划',
     finish:'第九日结束后按最终金币结算铜穗、银穗或金穗。',
     limits:'单人本地经营挑战；无好友偷菜、跨设备同步或现金兑换，不计入竞技分。', action:'open-farm', actionLabel:'开始一季',
+  },
+  tictactoe: {
+    name:'KAI 井字棋', eyebrow:'三连快棋', duration:'约 1–2 分钟', mode:'单人 · KAI 对手', persistence:'单局不保存',
+    goal:'你执 X 先手，在九宫格横、竖或斜线率先连成三个标记。',
+    loop:'选择空格落子 → KAI 自动回应 → 同时进攻与封堵',
+    finish:'任一方连成三子立即结束；九格填满则和棋。',
+    limits:'本地确定性对手，适合短局练习，不提供在线排位。', action:'open-quick', actionLabel:'开始井字棋',
+  },
+  lights: {
+    name:'KAI 点灯', eyebrow:'灯阵解谜', duration:'约 2–5 分钟', mode:'单人 · 5×5 灯阵', persistence:'单局不保存',
+    goal:'点击格子同时翻转自己和上下左右，把整张灯阵全部熄灭。',
+    loop:'观察亮灯 → 选择中心点 → 翻转十字区域 → 收拢余灯',
+    finish:'全部 25 盏灯熄灭即完成，以步数记录本局表现。',
+    limits:'每局从可解局面生成；不提供提示或自动求解。', action:'open-quick', actionLabel:'开始点灯',
+  },
+  guess: {
+    name:'KAI 猜数字', eyebrow:'大小推理', duration:'约 1–3 分钟', mode:'单人 · 1–100', persistence:'单局不保存',
+    goal:'根据“大一点”或“小一点”的反馈，用尽量少的次数找出目标整数。',
+    loop:'输入数字 → 读取大小提示 → 缩小范围 → 再次尝试',
+    finish:'准确猜中目标数字即结束，并显示总尝试次数。',
+    limits:'目标只在当前单局内生成，不记录跨局排行榜。', action:'open-quick', actionLabel:'开始猜数',
+  },
+  rps: {
+    name:'KAI 猜拳', eyebrow:'五局三胜', duration:'约 1 分钟', mode:'单人 · KAI 对手', persistence:'单局不保存',
+    goal:'选择石头、剪刀或布，率先赢下三回合。',
+    loop:'选择手势 → KAI 同时出拳 → 计算胜负 → 累计比分',
+    finish:'任一方先到三分即结束；七回合仍未分胜负则按比分判定。',
+    limits:'KAI 出拳由本地种子决定，不读取用户历史。', action:'open-quick', actionLabel:'开始猜拳',
+  },
+  math: {
+    name:'KAI 口算', eyebrow:'十题冲刺', duration:'约 2–4 分钟', mode:'单人 · 加减乘', persistence:'单局不保存',
+    goal:'连续完成十道基础加减乘口算，争取至少答对七题。',
+    loop:'读题 → 输入答案 → 即时判定 → 进入下一题',
+    finish:'完成十题后结算正确数；答对七题及以上达成挑战。',
+    limits:'题目在本地生成，不计时、不收集学习数据。', action:'open-quick', actionLabel:'开始口算',
+  },
+  sequence: {
+    name:'KAI 节奏记忆', eyebrow:'顺序挑战', duration:'约 2–4 分钟', mode:'单人 · 六轮节奏', persistence:'单局不保存',
+    goal:'先观察颜色节奏，再按原顺序完整复现，连续通过六轮。',
+    loop:'观察序列 → 隐藏提示 → 依次输入 → 增加一拍',
+    finish:'完成第六轮获胜；任何一拍输入错误则本局结束。',
+    limits:'序列只使用颜色与编号，按钮同时提供文字标签。', action:'open-quick', actionLabel:'开始记忆',
+  },
+  stroop: {
+    name:'KAI 颜色反应', eyebrow:'注意力挑战', duration:'约 1–2 分钟', mode:'单人 · 十次判断', persistence:'单局不保存',
+    goal:'忽略文字含义，只选择文字实际显示的颜色。',
+    loop:'观察冲突词 → 判断字色 → 选择颜色 → 继续下一题',
+    finish:'完成十题后结算，答对七题及以上达成挑战。',
+    limits:'不计反应时间，重点是正确识别；颜色按钮带有文字。', action:'open-quick', actionLabel:'开始反应',
   },
   three: {
     name:'炸金花训练', eyebrow:'牌型判断', duration:'约 3 分钟 / 3 手', mode:'单人训练 · 两位牌友', persistence:'单局不保存',
@@ -884,7 +952,7 @@ function catalogPlaybookMarkup(gameId = 'ddz') {
   return `<aside class="catalog-playbook" data-catalog-playbook data-world-id="${esc(gameId)}" aria-labelledby="catalog-playbook-title">
     <div class="catalog-playbook-copy"><span>当前玩法 · ${esc(content.eyebrow)}</span><h3 id="catalog-playbook-title">${esc(content.name)}</h3><p>${esc(content.goal)}</p></div>
     <dl><div><dt>核心循环</dt><dd>${esc(content.loop)}</dd></div><div><dt>完成条件</dt><dd>${esc(content.finish)}</dd></div></dl>
-    <div class="catalog-playbook-foot"><div class="catalog-playbook-meta" aria-label="玩法信息"><span>${esc(content.duration)}</span><span>${esc(content.mode)}</span><span>${esc(content.persistence)}</span></div><button class="btn primary" data-action="${esc(content.action)}">${esc(content.actionLabel)} <b aria-hidden="true">→</b></button></div>
+    <div class="catalog-playbook-foot"><div class="catalog-playbook-meta" aria-label="玩法信息"><span>${esc(content.duration)}</span><span>${esc(content.mode)}</span><span>${esc(content.persistence)}</span></div><button class="btn primary" data-action="${esc(content.action)}"${QUICK_GAME_KINDS.includes(gameId)?` data-quick-kind="${esc(gameId)}"`:''}>${esc(content.actionLabel)} <b aria-hidden="true">→</b></button></div>
   </aside>`;
 }
 
@@ -903,10 +971,26 @@ function rulesGameGuide() {
     <dl><div><dt>怎么玩</dt><dd>${esc(content.loop)}</dd></div><div><dt>如何结束</dt><dd>${esc(content.finish)}</dd></div></dl>
     <div class="rules-game-meta"><span>${esc(content.duration)}</span><span>${esc(content.mode)}</span><span>${esc(content.persistence)}</span></div>
     <small class="rules-game-limit">${esc(content.limits)}</small>
-    <button class="btn" data-action="${esc(content.action)}">${esc(content.actionLabel)} <b aria-hidden="true">→</b></button>
+    <button class="btn" data-action="${esc(content.action)}"${QUICK_GAME_KINDS.includes(gameId)?` data-quick-kind="${esc(gameId)}"`:''}>${esc(content.actionLabel)} <b aria-hidden="true">→</b></button>
   </article>`;
   }).join('');
-  return `<section class="rules-game-guide" aria-labelledby="rules-game-guide-title"><div class="section-head"><div><span class="section-kicker">GAME PLAYBOOK</span><h2 id="rules-game-guide-title">18 款玩法，一次看懂</h2></div><p>目标、循环、终局与保存范围均以当前版本为准</p></div><div class="rules-game-index">${cards}</div></section>`;
+  return `<section class="rules-game-guide" aria-labelledby="rules-game-guide-title"><div class="section-head"><div><span class="section-kicker">GAME PLAYBOOK</span><h2 id="rules-game-guide-title">25 款玩法，一次看懂</h2></div><p>目标、循环、终局与保存范围均以当前版本为准</p></div><div class="rules-game-index">${cards}</div></section>`;
+}
+
+const PORTAL_GAME_GLYPHS=Object.freeze({ddz:'♠',xiangqi:'帅',gomoku:'五',reversi:'翻',mahjong:'東','1048':'+',sudoku6:'6×6',minesweeper:'⚑',sokoban:'仓',sliding:'15',memory:'PAIR',match3:'◆',falling:'▦',snake:'S',maze:'迷',farm:'丰',tictactoe:'井',lights:'灯',guess:'?',rps:'拳',math:'+',sequence:'♪',stroop:'色',three:'3',reels:'★'});
+
+function portalGameActionAttributes(gameId) {
+  const content=gameContent(gameId);
+  return `data-action="${esc(content.action)}"${QUICK_GAME_KINDS.includes(gameId)?` data-quick-kind="${esc(gameId)}"`:''}`;
+}
+
+function portalRecommendationCard(gameId,index) {
+  const content=gameContent(gameId);
+  return `<article class="portal-recommend-card accent-${esc(gameId)}"><button type="button" ${portalGameActionAttributes(gameId)} aria-label="打开${esc(content.name)}"><span class="portal-recommend-cover"><i aria-hidden="true">${PORTAL_GAME_GLYPHS[gameId]||'K'}</i><small>${index<3?'本期精选':content.eyebrow}</small></span><span class="portal-recommend-copy"><b>${esc(content.name)}</b><small>${esc(content.mode)}</small></span></button></article>`;
+}
+
+function portalRankingPanel(title,subtitle,gameIds,tone) {
+  return `<section class="portal-ranking-panel tone-${tone}"><header><div><span>${title}</span><small>${subtitle}</small></div><i aria-hidden="true">${tone==='warm'?'♨':tone==='blue'?'▣':'♟'}</i></header><ol>${gameIds.map((gameId,index)=>{const content=gameContent(gameId);return `<li><button type="button" ${portalGameActionAttributes(gameId)}><em>${index+1}</em><i aria-hidden="true">${PORTAL_GAME_GLYPHS[gameId]||'K'}</i><span><b>${esc(content.name)}</b><small>${esc(content.eyebrow)} · ${esc(content.duration)}</small></span><strong>开始</strong></button></li>`;}).join('')}</ol></section>`;
 }
 
 function lobby() {
@@ -1113,7 +1197,7 @@ function lobby() {
   ];
   const previewRivers = ['north','east','south','west'].map((position,index)=>`<div class="preview-river preview-river--${position}">${previewRiverData[index].map((tile)=>mahjongFace(tile,'preview-river-tile')).join('')}</div>`).join('');
   const hubSide = `<aside class="hub-side">
-    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">18 款可玩</span>'}</div>
+    <div class="hub-side-head"><div><span>${resumeGame.eyebrow}</span><h2>${resumeGame.title}</h2></div>${hasResumableGames?`<button class="hub-side-count" type="button" data-action="show-continuable" aria-label="查看全部 ${resumeCandidates.length} 款可继续玩法">${resumeCandidates.length} 款可继续 <b aria-hidden="true">↓</b></button>`:'<span class="hub-side-count">25 款可玩</span>'}</div>
     <article class="resume-card resume-${resumeGame.accent}">
       <span class="resume-glyph" aria-hidden="true">${resumeGame.glyph}</span>
       <div><p>${resumeGame.meta}</p>${resumeGame.progress === null ? `<small>${resumeGame.note}</small>` : `<div class="resume-progress" role="progressbar" aria-label="${resumeGame.title}进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${resumeGame.progress}"><i style="--resume-progress:${resumeGame.progress}%"></i></div>`}</div>
@@ -1127,10 +1211,14 @@ function lobby() {
       <button class="mode-entry" data-action="open-snake"><i aria-hidden="true">S</i><b>贪吃蛇</b><small>即时操作</small></button>
     </nav>
   </aside>`;
-  return `<div class="shell lobby-shell lobby-v4 lobby-game-center">${header('lobby','lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
+  const quickCards=QUICK_GAME_KINDS.map((gameId)=>{const content=gameContent(gameId);return `<article class="game-world world-${gameId}" data-world-card data-world-id="${gameId}"><span class="world-badge">${content.eyebrow}</span><div class="world-cover"><i class="world-cover-mark" aria-hidden="true">${PORTAL_GAME_GLYPHS[gameId]}</i></div><div class="world-copy"><span>${content.duration} · ${content.mode}</span><h3>${content.name}</h3><p>${content.goal}</p><button class="btn" data-action="open-quick" data-quick-kind="${gameId}">${content.actionLabel} <b aria-hidden="true">→</b></button></div></article>`;}).join('');
+  const recommendationIds=['match3','xiangqi','falling','farm','maze','tictactoe','lights','sequence','stroop','minesweeper'];
+  const portalRecommendations=recommendationIds.map(portalRecommendationCard).join('');
+  const rankingPanels=[portalRankingPanel('短局热玩榜','1–5 分钟快速进入',['minesweeper','rps','guess','tictactoe'],'warm'),portalRankingPanel('动脑挑战榜','逻辑与记忆练习',['sudoku6','lights','math','sequence'],'blue'),portalRankingPanel('策略对弈榜','和 KAI 来一局',['xiangqi','gomoku','reversi','maze'],'green')].join('');
+  return `<div class="shell lobby-shell lobby-v4 lobby-game-center portal-lobby">${header('lobby','lobby')}${state.error ? `<div class="banner">${esc(state.error)}　游戏服务暂时离线，请稍后刷新。</div>`:''}
     <main class="live-lobby">
       <section class="game-center-intro" aria-labelledby="game-center-title">
-        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>18 款即开即玩的牌桌、策略、益智与经营游戏，无需下载，点开就能玩。</p></div>
+        <div class="game-center-heading"><span class="section-kicker">KAI 游戏中心 · 25 GAME PORTAL</span><h1 id="game-center-title">现在，想玩点什么？</h1><p>25 款即开即玩的牌桌、策略、益智、反应与经营游戏，无需下载，点开就能玩。</p></div>
         <div class="catalog-search-wrap">
           <label class="catalog-search" for="catalog-search-input">
             <i aria-hidden="true">⌕</i>
@@ -1183,8 +1271,12 @@ function lobby() {
         ${hasResumableGames?'':hubSide}
       </section>
 
+      <section class="portal-recommendations" aria-labelledby="portal-recommend-title"><div class="portal-section-head"><div><span>本期精选</span><h2 id="portal-recommend-title">推荐游戏</h2></div><button type="button" data-action="catalog-random">换一换 <i aria-hidden="true">↻</i></button></div><div class="portal-recommend-grid">${portalRecommendations}</div></section>
+
+      <section class="portal-rankings" aria-label="游戏分类榜单">${rankingPanels}</section>
+
       <section class="section-block game-catalog" id="game-selection">
-        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>18 款游戏，一眼找到</h2></div><div class="icon-wall-summary"><span>小图标排列 · 点击即玩</span><span><b>14</b> 款可自动保存</span></div></div>
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>25 款游戏，一眼找到</h2></div><div class="icon-wall-summary"><span>门户式图标排列 · 点击即玩</span><span><b>14</b> 款可自动保存</span></div></div>
         <div class="catalog-command" aria-label="筛选全部玩法">
           <div class="catalog-filters" role="group" aria-label="按玩法类型筛选">
             <button class="is-active" data-action="catalog-filter" data-catalog-filter="all" aria-pressed="true">全部</button>
@@ -1196,9 +1288,9 @@ function lobby() {
             <button data-action="catalog-filter" data-catalog-filter="arcade" aria-pressed="false">街机</button>
             <button data-action="catalog-filter" data-catalog-filter="save" aria-pressed="false">自动保存</button>
           </div>
-          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 18 款</span>
+          <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 25 款</span>
         </div>
-        <div class="world-strip game-icon-grid" data-world-strip role="region" aria-label="全部 18 款玩法，小图标网格排列">
+        <div class="world-strip game-icon-grid" data-world-strip role="region" aria-label="全部 25 款玩法，小图标网格排列">
           <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
           <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"${canContinueXiangqi?' data-world-resumable="true"':''}><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
           <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"${canContinueGomoku?' data-world-resumable="true"':''}><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>
@@ -1215,6 +1307,7 @@ function lobby() {
           <article class="game-world world-snake" data-world-card data-world-id="snake"${canContinueSnake?' data-world-resumable="true"':''}><span class="world-badge">${canContinueSnake?'可继续':['over','won'].includes(savedSnake?.status)?'上轮已保存':'即时操作'}</span><div class="world-cover"><div class="world-snake-grid" aria-hidden="true">${Array.from({length:64},(_,index)=>`<i class="${index===13?'food':index===35?'head':[33,34,43,51].includes(index)?'body':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">S</i></div><div class="world-copy"><span>方向操控 · 三档速度</span><h3>KAI 贪吃蛇</h3><p>穿过霓虹光栅收集能量，保持节奏，挑战更长身体。</p><button class="btn" data-action="open-snake">${snakeAction} <b>→</b></button></div></article>
           <article class="game-world world-maze" data-world-card data-world-id="maze"${canContinueMaze?' data-world-resumable="true"':''}><span class="world-badge">${canContinueMaze?'可继续':savedMaze?.status==='won'?'路线已完成':'三档迷宫'}</span><div class="world-cover"><i class="world-cover-mark" aria-hidden="true">迷</i></div><div class="world-copy"><span>唯一通路 · 三档尺寸</span><h3>KAI 迷宫</h3><p>从左上角走到右下角，需要时点亮当前位置的最短提示路线。</p><button class="btn" data-action="open-maze">${mazeAction} <b aria-hidden="true">→</b></button></div></article>
           <article class="game-world world-farm" data-world-card data-world-id="farm"${canContinueFarm?' data-world-resumable="true"':''}><span class="world-badge">${canContinueFarm?'可继续':'九日新作'}</span><div class="world-cover"><div class="world-farm-field" aria-hidden="true"><i class="crop-wheat stage-ready"></i><i class="crop-carrot stage-growing"></i><i></i><i class="crop-strawberry stage-ready"></i><i class="crop-wheat stage-growing"></i><i></i></div><i class="world-cover-mark" aria-hidden="true">9D</i></div><div class="world-copy"><span>九日经营 · 五步一日 · 行情轮换</span><h3>KAI 农场</h3><p>安排有限行动，照料六块田，在旺需日收获更高售价。</p><button class="btn" data-action="open-farm">${farmAction} <b>→</b></button></div></article>
+          ${quickCards}
           <article class="game-world world-three" data-world-card data-world-id="three"><span class="world-badge">牌型训练</span><div class="world-cover"><div class="world-three-cards" aria-hidden="true">${cardBack(true)}${cardBack(true)}${cardBack(true)}</div><i class="world-cover-mark" aria-hidden="true">3</i></div><div class="world-copy"><span>三手判断训练 · 单机免费</span><h3>炸金花训练</h3><p>先判断自己的牌型，再揭晓三家结果与本次正确率。</p><button class="btn" data-action="open-three">开始三手训练 <b>→</b></button></div></article>
           <article class="game-world world-reels" data-world-card data-world-id="reels"><span class="world-badge">大厅彩蛋</span><div class="world-cover"><div class="world-reel-preview" aria-hidden="true"><i>7</i><i>KAI</i><i>⚡</i></div><i class="world-cover-mark" aria-hidden="true">★</i></div><div class="world-copy"><span>免费娱乐 · 无现金下注 · 无提现</span><h3>算力转轮</h3><p>发现对子与三连组合，记录本次会话的共振值。</p><button class="btn" data-action="open-slots" aria-label="打开算力转轮">免费试转 <b>→</b></button></div></article>
         </div>
@@ -2495,6 +2588,54 @@ function mazeGame() {
   </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本图仍可继续' : '迷宫、位置与步数在当前浏览器自动保存'}。迷宫为本地生成的连通无环地图，提示只显示当前位置到出口的路线；本玩法不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
+function quickGameStatus(game) {
+  if (game.status === 'won') return '挑战完成，表现不错';
+  if (game.status === 'lost') return '本轮结束，换个思路再试';
+  if (game.status === 'draw') return '势均力敌，本轮平局';
+  if (game.kind === 'tictactoe') return '你执 X 先手，选择一个空格';
+  if (game.kind === 'lights') return `还有 ${game.lit} 盏灯亮着`;
+  if (game.kind === 'guess') return game.hint;
+  if (game.kind === 'rps') return game.last ? `本轮${game.last.result === 'win' ? '你赢了' : game.last.result === 'lost' ? 'KAI 获胜' : '平局'}` : '五局三胜，选一个手势';
+  if (game.kind === 'math') return game.lastCorrect === null ? '输入答案并提交' : game.lastCorrect ? '回答正确，继续下一题' : '答案不对，继续下一题';
+  if (game.kind === 'sequence') return game.phase === 'watch' ? `观察第 ${game.round} 轮节奏` : `按顺序输入 · ${game.input.length}/${game.sequence.length}`;
+  return game.lastCorrect === null ? '忽略字义，只判断文字颜色' : game.lastCorrect ? '判断正确' : '注意，要选择文字实际颜色';
+}
+
+function quickGameMetrics(game) {
+  if (game.kind === 'tictactoe') return [['回合',game.moves],['你','X'],['KAI','O']];
+  if (game.kind === 'lights') return [['步数',game.moves],['亮灯',game.lit],['目标','全灭']];
+  if (game.kind === 'guess') return [['尝试',game.attempts.length],['范围','1–100'],['目标','?']];
+  if (game.kind === 'rps') return [['你',game.playerScore],['KAI',game.botScore],['回合',game.rounds.length]];
+  if (game.kind === 'math') return [['题目',`${Math.min(10,game.round+1)}/10`],['答对',game.score],['目标','7+']];
+  if (game.kind === 'sequence') return [['轮次',`${game.round}/6`],['节拍',game.sequence.length],['输入',game.input.length]];
+  return [['题目',`${Math.min(10,game.round+1)}/10`],['答对',game.score],['目标','7+']];
+}
+
+function quickGameBoard(game) {
+  if (game.kind === 'tictactoe') return `<div class="quick-tic-board" role="grid" aria-label="井字棋九宫格">${game.board.map((value,index)=>`<button type="button" data-action="quick-play" data-quick-value="${index}" role="gridcell" aria-label="第 ${Math.floor(index/3)+1} 行第 ${index%3+1} 列${value?`，${value}`:'，空格'}" ${value||game.status!=='playing'?'disabled':''}>${value||''}</button>`).join('')}</div>`;
+  if (game.kind === 'lights') return `<div class="quick-lights-board" role="grid" aria-label="5 乘 5 点灯棋盘">${game.board.map((lit,index)=>`<button type="button" class="${lit?'is-lit':''}" data-action="quick-play" data-quick-value="${index}" role="gridcell" aria-label="第 ${Math.floor(index/5)+1} 行第 ${index%5+1} 列，${lit?'亮':'灭'}" ${game.status!=='playing'?'disabled':''}><i aria-hidden="true"></i></button>`).join('')}</div>`;
+  if (game.kind === 'guess') return `<div class="quick-input-challenge"><span class="quick-big-glyph" aria-hidden="true">?</span><label>输入你的猜测<input data-quick-input inputmode="numeric" type="number" min="1" max="100" placeholder="1–100" ${game.status!=='playing'?'disabled':''}></label><button class="btn primary" data-action="quick-submit" ${game.status!=='playing'?'disabled':''}>提交猜测</button><div class="quick-history">${game.attempts.slice(-8).map((value)=>`<i>${value}</i>`).join('')}</div></div>`;
+  if (game.kind === 'rps') {
+    const labels={rock:['石头','✊'],paper:['布','✋'],scissors:['剪刀','✌']};
+    return `<div class="quick-rps"><div class="quick-rps-last"><span>你 ${game.last?labels[game.last.player][1]:'？'}</span><b>${game.last?game.last.result==='win'?'胜':game.last.result==='lost'?'负':'平':'VS'}</b><span>${game.last?labels[game.last.bot][1]:'？'} KAI</span></div><div>${QUICK_RPS_CHOICES.map((choice)=>`<button type="button" data-action="quick-play" data-quick-value="${choice}" ${game.status!=='playing'?'disabled':''}><i aria-hidden="true">${labels[choice][1]}</i><b>${labels[choice][0]}</b></button>`).join('')}</div></div>`;
+  }
+  if (game.kind === 'math') return `<div class="quick-input-challenge"><span class="quick-equation">${game.question.text}</span><label>输入计算结果<input data-quick-input inputmode="numeric" type="number" placeholder="答案" ${game.status!=='playing'?'disabled':''}></label><button class="btn primary" data-action="quick-submit" ${game.status!=='playing'?'disabled':''}>提交答案</button></div>`;
+  if (game.kind === 'sequence') return `<div class="quick-sequence"><div class="quick-sequence-watch ${game.phase==='input'?'is-hidden':''}" aria-label="需要记住的颜色顺序">${game.sequence.map((color,index)=>`<i class="tone-${color}">${index+1}</i>`).join('')}</div>${game.phase==='watch'&&game.status==='playing'?'<button class="btn primary" data-action="quick-sequence-start">记住了，开始作答</button>':''}<div class="quick-sequence-pad">${QUICK_SEQUENCE_COLORS.map((color,index)=>`<button type="button" class="tone-${color}" data-action="quick-play" data-quick-value="${color}" aria-label="颜色 ${index+1}" ${game.phase!=='input'||game.status!=='playing'?'disabled':''}>${index+1}</button>`).join('')}</div></div>`;
+  const colorNames={red:'红色',blue:'蓝色',green:'绿色',gold:'黄色'};
+  return `<div class="quick-stroop"><span>请选择文字实际显示的颜色</span><strong class="ink-${game.prompt.color}">${game.prompt.label}</strong><div>${QUICK_STROOP_COLORS.map((color)=>`<button type="button" class="ink-${color}" data-action="quick-play" data-quick-value="${color}" ${game.status!=='playing'?'disabled':''}>${colorNames[color]||QUICK_STROOP_LABELS[color]}</button>`).join('')}</div></div>`;
+}
+
+function quickGame() {
+  const casual=state.casual;
+  const game=casual?.game;
+  if(!game||casual?.kind!=='quick'||!QUICK_GAME_KINDS.includes(game.kind))return lobby();
+  const meta=QUICK_GAME_META[game.kind];
+  const metrics=quickGameMetrics(game).map(([label,value])=>`<div><small>${label}</small><strong>${value}</strong></div>`).join('');
+  const status=casual.announcement||quickGameStatus(game);
+  const result=game.status==='playing'?'':`<section class="local-puzzle-result ${game.status==='won'?'is-win':'is-over'}" data-quick-result role="status" aria-live="polite" tabindex="-1"><span>${game.status==='won'?'挑战完成':game.status==='draw'?'本局平手':'本轮结束'}</span><h2>${meta.name}</h2><p>${quickGameStatus(game)} · 共操作 ${game.moves} 次</p><div><button class="btn primary" data-action="quick-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+  return `<div class="shell casual-shell quick-route quick-${game.kind}">${casualHeader(meta.name,'QUICK PLAY','轻量短局 · 即开即玩')}<main class="quick-game-stage"><section class="quick-game-copy"><span>25 款游戏中心 · 新增短局</span><h1>${meta.glyph}<br><b>${meta.name.replace('KAI ','')}</b></h1><p>${GAME_CONTENT[game.kind].goal}</p><ol><li><b>玩法</b><span>${GAME_CONTENT[game.kind].loop}</span></li><li><b>结束</b><span>${GAME_CONTENT[game.kind].finish}</span></li></ol></section><section class="local-puzzle-play quick-game-play"><div class="local-puzzle-metrics">${metrics}</div><div class="local-puzzle-status ${game.status==='playing'?'':'is-finished'}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status==='playing'?'进行中':'已结算'}</b></div>${quickGameBoard(game)}<div class="local-puzzle-actions"><button class="btn" data-action="quick-new">重新开始</button></div>${result}</section></main><p class="casual-disclaimer">本玩法为本地免费短局，不保存跨会话进度，不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+}
+
 function historyMatchWon(match) {
   if (match.role === 'landlord') return match.winner === 'landlord';
   if (match.role === 'farmer') return match.winner === 'farmers';
@@ -2557,7 +2698,7 @@ function history() {
 function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、黑白棋、麻将、1048、数独、扫雷、推箱子、数字华容道、记忆翻牌、三消、下落方块、贪吃蛇、迷宫、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
 
 function render() {
-  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='reversi'?reversiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='sokoban'?sokobanGame():state.view==='sliding'?slidingPuzzleGame():state.view==='memory'?memoryMatchGame():state.view==='match3'?matchThreeGame():state.view==='falling'?fallingBlocksGame():state.view==='snake'?snakeGame():state.view==='maze'?mazeGame():state.view==='farm'?farmGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
+  app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='reversi'?reversiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='sokoban'?sokobanGame():state.view==='sliding'?slidingPuzzleGame():state.view==='memory'?memoryMatchGame():state.view==='match3'?matchThreeGame():state.view==='falling'?fallingBlocksGame():state.view==='snake'?snakeGame():state.view==='maze'?mazeGame():state.view==='farm'?farmGame():state.view==='quick'?quickGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
   if(state.view==='lobby')updateWorldCarouselStatus(app.querySelector('[data-world-strip]'));
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
@@ -3987,6 +4128,32 @@ function performMazeMove(direction) {
   }
 }
 
+function focusQuickGameInteraction() {
+  const target=document.querySelector('[data-quick-result]')||document.querySelector('[data-quick-input]')||document.querySelector('[data-action="quick-play"]')||document.querySelector('[data-action="quick-sequence-start"]');
+  target?.focus({preventScroll:true});
+}
+
+function openQuickGame(kind) {
+  if(!QUICK_GAME_KINDS.includes(kind))return;
+  stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
+  const game=newQuickGame(kind);
+  state.casual={kind:'quick',game,announcement:quickGameStatus(game),saveAvailable:true};
+  state.view='quick';rememberLastLocalGame(kind);
+}
+
+function commitQuickGame(next) {
+  if(state.view!=='quick'||state.casual?.kind!=='quick'||!next)return;
+  state.casual.game=next;state.casual.announcement=quickGameStatus(next);render();focusQuickGameInteraction();
+}
+
+function performQuickGame(value) {
+  const game=state.casual?.game;
+  if(state.view!=='quick'||state.casual?.kind!=='quick'||!game)return;
+  const next=playQuickGame(game,value);
+  if(next===game){state.casual.announcement='这个操作暂时不能使用';render();focusQuickGameInteraction();return;}
+  commitQuickGame(next);
+}
+
 function openSlots() {
   stopGameSync();
   stopRoomSync();
@@ -4324,7 +4491,7 @@ function jumpToLobbyTarget(target) {
     globalThis.scrollTo?.(0,0);
     return;
   }
-  const allowed=new Set(['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','match3','falling','snake','maze','farm','three','reels']);
+  const allowed=new Set(CATALOG_GAME_IDS);
   if(!allowed.has(target))return;
   resetCatalogDiscovery();
   const strip=document.querySelector('[data-world-strip]');
@@ -4495,6 +4662,9 @@ app.addEventListener('click', e => {
   if(a==='show-continuable'){showContinuableGames();return;}
   if(a==='catalog-show-results'){showCatalogResults();return;}
   if(a==='catalog-reset'){resetCatalogDiscovery({focusSearch:true});return;}
+  if(a==='catalog-random'){
+    const target=CATALOG_GAME_IDS[Math.floor(Math.random()*CATALOG_GAME_IDS.length)];jumpToLobbyTarget(target);return;
+  }
   if(a==='clear-selection'){state.selected.clear();render();return;}
   if(a==='quick') act(startQuickGame);
   if(a==='open-three'){openThreeCard();render();globalThis.scrollTo?.(0,0);}
@@ -4513,6 +4683,7 @@ app.addEventListener('click', e => {
   if(a==='open-snake'){openSnake();render();globalThis.scrollTo?.(0,0);focusSnakeInteraction();}
   if(a==='open-maze'){openMaze();render();globalThis.scrollTo?.(0,0);focusMazeInteraction();}
   if(a==='open-farm'){openFarm();render();globalThis.scrollTo?.(0,0);focusFarmInteraction();queueFarmTick();}
+  if(a==='open-quick'){openQuickGame(el.dataset.quickKind);render();globalThis.scrollTo?.(0,0);focusQuickGameInteraction();return;}
   if(a==='open-slots'){openSlots();render();globalThis.scrollTo?.(0,0);}
   if(a==='casual-home'){
     if(state.view==='mahjong'&&state.casual?.game?.phase==='playing'){
@@ -4635,6 +4806,16 @@ app.addEventListener('click', e => {
     if(difficulty===game.difficulty){state.casual.announcement='当前已经是这个难度';render();focusMazeInteraction();return;}
     if(!confirmLocalGameReplacement(game.status!=='won'&&game.stepCount>0,'切换难度会生成新迷宫，确定继续吗？'))return;
     startMazeSession(newMazeForGame(game,{difficulty}),`已生成${MAZE_DIFFICULTIES[difficulty].label}迷宫`);render();focusMazeInteraction();return;
+  }
+  if(a==='quick-play'&&state.view==='quick'){performQuickGame(el.dataset.quickValue);return;}
+  if(a==='quick-submit'&&state.view==='quick'){
+    const input=document.querySelector('[data-quick-input]');performQuickGame(input?.value);return;
+  }
+  if(a==='quick-sequence-start'&&state.view==='quick'){
+    const game=state.casual?.game;if(!game)return;commitQuickGame(startQuickSequence(game));return;
+  }
+  if(a==='quick-new'&&state.view==='quick'){
+    const game=state.casual?.game;if(!game)return;commitQuickGame(restartQuickGame(game));return;
   }
   if(a==='three-guess'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed&&THREE_CARD_LABELS.includes(el.dataset.threeGuess)){
     state.casual.guess=el.dataset.threeGuess;render();return;

@@ -135,6 +135,17 @@ function renderLobbyWithSaves({
       normal:{ label:'标准', tickMs:150 },
       swift:{ label:'疾速', tickMs:95 },
     },
+    QUICK_GAME_KINDS: ['tictactoe','lights','guess','rps','math','sequence','stroop'],
+    QUICK_GAME_META: {
+      tictactoe:{ name:'KAI 井字棋', glyph:'╳' }, lights:{ name:'KAI 点灯', glyph:'✦' },
+      guess:{ name:'KAI 猜数字', glyph:'?' }, rps:{ name:'KAI 猜拳', glyph:'✌' },
+      math:{ name:'KAI 心算', glyph:'+' }, sequence:{ name:'KAI 顺序记忆', glyph:'◆' },
+      stroop:{ name:'KAI 颜色挑战', glyph:'彩' },
+    },
+    PORTAL_GAME_GLYPHS: { tictactoe:'╳', lights:'✦', guess:'?', rps:'✌', math:'+', sequence:'◆', stroop:'彩' },
+    portalRecommendationCard: () => '',
+    portalRankingPanel: () => '',
+    gameContent: (gameId: string) => ({ name:gameId, eyebrow:'本地短局', duration:'3 分钟', mode:'单人', goal:'完成挑战', actionLabel:'开始' }),
     tableFrame: () => '',
     mahjongTone: () => '',
     mahjongMark: () => '',
@@ -383,7 +394,7 @@ test('the three new local routes recover safely and keep one accessible interact
   assert.match(sokoban, /aria-describedby="sokoban-position-summary"/);
   assert.doesNotMatch(sokoban, /role="application"/);
 
-  const sliding = between(appSource, 'function slidingPuzzleGame()', 'function historyMatchWon(');
+  const sliding = between(appSource, 'function slidingPuzzleGame()', 'function quickGameStatus(');
   assert.match(sliding, /data-sliding-tile="\$\{index\}"[^>]*tabindex="-1"/);
   assert.doesNotMatch(sliding, /<h1>/);
   assert.match(stylesSource, /\.sokoban-row\s*\{\s*display:contents/);
@@ -397,15 +408,16 @@ test('mood shortcuts navigate only to known playable destinations', () => {
   }
   assert.match(lobby, /data-action="view-friends"[^>]*>[\s\S]*?和朋友玩/);
   const jump = between(appSource, 'function jumpToLobbyTarget(', "app.addEventListener('click'");
-  assert.match(jump, /new Set\(\['ddz','xiangqi','gomoku','reversi','mahjong','1048','sudoku6','minesweeper','sokoban','sliding','memory','match3','falling','snake','maze','farm','three','reels'\]\)/);
+  assert.match(jump, /new Set\(CATALOG_GAME_IDS\)/);
   assert.match(jump, /target==='friends'/);
   assert.match(appSource, /if\(a==='jump-world'\)\{jumpToLobbyTarget/);
 });
 
-test('all eighteen games use compact icon entries in one responsive grid', () => {
-  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 18);
-  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 18);
-  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 18);
+test('all twenty-five games use compact icon entries in one responsive grid', () => {
+  assert.equal([...lobby.matchAll(/data-world-card/g)].length, 19);
+  assert.match(lobby, /QUICK_GAME_KINDS\.map/);
+  assert.equal([...lobby.matchAll(/class="world-cover"/g)].length, 19);
+  assert.equal([...lobby.matchAll(/class="world-copy"/g)].length, 19);
   assert.match(lobby, /class="world-strip game-icon-grid"/);
   assert.doesNotMatch(lobby, /data-world-status|data-action="world-(?:prev|next)"|world-carousel-hint/);
   assert.match(v24Styles, /\.game-icon-grid\s*\{[\s\S]*?grid-template-columns:repeat\(9,minmax\(0,1fr\)\)/);

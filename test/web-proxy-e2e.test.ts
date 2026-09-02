@@ -103,7 +103,7 @@ test('web preview serves cache-aware local assets and proxies a complete authent
       '/styles.css', '/app.js', '/catalog-carousel.js', '/sudoku6.js',
       '/gomoku.js', '/reversi.js', '/sokoban.js', '/sliding-puzzle.js',
       '/memory-match.js', '/snake.js', '/farm.js', '/falling-blocks.js',
-      '/match-three.js', '/maze.js',
+      '/match-three.js', '/maze.js', '/quick-games.js',
     ]) {
       const compressed = await fetch(`${webOrigin}${path}`, { headers: { 'accept-encoding': 'br' } });
       assert.equal(compressed.status, 200);

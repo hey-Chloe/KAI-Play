@@ -21,9 +21,9 @@ function sourceBetween(source: string, start: string, end: string) {
   return source.slice(startIndex, endIndex);
 }
 
-test('the eighteen-game icon catalog keeps KAI Sudoku playable immediately after 1048', () => {
+test('the twenty-five-game icon catalog keeps KAI Sudoku playable immediately after 1048', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /18 款游戏，一眼找到/);
+  assert.match(lobby, /25 款游戏，一眼找到/);
   assert.match(lobby, /14 款本地自动保存/);
   assert.match(lobby, /class="game-world world-sudoku6"/);
   assert.match(lobby, /<h3>KAI 数独<\/h3>/);

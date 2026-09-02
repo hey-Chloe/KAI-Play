@@ -29,19 +29,21 @@ function sourceBetween(source: string, start: string, end: string) {
   return source.slice(startIndex, endIndex);
 }
 
-test('the catalog publishes exactly eighteen games in the reviewed order', () => {
+test('the catalog publishes exactly twenty-five games in the reviewed order', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  const ids = [...lobby.matchAll(/data-world-card data-world-id="([^"]+)"/g)].map((match) => match[1]);
+  const catalog = sourceBetween(appSource, 'const CATALOG_GAME_IDS', 'const GAME_CONTENT');
+  const ids = [...catalog.matchAll(/'([^']+)'/g)].map((match) => match[1]);
   assert.deepEqual(ids, [
     'ddz', 'xiangqi', 'gomoku', 'reversi', 'mahjong', '1048', 'sudoku6',
     'minesweeper', 'sokoban', 'sliding', 'memory', 'match3', 'falling', 'snake',
-    'maze', 'farm', 'three', 'reels',
+    'maze', 'farm', 'tictactoe', 'lights', 'guess', 'rps', 'math', 'sequence', 'stroop', 'three', 'reels',
   ]);
-  assert.match(lobby, /18 款即开即玩的牌桌、策略、益智与经营游戏/);
-  assert.match(lobby, /18 款游戏，一眼找到/);
-  assert.match(lobby, /显示全部 18 款/);
-  assert.match(lobby, /全部 18 款玩法，小图标网格排列/);
-  assert.match(indexSource, /十八款即开即玩的牌桌、策略、益智与经营玩法/);
+  assert.match(lobby, /25 款即开即玩的牌桌、策略、益智、反应与经营游戏/);
+  assert.match(lobby, /25 款游戏，一眼找到/);
+  assert.match(lobby, /显示全部 25 款/);
+  assert.match(lobby, /全部 25 款玩法，小图标网格排列/);
+  assert.match(indexSource, /二十五款即开即玩的牌桌、策略、益智、反应与经营玩法/);
+  assert.match(lobby, /QUICK_GAME_KINDS\.map/);
 });
 
 test('the local-save promise is limited to its exact fourteen game ids', () => {
@@ -55,7 +57,7 @@ test('the local-save promise is limited to its exact fourteen game ids', () => {
   ]));
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /14 款本地自动保存/);
-  assert.doesNotMatch(lobby, /18 款本地自动保存/);
+  assert.doesNotMatch(lobby, /25 款本地自动保存/);
 });
 
 test('Gomoku, Memory Match, and Snake are wired as playable local routes', () => {
@@ -99,6 +101,14 @@ test('Falling Blocks, Match Three, and Maze ship on every production surface', a
     assert.match(proxyTestSource, new RegExp("['\"]\\/" + escapedModule + "['\"]"));
     assert.match(await read('web/' + entry.module), /\bexport\s+(?:const|function|class)\b/);
   }
+});
+
+test('the seven quick games ship as one production engine and complete route', async () => {
+  for (const source of [packageSource,dockerSource,preflightSource]) assert.match(source,/quick-games\.js/);
+  assert.match(appSource,/from ['"]\.\/quick-games\.js['"]/);
+  assert.match(appSource,/state\.view==='quick'\?quickGame\(\)/);
+  assert.match(appSource,/if\(a==='open-quick'\)/);
+  assert.match(await read('web/quick-games.js'),/export function newQuickGame/);
 });
 
 test('Reversi, Sokoban, and Sliding Puzzle are assembled into every production surface', async () => {

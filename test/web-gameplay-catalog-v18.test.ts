@@ -13,16 +13,16 @@ function sourceBetween(start: string, end: string) {
   return appSource.slice(from, to);
 }
 
-test('all eighteen games publish one honest gameplay content contract', () => {
+test('all twenty-five games publish one honest gameplay content contract', () => {
   const content = sourceBetween('const GAME_CONTENT', 'const TURN_TIMEOUT_MS');
   const ids = [...content.matchAll(/^  (?:'([^']+)'|([a-z0-9]+)): \{/gm)].map((match) => match[1] || match[2]);
   assert.deepEqual(ids, [
     'ddz', 'xiangqi', 'gomoku', 'reversi', 'mahjong', '1048', 'sudoku6',
     'minesweeper', 'sokoban', 'sliding', 'memory', 'match3', 'falling', 'snake',
-    'maze', 'farm', 'three', 'reels',
+    'maze', 'farm', 'tictactoe', 'lights', 'guess', 'rps', 'math', 'sequence', 'stroop', 'three', 'reels',
   ]);
   for (const field of ['name', 'duration', 'mode', 'persistence', 'goal', 'loop', 'finish', 'limits', 'action', 'actionLabel']) {
-    assert.equal([...content.matchAll(new RegExp(`\\b${field}:`, 'g'))].length, 18, `${field} must describe every game`);
+    assert.equal([...content.matchAll(new RegExp(`\\b${field}:`, 'g'))].length, 25, `${field} must describe every game`);
   }
   assert.match(content, /mahjong:[\s\S]*?单局不保存[\s\S]*?暂不含吃碰杠与完整番型计分/);
   assert.match(content, /farm:[\s\S]*?无好友偷菜、跨设备同步或现金兑换/);
@@ -30,6 +30,7 @@ test('all eighteen games publish one honest gameplay content contract', () => {
   assert.match(content, /match3:[\s\S]*?action:'open-match3'/);
   assert.match(content, /falling:[\s\S]*?action:'open-falling'/);
   assert.match(content, /maze:[\s\S]*?action:'open-maze'/);
+  assert.equal([...content.matchAll(/action:'open-quick'/g)].length, 7);
 });
 
 test('the current-card playbook and full rules index reuse the gameplay content source', () => {
@@ -40,7 +41,7 @@ test('the current-card playbook and full rules index reuse the gameplay content 
   assert.match(playbook, /catalog-playbook-meta/);
   const guide = sourceBetween('function rulesGameGuide', 'function lobby');
   assert.match(guide, /CATALOG_GAME_IDS\.map/);
-  assert.match(guide, /18 款玩法，一次看懂/);
+  assert.match(guide, /25 款玩法，一次看懂/);
   assert.match(sourceBetween('function rules()', 'function render()'), /rulesGameGuide\(\)/);
   assert.match(styles, /\.catalog-playbook\s*\{/);
   assert.match(styles, /\.rules-game-index\s*\{/);
@@ -49,7 +50,7 @@ test('the current-card playbook and full rules index reuse the gameplay content 
 test('the catalog is a responsive icon grid without paging or drag hijacking', () => {
   const lobby = sourceBetween('function lobby()', 'function nav(');
   assert.match(lobby, /class="world-strip game-icon-grid"/);
-  assert.match(lobby, /小图标排列 · 点击即玩/);
+  assert.match(lobby, /门户式图标排列 · 点击即玩/);
   assert.doesNotMatch(lobby, /data-action="world-(?:prev|next)"|data-world-status|world-carousel-hint/);
 
   const v24 = styles.slice(styles.indexOf('/* V24'));

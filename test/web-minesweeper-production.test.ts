@@ -43,7 +43,7 @@ function sourceBetween(source: string, start: string, end: string) {
 
 test('Minesweeper is part of the browser module graph and every production artifact', () => {
   assert.match(appSource, /from ['"]\.\/minesweeper\.js['"]/);
-  assert.match(indexSource, /十八款即开即玩的牌桌、策略、益智与经营玩法/);
+  assert.match(indexSource, /二十五款即开即玩的牌桌、策略、益智、反应与经营玩法/);
   assert.match(indexSource, /扫雷/);
   assert.match(packageSource, /node --check web\/minesweeper\.js/);
   assert.match(dockerSource, /COPY[^\n]*web\/minesweeper\.js[^\n]*\.\//);
@@ -52,11 +52,11 @@ test('Minesweeper is part of the browser module graph and every production artif
   assert.match(preflightSource, /load the standalone Minesweeper engine/);
 });
 
-test('the eighteen-game icon lobby opens Minesweeper in the requested catalog position', () => {
+test('the twenty-five-game icon lobby opens Minesweeper in the requested catalog position', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /18 款游戏，一眼找到/);
+  assert.match(lobby, /25 款游戏，一眼找到/);
   assert.match(lobby, /14 款本地自动保存/);
-  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 18);
+  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 19);
   assert.match(lobby, /class="game-world world-minesweeper"/);
   assert.match(lobby, /<h3>KAI 扫雷<\/h3>/);
   assert.match(lobby, /data-action="open-minesweeper"/);

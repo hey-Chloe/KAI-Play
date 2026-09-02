@@ -42,7 +42,7 @@ function sourceBetween(source: string, start: string, end: string) {
 
 test('Xiangqi is part of the browser module graph and every production artifact', () => {
   assert.match(appSource, /from ['"]\.\/xiangqi\.js['"]/);
-  assert.match(indexSource, /十八款即开即玩的牌桌、策略、益智与经营玩法/);
+  assert.match(indexSource, /二十五款即开即玩的牌桌、策略、益智、反应与经营玩法/);
   assert.match(indexSource, /支持本地训练进度恢复/);
   assert.match(packageSource, /node --check web\/xiangqi\.js/);
   assert.match(dockerSource, /COPY[^\n]*web\/xiangqi\.js[^\n]*\.\//);
@@ -50,11 +50,11 @@ test('Xiangqi is part of the browser module graph and every production artifact'
   assert.match(preflightSource, /production image must include the standalone Xiangqi engine/);
 });
 
-test('the eighteen-game icon lobby opens the local Xiangqi route', () => {
+test('the twenty-five-game icon lobby opens the local Xiangqi route', () => {
   const lobby = sourceBetween(appSource, 'function lobby()', 'function nav(');
-  assert.match(lobby, /18 款游戏，一眼找到/);
+  assert.match(lobby, /25 款游戏，一眼找到/);
   assert.match(lobby, /14 款本地自动保存/);
-  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 18);
+  assert.equal([...lobby.matchAll(/class="game-world\s/g)].length, 19);
   assert.match(lobby, /class="game-world world-xiangqi"/);
   assert.match(lobby, /data-action="open-xiangqi"/);
   assert.match(appSource, /if\(a===['"]open-xiangqi['"]\)/);
