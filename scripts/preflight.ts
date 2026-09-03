@@ -31,7 +31,8 @@ for (const required of [
   'docs/DEPLOYMENT.md', 'docs/ENGINEERING_QUALITY.md', '.github/workflows/ci.yml',
   'mobile/package-lock.json', 'server/data/.gitignore', 'Dockerfile', 'docker-compose.yml', '.env.example',
   'scripts/benchmark-web.mjs',
-  'web/index.html', 'web/app.js', 'web/catalog-carousel.js', 'web/sudoku6.js', 'web/xiangqi.js', 'web/minesweeper.js', 'web/gomoku.js', 'web/reversi.js', 'web/sokoban.js', 'web/sliding-puzzle.js', 'web/memory-match.js', 'web/snake.js', 'web/farm.js', 'web/falling-blocks.js', 'web/match-three.js', 'web/maze.js', 'web/quick-games.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
+  'web/index.html', 'web/app.js', 'web/catalog-carousel.js', 'web/sudoku6.js', 'web/xiangqi.js', 'web/minesweeper.js', 'web/gomoku.js', 'web/reversi.js', 'web/sokoban.js', 'web/sliding-puzzle.js', 'web/memory-match.js', 'web/snake.js', 'web/farm.js', 'web/game-agent.js', 'web/falling-blocks.js', 'web/match-three.js', 'web/maze.js', 'web/quick-games.js', 'web/styles.css', 'web/serve.mjs', 'web/Dockerfile',
+  'scripts/evaluate-game-agent.mjs', 'docs/GAME_AGENT_P0.md',
 ]) assert.equal((await stat(resolve(root, required))).isFile(), true, `Required artifact missing: ${required}`);
 
 const engine = await read('core/engine.ts');
@@ -67,6 +68,7 @@ assert.match(webDocker, /web\/sliding-puzzle\.js/, 'The Web production image mus
 assert.match(webDocker, /web\/memory-match\.js/, 'The Web production image must include the standalone Memory Match engine');
 assert.match(webDocker, /web\/snake\.js/, 'The Web production image must include the standalone Snake engine');
 assert.match(webDocker, /web\/farm\.js/, 'The Web production image must include the standalone Farm engine');
+assert.match(webDocker, /web\/game-agent\.js/, 'The Web production image must include the Game Agent lab');
 assert.match(webDocker, /web\/falling-blocks\.js/, 'The Web production image must include the standalone Falling Blocks engine');
 assert.match(webDocker, /web\/match-three\.js/, 'The Web production image must include the standalone Match Three engine');
 assert.match(webDocker, /web\/maze\.js/, 'The Web production image must include the standalone Maze engine');
@@ -82,6 +84,7 @@ assert.match(webApp, /from ['"]\.\/sliding-puzzle\.js['"]/, 'The Web application
 assert.match(webApp, /from ['"]\.\/memory-match\.js['"]/, 'The Web application must load the standalone Memory Match engine');
 assert.match(webApp, /from ['"]\.\/snake\.js['"]/, 'The Web application must load the standalone Snake engine');
 assert.match(webApp, /from ['"]\.\/farm\.js['"]/, 'The Web application must load the standalone Farm engine');
+assert.match(webApp, /from ['"]\.\/game-agent\.js['"]/, 'The Web application must load the Game Agent lab');
 assert.match(webApp, /from ['"]\.\/falling-blocks\.js['"]/, 'The Web application must load the standalone Falling Blocks engine');
 assert.match(webApp, /from ['"]\.\/match-three\.js['"]/, 'The Web application must load the standalone Match Three engine');
 assert.match(webApp, /from ['"]\.\/maze\.js['"]/, 'The Web application must load the standalone Maze engine');
@@ -114,6 +117,8 @@ assert.match(rootPackage.scripts.build ?? '', /node --check web\/sliding-puzzle\
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/memory-match\.js/, 'The build must syntax-check the Memory Match engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/snake\.js/, 'The build must syntax-check the Snake engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/farm\.js/, 'The build must syntax-check the Farm engine');
+assert.match(rootPackage.scripts.build ?? '', /node --check web\/game-agent\.js/, 'The build must syntax-check the Game Agent lab');
+assert.match(rootPackage.scripts['agent:eval'] ?? '', /evaluate-game-agent\.mjs/, 'The project must expose a reproducible Game Agent evaluation command');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/falling-blocks\.js/, 'The build must syntax-check the Falling Blocks engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/match-three\.js/, 'The build must syntax-check the Match Three engine');
 assert.match(rootPackage.scripts.build ?? '', /node --check web\/maze\.js/, 'The build must syntax-check the Maze engine');

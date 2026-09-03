@@ -20,6 +20,7 @@
 - KAI 记忆翻牌提供三档牌阵、计步计时、最佳成绩与自动恢复；KAI 贪吃蛇提供三档速度、键盘/滑动/触控方向键与本地最佳分
 - KAI 三消提供 8×8 宝石盘、有效交换、连锁补充与步数目标；KAI 方块提供七种经典方块、旋转、消行与等级加速；KAI 迷宫提供三档可解盘面、最短路线提示与步数对比
 - KAI 农场提供单人九日丰收挑战：每天 5 次行动，围绕播种、浇水、缺水杂草、三种作物解锁、旺需行情和赛季奖章形成约 5–8 分钟闭环；当前不支持好友拜访、偷菜或跨设备同步
+- Agent Lab P0 将同一套农场规则引擎变成可观测研究环境：支持画面语义/文本/RPC 状态融合、目标分解、层级规划、Skill Library、轨迹 Memory、失败注入与自动恢复，并提供即时贪心、层级规划和 Skill + Memory 三种可复现对照策略；当前是本地确定性基线，不代表已接入 VLM、LLM、MCTS、SFT 或 RL
 - 炸金花训练提供三手牌型判断、三家揭晓、正确率与并列统计；算力转轮提供仅限本次会话的组合收集与共振值，不支付、不下注且没有可兑换奖励
 - 定主位、三张增补牌、组合牌型、特殊组合翻倍和零和结算
 - 服务端权威校验、顺序号防陈旧写入、带载荷指纹的幂等动作
@@ -74,6 +75,7 @@ docker compose up --build
 npm run build
 npm run verify
 npm run test:coverage
+npm run agent:eval
 ```
 
 `build` 会检查服务端和 Web 的 Node 可执行语法，并执行移动端 TypeScript 检查；`verify` 还会运行带 90%/80%/90% 门槛的覆盖率测试、规则完整性与发布预检。CI 配置会在每次提交和拉取请求中重复这些步骤，校验 Compose、构建两个容器镜像，并启动整套服务冒烟 `/health`、Web 代理和视觉资产；首次推送后仍应以 GitHub Actions 的实际结果为准。
@@ -88,6 +90,7 @@ npm run test:coverage
 - [安全与公平](docs/SECURITY.md)
 - [单机部署与数据恢复](docs/DEPLOYMENT.md)
 - [工程质量与容量边界](docs/ENGINEERING_QUALITY.md)
+- [Game Agent P0 能力与评测边界](docs/GAME_AGENT_P0.md)
 - [第三方素材与许可声明](THIRD_PARTY_NOTICES.md)
 - [隐私说明](docs/PRIVACY.md)
 - [用户规则](docs/TERMS.md)

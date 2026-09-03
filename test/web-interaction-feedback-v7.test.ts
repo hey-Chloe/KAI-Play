@@ -38,9 +38,9 @@ test('Mahjong uses explicit discard confirmation and paced bot turns', () => {
   assert.match(stylesSource, /\.mahjong-face\.river-face\.is-latest/);
 });
 
-test('short phones preserve both lobby CTAs below the compact top navigation', () => {
+test('short phones preserve both lobby CTAs below the five-item compact top navigation', () => {
   assert.match(stylesSource, /V20: primary navigation belongs to the sticky top chrome/);
-  assert.match(stylesSource, /@media \(max-width:420px\)[\s\S]*\.topbar\.has-primary-nav > \.nav\s*\{[\s\S]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(stylesSource, /@media \(max-width:420px\)[\s\S]*\.topbar\.has-primary-nav > \.nav\s*\{[\s\S]*grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
   assert.match(stylesSource, /\.topbar\.has-primary-nav > \.nav \.btn\s*\{[\s\S]*min-height:44px/);
   assert.match(stylesSource, /\.lobby-game-center \.lobby-hero-v4 \.live-join-bar \.btn,[\s\S]*\.lobby-game-center \.mahjong-hero-action \.btn[\s\S]*min-height:\s*50px/);
   assert.match(stylesSource, /@media \(max-width:\s*560px\)[\s\S]*\.lobby-game-center \.lobby-hero-v4 \.live-join-bar \.btn,[\s\S]*min-height:\s*44px/);

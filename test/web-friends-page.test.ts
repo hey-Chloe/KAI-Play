@@ -35,10 +35,10 @@ const nav = functionSource('nav');
 const header = functionSource('header');
 const friends = functionSource('friends');
 
-test('the four primary destinations live inside the top header on every primary page', () => {
+test('the five primary destinations live inside the top header on every primary page', () => {
   const destinations = [...nav.matchAll(/data-(?:view|action)="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(destinations, ['lobby', 'history', 'rules', 'view-friends']);
-  assert.match(nav, />游戏<\/button>.*>战绩<\/button>.*>规则<\/button>.*>好友<\/button>/s);
+  assert.deepEqual(destinations, ['lobby', 'agent', 'history', 'rules', 'view-friends']);
+  assert.match(nav, />游戏<\/button>.*>Agent<\/button>.*>战绩<\/button>.*>规则<\/button>.*>好友<\/button>/s);
   assert.match(nav, /active===['"]friends['"]/);
   assert.match(header, /class="topbar[^"`]*\$\{lobbyMode/);
   assert.match(header, /\$\{active\?nav\(active\):''\}/);

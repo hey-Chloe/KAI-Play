@@ -1,7 +1,7 @@
 FROM node:22.18.0-alpine
 
 WORKDIR /app/web
-COPY web/index.html web/styles.css web/app.js web/casual-games.js web/catalog-carousel.js web/sudoku6.js web/xiangqi.js web/minesweeper.js web/gomoku.js web/reversi.js web/sokoban.js web/sliding-puzzle.js web/memory-match.js web/snake.js web/farm.js web/falling-blocks.js web/match-three.js web/maze.js web/quick-games.js web/serve.mjs ./
+COPY web/index.html web/styles.css web/app.js web/casual-games.js web/catalog-carousel.js web/sudoku6.js web/xiangqi.js web/minesweeper.js web/gomoku.js web/reversi.js web/sokoban.js web/sliding-puzzle.js web/memory-match.js web/snake.js web/farm.js web/game-agent.js web/falling-blocks.js web/match-three.js web/maze.js web/quick-games.js web/serve.mjs ./
 COPY web/assets ./assets
 
 RUN addgroup -S doujoy && adduser -S doujoy -G doujoy \

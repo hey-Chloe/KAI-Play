@@ -34,7 +34,7 @@ test('the primary navigation is part of the sticky top header on desktop', () =>
   assert.match(nav, /bottom\s*:\s*auto\s*;/);
   assert.match(nav, /left\s*:\s*auto\s*;/);
   assert.match(nav, /transform\s*:\s*none\s*;/);
-  assert.match(nav, /grid-template-columns\s*:\s*repeat\(4,minmax\(0,1fr\)\)\s*;/);
+  assert.match(nav, /grid-template-columns\s*:\s*repeat\(5,minmax\(0,1fr\)\)\s*;/);
 });
 
 test('tablet widths put navigation on the second header row instead of the viewport bottom', () => {
@@ -48,13 +48,13 @@ test('tablet widths put navigation on the second header row instead of the viewp
   assert.doesNotMatch(tablet, /bottom\s*:\s*max\(/);
 });
 
-test('compact phones retain four accessible top navigation targets', () => {
+test('compact phones retain five accessible top navigation targets', () => {
   const phoneStart = topNavigationStyles.indexOf('@media (max-width:420px)');
   const phoneEnd = topNavigationStyles.indexOf('@media (prefers-reduced-motion:reduce)', phoneStart);
   assert.notEqual(phoneStart, -1, 'missing compact-phone navigation breakpoint');
   assert.ok(phoneEnd > phoneStart, 'missing compact-phone breakpoint end');
   const phone = topNavigationStyles.slice(phoneStart, phoneEnd);
-  assert.match(phone, /> \.nav\s*\{[\s\S]*grid-template-columns\s*:\s*repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(phone, /> \.nav\s*\{[\s\S]*grid-template-columns\s*:\s*repeat\(5,minmax\(0,1fr\)\)/);
   assert.match(phone, /> \.nav \.btn\s*\{[\s\S]*min-height\s*:\s*44px/);
   assert.doesNotMatch(phone, /position\s*:\s*fixed|bottom\s*:\s*max\(/);
 });
