@@ -12,6 +12,7 @@ const [
   dockerSource,
   preflightSource,
   proxyTestSource,
+  cssSource,
 ] = await Promise.all([
   read('web/app.js'),
   read('web/index.html'),
@@ -19,6 +20,7 @@ const [
   read('web/Dockerfile'),
   read('scripts/preflight.ts'),
   read('test/web-proxy-e2e.test.ts'),
+  read('web/styles.css'),
 ]);
 
 function sourceBetween(source: string, start: string, end: string) {
@@ -108,6 +110,12 @@ test('the seven quick games ship as one production engine and complete route', a
   assert.match(appSource,/from ['"]\.\/quick-games\.js['"]/);
   assert.match(appSource,/state\.view==='quick'\?quickGame\(\)/);
   assert.match(appSource,/if\(a==='open-quick'\)/);
+  assert.match(appSource,/quickRun:\s*\{\s*stars:0,\s*completed:0,\s*wins:0\s*\}/);
+  assert.match(appSource,/function quickGameStars\(/);
+  assert.match(appSource,/data-action="quick-next"/);
+  assert.match(appSource,/event\.target\?\.matches\?\.\('\[data-quick-input\]'\).*event\.key==='Enter'/);
+  assert.match(cssSource,/\.quick-run-strip\s*\{/);
+  assert.match(cssSource,/\.quick-result-stars\s*\{/);
   assert.match(await read('web/quick-games.js'),/export function newQuickGame/);
 });
 

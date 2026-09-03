@@ -373,9 +373,9 @@ const GAME_CONTENT = Object.freeze({
   },
   guess: {
     name:'KAI 猜数字', eyebrow:'大小推理', duration:'约 1–3 分钟', mode:'单人 · 1–100', persistence:'单局不保存',
-    goal:'根据“大一点”或“小一点”的反馈，用尽量少的次数找出目标整数。',
+    goal:'根据范围反馈，在七次机会内锁定 1–100 之间的目标整数。',
     loop:'输入数字 → 读取大小提示 → 缩小范围 → 再次尝试',
-    finish:'准确猜中目标数字即结束，并显示总尝试次数。',
+    finish:'七次内准确猜中即获胜；范围会随着每次判断持续收窄。',
     limits:'目标只在当前单局内生成，不记录跨局排行榜。', action:'open-quick', actionLabel:'开始猜数',
   },
   rps: {
@@ -396,7 +396,7 @@ const GAME_CONTENT = Object.freeze({
     name:'KAI 节奏记忆', eyebrow:'顺序挑战', duration:'约 2–4 分钟', mode:'单人 · 六轮节奏', persistence:'单局不保存',
     goal:'先观察颜色节奏，再按原顺序完整复现，连续通过六轮。',
     loop:'观察序列 → 隐藏提示 → 依次输入 → 增加一拍',
-    finish:'完成第六轮获胜；任何一拍输入错误则本局结束。',
+    finish:'完成第六轮获胜；每局有两颗心，首次失误可重看本轮。',
     limits:'序列只使用颜色与编号，按钮同时提供文字标签。', action:'open-quick', actionLabel:'开始记忆',
   },
   stroop: {
@@ -447,7 +447,7 @@ function rememberLastLocalGame(game) {
   return LOCAL_GAME_IDS.has(game) && safeStorageSet(LAST_LOCAL_GAME_KEY, game);
 }
 const storedHeroGame = safeStorageGet(HERO_GAME_KEY);
-const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, roomCodeDraft: '', history: null, historyStatus: 'idle', historyError: '', friendsData: null, friendsStatus: 'idle', friendSearchQuery: '', friendSearchResults: [], selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
+const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, roomCodeDraft: '', history: null, historyStatus: 'idle', historyError: '', friendsData: null, friendsStatus: 'idle', friendSearchQuery: '', friendSearchResults: [], selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, quickRun: { stars:0, completed:0, wins:0 }, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
 let merge1048Pointer = null;
 let heroTransitionTimer = null;
@@ -986,7 +986,7 @@ function portalGameActionAttributes(gameId) {
 
 function portalRecommendationCard(gameId,index) {
   const content=gameContent(gameId);
-  return `<article class="portal-recommend-card accent-${esc(gameId)}"><button type="button" ${portalGameActionAttributes(gameId)} aria-label="打开${esc(content.name)}"><span class="portal-recommend-cover"><i aria-hidden="true">${PORTAL_GAME_GLYPHS[gameId]||'K'}</i><small>${index<3?'本期精选':content.eyebrow}</small></span><span class="portal-recommend-copy"><b>${esc(content.name)}</b><small>${esc(content.mode)}</small></span></button></article>`;
+  return `<article class="portal-recommend-card cover-${esc(gameId)}"><button type="button" ${portalGameActionAttributes(gameId)} aria-label="打开${esc(content.name)}"><span class="portal-recommend-cover"><i aria-hidden="true">${PORTAL_GAME_GLYPHS[gameId]||'K'}</i><small>${index<3?'本期精选':content.eyebrow}</small></span><span class="portal-recommend-copy"><b>${esc(content.name)}</b><small>${esc(content.mode)}</small></span></button></article>`;
 }
 
 function portalRankingPanel(title,subtitle,gameIds,tone) {
@@ -2590,37 +2590,58 @@ function mazeGame() {
 
 function quickGameStatus(game) {
   if (game.status === 'won') return '挑战完成，表现不错';
-  if (game.status === 'lost') return '本轮结束，换个思路再试';
+  if (game.status === 'lost') return game.kind === 'guess' ? game.hint : '本轮结束，换个思路再试';
   if (game.status === 'draw') return '势均力敌，本轮平局';
   if (game.kind === 'tictactoe') return '你执 X 先手，选择一个空格';
   if (game.kind === 'lights') return `还有 ${game.lit} 盏灯亮着`;
   if (game.kind === 'guess') return game.hint;
   if (game.kind === 'rps') return game.last ? `本轮${game.last.result === 'win' ? '你赢了' : game.last.result === 'lost' ? 'KAI 获胜' : '平局'}` : '五局三胜，选一个手势';
   if (game.kind === 'math') return game.lastCorrect === null ? '输入答案并提交' : game.lastCorrect ? '回答正确，继续下一题' : '答案不对，继续下一题';
-  if (game.kind === 'sequence') return game.phase === 'watch' ? `观察第 ${game.round} 轮节奏` : `按顺序输入 · ${game.input.length}/${game.sequence.length}`;
+  if (game.kind === 'sequence') return game.phase === 'watch' ? `${game.lastCorrect===false?'失误一次，再看一遍 · ':''}观察第 ${game.round} 轮节奏` : `按顺序输入 · ${game.input.length}/${game.sequence.length}`;
   return game.lastCorrect === null ? '忽略字义，只判断文字颜色' : game.lastCorrect ? '判断正确' : '注意，要选择文字实际颜色';
 }
 
 function quickGameMetrics(game) {
   if (game.kind === 'tictactoe') return [['回合',game.moves],['你','X'],['KAI','O']];
   if (game.kind === 'lights') return [['步数',game.moves],['亮灯',game.lit],['目标','全灭']];
-  if (game.kind === 'guess') return [['尝试',game.attempts.length],['范围','1–100'],['目标','?']];
+  if (game.kind === 'guess') return [['机会',`${Math.max(0,game.maxAttempts-game.attempts.length)}/${game.maxAttempts}`],['范围',`${game.lower}–${game.upper}`],['目标','?']];
   if (game.kind === 'rps') return [['你',game.playerScore],['KAI',game.botScore],['回合',game.rounds.length]];
-  if (game.kind === 'math') return [['题目',`${Math.min(10,game.round+1)}/10`],['答对',game.score],['目标','7+']];
-  if (game.kind === 'sequence') return [['轮次',`${game.round}/6`],['节拍',game.sequence.length],['输入',game.input.length]];
-  return [['题目',`${Math.min(10,game.round+1)}/10`],['答对',game.score],['目标','7+']];
+  if (game.kind === 'math') return [['题目',`${Math.min(10,game.round+1)}/10`],['答对',game.score],['连对',game.streak]];
+  if (game.kind === 'sequence') return [['轮次',`${game.round}/6`],['节拍',game.sequence.length],['机会',`${'♥'.repeat(game.lives)}${'♡'.repeat(2-game.lives)}`]];
+  return [['题目',`${Math.min(10,game.round+1)}/10`],['答对',game.score],['连对',game.streak]];
+}
+
+function quickGameStars(game) {
+  if (game.status === 'draw') return 2;
+  if (game.kind === 'guess') return game.status === 'won' ? (game.moves <= 5 ? 3 : 2) : 1;
+  if (['math','stroop'].includes(game.kind)) return game.score >= 9 ? 3 : game.score >= 7 ? 2 : 1;
+  if (game.kind === 'sequence') return game.status === 'won' ? (game.lives === 2 ? 3 : 2) : game.round >= 4 ? 2 : 1;
+  if (game.kind === 'lights') return game.status === 'won' ? (game.moves <= 12 ? 3 : 2) : 1;
+  return game.status === 'won' ? 3 : 1;
+}
+
+function quickGameResultCopy(game) {
+  if (game.kind === 'guess') return game.status === 'won' ? `${game.moves} 次锁定答案，范围判断有效。` : `答案是 ${game.target}，下一局试试从 50 开始。`;
+  if (game.kind === 'rps') return `你 ${game.playerScore} : ${game.botScore} KAI · 本局出拳序列开局时已经锁定。`;
+  if (['math','stroop'].includes(game.kind)) return `答对 ${game.score}/10 · 最长连续答对 ${game.bestStreak} 题。`;
+  if (game.kind === 'sequence') return game.status === 'won' ? `完整复现六轮节奏，还剩 ${game.lives} 次机会。` : `抵达第 ${game.round} 轮，下次从这一拍追回来。`;
+  return `${quickGameStatus(game)} · 共操作 ${game.moves} 次。`;
 }
 
 function quickGameBoard(game) {
   if (game.kind === 'tictactoe') return `<div class="quick-tic-board" role="grid" aria-label="井字棋九宫格">${game.board.map((value,index)=>`<button type="button" data-action="quick-play" data-quick-value="${index}" role="gridcell" aria-label="第 ${Math.floor(index/3)+1} 行第 ${index%3+1} 列${value?`，${value}`:'，空格'}" ${value||game.status!=='playing'?'disabled':''}>${value||''}</button>`).join('')}</div>`;
   if (game.kind === 'lights') return `<div class="quick-lights-board" role="grid" aria-label="5 乘 5 点灯棋盘">${game.board.map((lit,index)=>`<button type="button" class="${lit?'is-lit':''}" data-action="quick-play" data-quick-value="${index}" role="gridcell" aria-label="第 ${Math.floor(index/5)+1} 行第 ${index%5+1} 列，${lit?'亮':'灭'}" ${game.status!=='playing'?'disabled':''}><i aria-hidden="true"></i></button>`).join('')}</div>`;
-  if (game.kind === 'guess') return `<div class="quick-input-challenge"><span class="quick-big-glyph" aria-hidden="true">?</span><label>输入你的猜测<input data-quick-input inputmode="numeric" type="number" min="1" max="100" placeholder="1–100" ${game.status!=='playing'?'disabled':''}></label><button class="btn primary" data-action="quick-submit" ${game.status!=='playing'?'disabled':''}>提交猜测</button><div class="quick-history">${game.attempts.slice(-8).map((value)=>`<i>${value}</i>`).join('')}</div></div>`;
+  if (game.kind === 'guess') {
+    const left=((game.lower-1)/99)*100;const width=((game.upper-game.lower+1)/100)*100;
+    return `<div class="quick-input-challenge quick-guess"><div class="quick-range" aria-label="当前可能范围 ${game.lower} 到 ${game.upper}"><span><b>${game.lower}</b><b>${game.upper}</b></span><i style="--range-left:${left}%;--range-width:${width}%"></i></div><label>输入下一次猜测<input data-quick-input inputmode="numeric" type="number" min="${game.lower}" max="${game.upper}" placeholder="${Math.round((game.lower+game.upper)/2)}" ${game.status!=='playing'?'disabled':''}></label><button class="btn primary" data-action="quick-submit" ${game.status!=='playing'?'disabled':''}>锁定这个数字</button><div class="quick-history" aria-label="已经猜过的数字">${game.attempts.slice(-7).map((value)=>`<i>${value}</i>`).join('')}</div></div>`;
+  }
   if (game.kind === 'rps') {
     const labels={rock:['石头','✊'],paper:['布','✋'],scissors:['剪刀','✌']};
-    return `<div class="quick-rps"><div class="quick-rps-last"><span>你 ${game.last?labels[game.last.player][1]:'？'}</span><b>${game.last?game.last.result==='win'?'胜':game.last.result==='lost'?'负':'平':'VS'}</b><span>${game.last?labels[game.last.bot][1]:'？'} KAI</span></div><div>${QUICK_RPS_CHOICES.map((choice)=>`<button type="button" data-action="quick-play" data-quick-value="${choice}" ${game.status!=='playing'?'disabled':''}><i aria-hidden="true">${labels[choice][1]}</i><b>${labels[choice][0]}</b></button>`).join('')}</div></div>`;
+    const history=game.rounds.map((round,index)=>`<i class="is-${round.result}" title="第 ${index+1} 回合：${round.result==='win'?'胜':round.result==='lost'?'负':'平'}">${round.result==='win'?'胜':round.result==='lost'?'负':'平'}</i>`).join('');
+    return `<div class="quick-rps"><div class="quick-rps-history" aria-label="回合走势">${history||'<span>先拿 3 分获胜</span>'}</div><div class="quick-rps-last"><span>你 ${game.last?labels[game.last.player][1]:'？'}</span><b>${game.last?game.last.result==='win'?'胜':game.last.result==='lost'?'负':'平':'VS'}</b><span>${game.last?labels[game.last.bot][1]:'？'} KAI</span></div><div>${QUICK_RPS_CHOICES.map((choice)=>`<button type="button" data-action="quick-play" data-quick-value="${choice}" ${game.status!=='playing'?'disabled':''}><i aria-hidden="true">${labels[choice][1]}</i><b>${labels[choice][0]}</b></button>`).join('')}</div></div>`;
   }
   if (game.kind === 'math') return `<div class="quick-input-challenge"><span class="quick-equation">${game.question.text}</span><label>输入计算结果<input data-quick-input inputmode="numeric" type="number" placeholder="答案" ${game.status!=='playing'?'disabled':''}></label><button class="btn primary" data-action="quick-submit" ${game.status!=='playing'?'disabled':''}>提交答案</button></div>`;
-  if (game.kind === 'sequence') return `<div class="quick-sequence"><div class="quick-sequence-watch ${game.phase==='input'?'is-hidden':''}" aria-label="需要记住的颜色顺序">${game.sequence.map((color,index)=>`<i class="tone-${color}">${index+1}</i>`).join('')}</div>${game.phase==='watch'&&game.status==='playing'?'<button class="btn primary" data-action="quick-sequence-start">记住了，开始作答</button>':''}<div class="quick-sequence-pad">${QUICK_SEQUENCE_COLORS.map((color,index)=>`<button type="button" class="tone-${color}" data-action="quick-play" data-quick-value="${color}" aria-label="颜色 ${index+1}" ${game.phase!=='input'||game.status!=='playing'?'disabled':''}>${index+1}</button>`).join('')}</div></div>`;
+  if (game.kind === 'sequence') return `<div class="quick-sequence"><div class="quick-sequence-watch ${game.phase==='input'?'is-hidden':''}" aria-label="需要记住的颜色顺序">${game.sequence.map((color,index)=>`<i class="tone-${color}" style="--beat:${index}">${index+1}</i>`).join('')}</div>${game.phase==='watch'&&game.status==='playing'?'<button class="btn primary" data-action="quick-sequence-start">看完了，开始复现</button>':''}<div class="quick-sequence-pad">${QUICK_SEQUENCE_COLORS.map((color,index)=>`<button type="button" class="tone-${color}" data-action="quick-play" data-quick-value="${color}" aria-label="颜色 ${index+1}" ${game.phase!=='input'||game.status!=='playing'?'disabled':''}>${index+1}</button>`).join('')}</div></div>`;
   const colorNames={red:'红色',blue:'蓝色',green:'绿色',gold:'黄色'};
   return `<div class="quick-stroop"><span>请选择文字实际显示的颜色</span><strong class="ink-${game.prompt.color}">${game.prompt.label}</strong><div>${QUICK_STROOP_COLORS.map((color)=>`<button type="button" class="ink-${color}" data-action="quick-play" data-quick-value="${color}" ${game.status!=='playing'?'disabled':''}>${colorNames[color]||QUICK_STROOP_LABELS[color]}</button>`).join('')}</div></div>`;
 }
@@ -2632,8 +2653,10 @@ function quickGame() {
   const meta=QUICK_GAME_META[game.kind];
   const metrics=quickGameMetrics(game).map(([label,value])=>`<div><small>${label}</small><strong>${value}</strong></div>`).join('');
   const status=casual.announcement||quickGameStatus(game);
-  const result=game.status==='playing'?'':`<section class="local-puzzle-result ${game.status==='won'?'is-win':'is-over'}" data-quick-result role="status" aria-live="polite" tabindex="-1"><span>${game.status==='won'?'挑战完成':game.status==='draw'?'本局平手':'本轮结束'}</span><h2>${meta.name}</h2><p>${quickGameStatus(game)} · 共操作 ${game.moves} 次</p><div><button class="btn primary" data-action="quick-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
-  return `<div class="shell casual-shell quick-route quick-${game.kind}">${casualHeader(meta.name,'QUICK PLAY','轻量短局 · 即开即玩')}<main class="quick-game-stage"><section class="quick-game-copy"><span>25 款游戏中心 · 新增短局</span><h1>${meta.glyph}<br><b>${meta.name.replace('KAI ','')}</b></h1><p>${GAME_CONTENT[game.kind].goal}</p><ol><li><b>玩法</b><span>${GAME_CONTENT[game.kind].loop}</span></li><li><b>结束</b><span>${GAME_CONTENT[game.kind].finish}</span></li></ol></section><section class="local-puzzle-play quick-game-play"><div class="local-puzzle-metrics">${metrics}</div><div class="local-puzzle-status ${game.status==='playing'?'':'is-finished'}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status==='playing'?'进行中':'已结算'}</b></div>${quickGameBoard(game)}<div class="local-puzzle-actions"><button class="btn" data-action="quick-new">重新开始</button></div>${result}</section></main><p class="casual-disclaimer">本玩法为本地免费短局，不保存跨会话进度，不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  const award=casual.lastAward||quickGameStars(game);const stars=`${'★'.repeat(award)}${'☆'.repeat(3-award)}`;
+  const result=game.status==='playing'?'':`<section class="local-puzzle-result quick-result ${game.status==='won'?'is-win':'is-over'}" data-quick-result role="status" aria-live="polite" tabindex="-1"><span>${game.status==='won'?'挑战完成':game.status==='draw'?'本局平手':'本轮结束'}</span><div class="quick-result-stars" aria-label="本局获得 ${award} 颗星">${stars}</div><h2>${meta.name}</h2><p>${quickGameResultCopy(game)}</p><div class="quick-run-total"><b>本次街机串 ${state.quickRun.stars} ★</b><span>${state.quickRun.completed} 关 · ${state.quickRun.wins} 胜</span></div><div><button class="btn primary" data-action="quick-new">再来一局</button><button class="btn arcade-next" data-action="quick-next">换个挑战 →</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
+  const feedback=game.lastCorrect===true?'is-correct':game.lastCorrect===false?'is-wrong':'';
+  return `<div class="shell casual-shell quick-route quick-${game.kind}">${casualHeader(meta.name,'ARCADE RUN',`本次挑战串 · ${state.quickRun.stars} ★`)}<main class="quick-game-stage"><section class="quick-game-copy"><span>即开即玩 · 过关积星</span><h1>${meta.glyph}<br><b>${meta.name.replace('KAI ','')}</b></h1><p>${GAME_CONTENT[game.kind].goal}</p><ol><li><b>玩法</b><span>${GAME_CONTENT[game.kind].loop}</span></li><li><b>结束</b><span>${GAME_CONTENT[game.kind].finish}</span></li></ol></section><section class="local-puzzle-play quick-game-play ${feedback}"><div class="quick-run-strip"><span><i>★</i> 本次街机串</span><b>${state.quickRun.stars} 星 · ${state.quickRun.completed} 关</b></div><div class="local-puzzle-metrics">${metrics}</div><div class="local-puzzle-status ${game.status==='playing'?'':'is-finished'}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status==='playing'?'进行中':'已结算'}</b></div>${quickGameBoard(game)}<div class="local-puzzle-actions"><button class="btn" data-action="quick-new">重新开始</button></div>${result}</section></main><p class="casual-disclaimer">短局在本地运行；本次街机星章仅保留到刷新页面，不改变竞技分、Token 或 KAI 卡时。</p></div>`;
 }
 
 function historyMatchWon(match) {
@@ -4137,13 +4160,25 @@ function openQuickGame(kind) {
   if(!QUICK_GAME_KINDS.includes(kind))return;
   stopGameSync();stopRoomSync();stopMahjongBotSequence();stopCasualTimers();
   const game=newQuickGame(kind);
-  state.casual={kind:'quick',game,announcement:quickGameStatus(game),saveAvailable:true};
+  state.casual={kind:'quick',game,announcement:quickGameStatus(game),saveAvailable:true,lastAward:0};
   state.view='quick';rememberLastLocalGame(kind);
 }
 
 function commitQuickGame(next) {
   if(state.view!=='quick'||state.casual?.kind!=='quick'||!next)return;
+  const previous=state.casual.game;
+  if(previous?.status==='playing'&&next.status!=='playing'){
+    const award=quickGameStars(next);
+    state.quickRun.stars+=award;state.quickRun.completed+=1;state.quickRun.wins+=Number(next.status==='won');state.casual.lastAward=award;
+  } else if(next.status==='playing'&&previous?.status!=='playing') state.casual.lastAward=0;
   state.casual.game=next;state.casual.announcement=quickGameStatus(next);render();focusQuickGameInteraction();
+}
+
+function openNextQuickGame() {
+  const current=state.casual?.game?.kind;
+  const index=QUICK_GAME_KINDS.indexOf(current);
+  openQuickGame(QUICK_GAME_KINDS[(index+1+QUICK_GAME_KINDS.length)%QUICK_GAME_KINDS.length]);
+  render();globalThis.scrollTo?.(0,0);focusQuickGameInteraction();
 }
 
 function performQuickGame(value) {
@@ -4817,6 +4852,7 @@ app.addEventListener('click', e => {
   if(a==='quick-new'&&state.view==='quick'){
     const game=state.casual?.game;if(!game)return;commitQuickGame(restartQuickGame(game));return;
   }
+  if(a==='quick-next'&&state.view==='quick'){openNextQuickGame();return;}
   if(a==='three-guess'&&state.view==='three'&&!state.casual?.thinking&&!state.casual?.revealed&&THREE_CARD_LABELS.includes(el.dataset.threeGuess)){
     state.casual.guess=el.dataset.threeGuess;render();return;
   }
@@ -5256,6 +5292,11 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', (event) => { finishWorldCarouselPointer(event,{cancelled:true});heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
+  if(state.view==='quick'&&event.target?.matches?.('[data-quick-input]')&&event.key==='Enter'){
+    event.preventDefault();
+    performQuickGame(event.target.value);
+    return;
+  }
   if(state.view==='friends'&&event.target?.matches?.('#friend-search-input')&&event.key==='Enter'){
     event.preventDefault();
     document.querySelector('[data-action="friend-search"]')?.click();

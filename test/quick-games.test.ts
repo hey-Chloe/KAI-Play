@@ -19,7 +19,8 @@ test('lights out toggles a bounded cross',()=>{
 });
 
 test('guess number gives truthful bounds and wins exactly',()=>{
-  const game=newQuickGame('guess',{seed:19});const low=playQuickGame(game,Math.max(1,game.target-1));if(game.target>1)assert.equal(low.hint,'再大一点');const won=playQuickGame(low,game.target);assert.equal(won.status,'won');assert.match(won.hint,/猜中了/);
+  const game=newQuickGame('guess',{seed:19});const low=playQuickGame(game,Math.max(1,game.target-1));if(game.target>1){assert.match(low.hint,/大/);assert.equal(low.lower,game.target);}const won=playQuickGame(low,game.target);assert.equal(won.status,'won');assert.match(won.hint,/猜中了/);
+  let missed=newQuickGame('guess',{seed:19});for(let i=0;i<missed.maxAttempts;i+=1)missed=playQuickGame(missed,missed.target===100?1:100);assert.equal(missed.status,'lost');assert.match(missed.hint,new RegExp(String(missed.target)));
 });
 
 test('rock paper scissors settles no later than seven rounds',()=>{
@@ -27,15 +28,16 @@ test('rock paper scissors settles no later than seven rounds',()=>{
 });
 
 test('math challenge runs ten questions and scores answers',()=>{
-  let game=newQuickGame('math',{seed:35});for(let i=0;i<10;i+=1)game=playQuickGame(game,game.question.answer);assert.equal(game.status,'won');assert.equal(game.round,10);assert.equal(game.score,10);
+  let game=newQuickGame('math',{seed:35});for(let i=0;i<10;i+=1)game=playQuickGame(game,game.question.answer);assert.equal(game.status,'won');assert.equal(game.round,10);assert.equal(game.score,10);assert.equal(game.bestStreak,10);
 });
 
-test('sequence requires watch confirmation, grows, and rejects an error',()=>{
-  let game=newQuickGame('sequence',{seed:43});assert.equal(playQuickGame(game,game.sequence[0]),game);game=startQuickSequence(game);for(const color of [...game.sequence])game=playQuickGame(game,color);assert.equal(game.round,2);assert.equal(game.sequence.length,4);game=startQuickSequence(game);const wrong=['mint','coral','violet','gold'].find(color=>color!==game.sequence[0]);game=playQuickGame(game,wrong);assert.equal(game.status,'lost');
+test('sequence requires watch confirmation, grows, and gives one recovery before defeat',()=>{
+  let game=newQuickGame('sequence',{seed:43});assert.equal(playQuickGame(game,game.sequence[0]),game);game=startQuickSequence(game);for(const color of [...game.sequence])game=playQuickGame(game,color);assert.equal(game.round,2);assert.equal(game.sequence.length,4);game=startQuickSequence(game);const wrong=['mint','coral','violet','gold'].find(color=>color!==game.sequence[0]);game=playQuickGame(game,wrong);
+  assert.equal(game.status,'playing');assert.equal(game.lives,1);assert.equal(game.phase,'watch');game=startQuickSequence(game);game=playQuickGame(game,wrong);assert.equal(game.status,'lost');assert.equal(game.lives,0);
 });
 
 test('stroop scores displayed ink rather than word',()=>{
-  let game=newQuickGame('stroop',{seed:51});assert.notEqual(game.prompt.word,game.prompt.color);for(let i=0;i<10;i+=1)game=playQuickGame(game,game.prompt.color);assert.equal(game.status,'won');assert.equal(game.score,10);
+  let game=newQuickGame('stroop',{seed:51});assert.notEqual(game.prompt.word,game.prompt.color);for(let i=0;i<10;i+=1)game=playQuickGame(game,game.prompt.color);assert.equal(game.status,'won');assert.equal(game.score,10);assert.equal(game.bestStreak,10);
 });
 
 test('restart preserves kind and resets progress',()=>{

@@ -94,7 +94,10 @@ function playLights(game, value) {
 }
 
 function newGuess(seed) {
-  return { ...base('guess',seed), target:randomAt(seed,0,100)+1, attempts:[], hint:'输入 1–100 之间的整数' };
+  return {
+    ...base('guess',seed), target:randomAt(seed,0,100)+1, attempts:[],
+    lower:1, upper:100, maxAttempts:7, hint:'7 次机会，先从中间开始',
+  };
 }
 
 function playGuess(game, value) {
@@ -102,7 +105,11 @@ function playGuess(game, value) {
   if (game.status !== 'playing' || !Number.isInteger(guess) || guess < 1 || guess > 100) return { ...game, hint:'请输入 1–100 之间的整数' };
   const attempts=[...game.attempts,guess];
   const won=guess===game.target;
-  return { ...game, attempts, moves:attempts.length, hint:won?`猜中了，就是 ${game.target}`:guess<game.target?'再大一点':'再小一点', status:won?'won':'playing' };
+  const lower=won?game.target:guess<game.target?Math.max(game.lower,guess+1):game.lower;
+  const upper=won?game.target:guess>game.target?Math.min(game.upper,guess-1):game.upper;
+  const lost=!won&&attempts.length>=game.maxAttempts;
+  const hint=won?`猜中了，就是 ${game.target}`:lost?`机会用完，答案是 ${game.target}`:guess<game.target?`比 ${guess} 大，范围缩到 ${lower}–${upper}`:`比 ${guess} 小，范围缩到 ${lower}–${upper}`;
+  return { ...game, attempts, lower, upper, moves:attempts.length, hint, status:won?'won':lost?'lost':'playing' };
 }
 
 function newRps(seed) {
@@ -130,7 +137,7 @@ function mathQuestion(seed, round) {
 }
 
 function newMath(seed) {
-  return { ...base('math',seed), round:0, score:0, question:mathQuestion(seed,0), lastCorrect:null };
+  return { ...base('math',seed), round:0, score:0, streak:0, bestStreak:0, question:mathQuestion(seed,0), lastCorrect:null };
 }
 
 function playMath(game, value) {
@@ -139,12 +146,14 @@ function playMath(game, value) {
   const correct=answer===game.question.answer;
   const round=game.round+1;
   const score=game.score+Number(correct);
-  return { ...game, round,score,lastCorrect:correct,moves:round,question:round<10?mathQuestion(game.seed,round):game.question,status:round>=10?(score>=7?'won':'lost'):'playing' };
+  const streak=correct?game.streak+1:0;
+  const bestStreak=Math.max(game.bestStreak,streak);
+  return { ...game, round,score,streak,bestStreak,lastCorrect:correct,moves:round,question:round<10?mathQuestion(game.seed,round):game.question,status:round>=10?(score>=7?'won':'lost'):'playing' };
 }
 
 function newSequence(seed) {
   const sequence=Array.from({length:3},(_,index)=>SEQUENCE_COLORS[randomAt(seed,index,4)]);
-  return { ...base('sequence',seed), sequence,input:[],round:1,phase:'watch',lastCorrect:null };
+  return { ...base('sequence',seed), sequence,input:[],round:1,phase:'watch',lastCorrect:null,lives:2 };
 }
 
 function startSequence(game) {
@@ -155,7 +164,10 @@ function startSequence(game) {
 function playSequence(game, value) {
   if (game.status !== 'playing' || game.phase !== 'input' || !SEQUENCE_COLORS.includes(value)) return game;
   const input=[...game.input,value];
-  if (game.sequence[input.length-1] !== value) return { ...game,input,lastCorrect:false,status:'lost',moves:game.moves+1 };
+  if (game.sequence[input.length-1] !== value) {
+    const lives=game.lives-1;
+    return { ...game,input:[],phase:lives>0?'watch':'input',lastCorrect:false,lives,status:lives>0?'playing':'lost',moves:game.moves+1 };
+  }
   if (input.length < game.sequence.length) return { ...game,input,moves:game.moves+1 };
   if (game.round >= 6) return { ...game,input,lastCorrect:true,status:'won',moves:game.moves+1 };
   const round=game.round+1;
@@ -171,7 +183,7 @@ function stroopPrompt(seed, round) {
 }
 
 function newStroop(seed) {
-  return { ...base('stroop',seed), round:0,score:0,prompt:stroopPrompt(seed,0),lastCorrect:null };
+  return { ...base('stroop',seed), round:0,score:0,streak:0,bestStreak:0,prompt:stroopPrompt(seed,0),lastCorrect:null };
 }
 
 function playStroop(game, value) {
@@ -179,7 +191,9 @@ function playStroop(game, value) {
   const correct=value===game.prompt.color;
   const round=game.round+1;
   const score=game.score+Number(correct);
-  return { ...game,round,score,lastCorrect:correct,moves:round,prompt:round<10?stroopPrompt(game.seed,round):game.prompt,status:round>=10?(score>=7?'won':'lost'):'playing' };
+  const streak=correct?game.streak+1:0;
+  const bestStreak=Math.max(game.bestStreak,streak);
+  return { ...game,round,score,streak,bestStreak,lastCorrect:correct,moves:round,prompt:round<10?stroopPrompt(game.seed,round):game.prompt,status:round>=10?(score>=7?'won':'lost'):'playing' };
 }
 
 export function newQuickGame(kind, options={}) {

@@ -31,10 +31,18 @@ test('each catalog game has one unique fingerprinted production cover', async ()
 
 test('cover media remains decorative while the game state and actions stay in DOM', () => {
   const v25 = styles.slice(styles.indexOf('/* V25'));
+  const recommendationCard = app.slice(app.indexOf('function portalRecommendationCard('), app.indexOf('function portalRankingPanel('));
   assert.match(v25, /background-image:var\(--game-cover\)/);
   assert.match(v25, /\.world-cover-mark \{ display:none!important; \}/);
   assert.match(v25, /grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
   assert.match(v25, /max-width:560px[\s\S]*?repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(recommendationCard, /portal-recommend-card cover-\$\{esc\(gameId\)\}/);
+  for (const asset of manifest.assets) {
+    assert.match(styles, new RegExp(`\\.cover-${asset.gameId.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}[^}]*${asset.file.replace('web', '')}`));
+  }
+  assert.match(styles, /\.portal-recommend-cover\s*\{[^}]*background-image:[^;}]*var\(--game-cover\)/);
+  assert.match(styles, /\.portal-recommend-cover > i\s*\{\s*display:none;\s*\}/);
+  assert.doesNotMatch(styles, /portal-recommend-card:nth-child[^}]*portal-recommend-cover/);
   assert.equal((app.match(/data-action="(?:quick|open-[^"]+)"/g) ?? []).length >= 18, true);
   assert.match(app, /QUICK_GAME_KINDS\.map/);
   assert.match(app, /data-world-resumable/);
