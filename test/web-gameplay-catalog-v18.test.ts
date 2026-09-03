@@ -50,21 +50,21 @@ test('the current-card playbook and full rules index reuse the gameplay content 
 test('the catalog is a responsive icon grid without paging or drag hijacking', () => {
   const lobby = sourceBetween('function lobby()', 'function nav(');
   assert.match(lobby, /class="world-strip game-icon-grid"/);
-  assert.match(lobby, /门户式图标排列 · 点击即玩/);
+  assert.match(lobby, /独立游戏封面 · 点击即玩/);
   assert.doesNotMatch(lobby, /data-action="world-(?:prev|next)"|data-world-status|world-carousel-hint/);
 
-  const v24 = styles.slice(styles.indexOf('/* V24'));
-  assert.match(v24, /\.game-icon-grid\s*\{[\s\S]*?display:grid!important;[\s\S]*?grid-template-columns:repeat\(9,minmax\(0,1fr\)\)/);
-  for (const [width, columns] of [[1120, 7], [820, 5], [560, 4], [350, 3]]) {
-    assert.match(v24, new RegExp(`@media \\(max-width:${width}px\\)[\\s\\S]*?\\.game-icon-grid \\{ grid-template-columns:repeat\\(${columns},minmax\\(0,1fr\\)\\)`));
+  const v25Covers = styles.slice(styles.indexOf('/* V25 — every game'));
+  assert.match(v25Covers, /\.game-icon-grid\s*\{[\s\S]*?grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
+  for (const [width, columns] of [[1120, 4], [820, 3], [560, 2]]) {
+    assert.match(v25Covers, new RegExp(`@media \\(max-width:${width}px\\)[\\s\\S]*?\\.game-icon-grid \\{ grid-template-columns:repeat\\(${columns},minmax\\(0,1fr\\)\\)`));
   }
-  assert.match(v24, /\.game-icon-grid\s*\{[\s\S]*?overflow:visible;[\s\S]*?scroll-snap-type:none;[\s\S]*?touch-action:auto/);
-  assert.match(v24, /\.game-icon-grid \.world-cover\s*\{[^}]*flex:0 0 auto;[^}]*aspect-ratio:1\.16/);
-  assert.match(v24, /\.game-icon-grid \.world-copy \.btn\s*\{[^}]*min-height:44px/);
-  assert.match(v24, /@media \(max-width:900px\)[\s\S]*?\.falling-stage \.local-puzzle-play \{ order:-1; \}/);
-  assert.match(v24, /@media \(max-width:480px\)[\s\S]*?\.falling-route \.local-puzzle-play \{ display:grid;grid-template-columns:minmax\(0,1fr\) 72px/);
-  assert.match(v24, /\.maze-cell\.maze-wall-left/);
-  assert.doesNotMatch(v24, /\.maze-cell\.wall-(?:up|right|down|left)/);
+  assert.match(v25Covers, /\.game-icon-grid \.world-cover\s*\{[\s\S]*?aspect-ratio:1\.6/);
+  assert.match(styles, /\.game-icon-grid\s*\{[\s\S]*?overflow:visible;[\s\S]*?scroll-snap-type:none;[\s\S]*?touch-action:auto/);
+  assert.match(styles, /\.game-icon-grid \.world-copy \.btn\s*\{[^}]*min-height:44px/);
+  assert.match(styles, /@media \(max-width:900px\)[\s\S]*?\.falling-stage \.local-puzzle-play \{ order:-1; \}/);
+  assert.match(styles, /@media \(max-width:480px\)[\s\S]*?\.falling-route \.local-puzzle-play \{ display:grid;grid-template-columns:minmax\(0,1fr\) 72px/);
+  assert.match(styles, /\.maze-cell\.maze-wall-left/);
+  assert.doesNotMatch(styles, /\.maze-cell\.wall-(?:up|right|down|left)/);
   const pointerDown = sourceBetween("app.addEventListener('pointerdown'", "app.addEventListener('pointermove'");
   assert.match(pointerDown, /worldStrip&&!worldStrip\.classList\.contains\('game-icon-grid'\)/);
 });

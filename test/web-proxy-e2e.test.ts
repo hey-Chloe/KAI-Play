@@ -99,6 +99,12 @@ test('web preview serves cache-aware local assets and proxies a complete authent
     assert.equal(cachedCourt.headers.get('etag'), courtEtag);
     assert.equal(cachedCourt.headers.get('cache-control'), 'public, max-age=31536000, immutable');
 
+    const gameCover = await fetch(`${webOrigin}/assets/covers/kai-cover-ddz-v1-75734997.jpg`);
+    assert.equal(gameCover.status, 200);
+    assert.match(gameCover.headers.get('content-type') ?? '', /^image\/jpeg/);
+    assert.equal(gameCover.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.ok((await gameCover.arrayBuffer()).byteLength > 50_000, 'game covers must be production media, not empty placeholders');
+
     for (const path of [
       '/styles.css', '/app.js', '/catalog-carousel.js', '/sudoku6.js',
       '/gomoku.js', '/reversi.js', '/sokoban.js', '/sliding-puzzle.js',

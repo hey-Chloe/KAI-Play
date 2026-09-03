@@ -1276,7 +1276,7 @@ function lobby() {
       <section class="portal-rankings" aria-label="游戏分类榜单">${rankingPanels}</section>
 
       <section class="section-block game-catalog" id="game-selection">
-        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>25 款游戏，一眼找到</h2></div><div class="icon-wall-summary"><span>门户式图标排列 · 点击即玩</span><span><b>14</b> 款可自动保存</span></div></div>
+        <div class="section-head"><div><span class="section-kicker">全部玩法</span><h2>25 款游戏，一眼找到</h2></div><div class="icon-wall-summary"><span>独立游戏封面 · 点击即玩</span><span><b>14</b> 款可自动保存</span></div></div>
         <div class="catalog-command" aria-label="筛选全部玩法">
           <div class="catalog-filters" role="group" aria-label="按玩法类型筛选">
             <button class="is-active" data-action="catalog-filter" data-catalog-filter="all" aria-pressed="true">全部</button>
@@ -1290,7 +1290,7 @@ function lobby() {
           </div>
           <span class="catalog-result" data-catalog-result aria-live="polite">显示全部 25 款</span>
         </div>
-        <div class="world-strip game-icon-grid" data-world-strip role="region" aria-label="全部 25 款玩法，小图标网格排列">
+        <div class="world-strip game-icon-grid" data-world-strip role="region" aria-label="全部 25 款玩法，独立封面网格排列">
           <article class="game-world world-ddz" data-world-card data-world-id="ddz"><span class="world-badge">竞技牌桌</span><div class="world-cover"><div class="world-ddz-hand" aria-hidden="true">${previewPoker(10,'spade')}${previewPoker(11,'heart')}${previewPoker(12,'club')}${previewPoker(13,'diamond')}${previewPoker(14,'spade')}</div><i class="world-cover-mark" aria-hidden="true">♠</i></div><div class="world-copy"><span>竞叫开局 · 一局计入战绩</span><h3>斗地主</h3><p>叫分抢地主，和两位智能牌友完整打完一局。</p><button class="btn primary" data-action="quick">快速开局 <b>→</b></button></div></article>
           <article class="game-world world-xiangqi" data-world-card data-world-id="xiangqi"${canContinueXiangqi?' data-world-resumable="true"':''}><span class="world-badge">${canContinueXiangqi?'可继续':savedXiangqi?.game?.status==='playing'?'执红先行':savedXiangqi?'战果已保存':'新上线'}</span><div class="world-cover"><div class="world-xiangqi-board" aria-hidden="true"><i class="black">車</i><i></i><i class="black">將</i><i></i><i class="black">砲</i><i></i><i class="red">兵</i><i></i><i class="red">帥</i></div><i class="world-cover-mark" aria-hidden="true">楚河</i></div><div class="world-copy"><span>执红先行 · 三档 KAI 对手</span><h3>KAI 象棋</h3><p>落子、悔棋、自动保存，随时回来接着下。</p><button class="btn" data-action="open-xiangqi">${xiangqiAction} <b>→</b></button></div></article>
           <article class="game-world world-gomoku" data-world-card data-world-id="gomoku"${canContinueGomoku?' data-world-resumable="true"':''}><span class="world-badge">${canContinueGomoku?'可继续':savedGomoku?.status==='finished'?'战果已保存':'全新策略'}</span><div class="world-cover"><div class="world-gomoku-board" aria-hidden="true">${Array.from({length:49},(_,index)=>`<i class="${[10,17,24,31].includes(index)?'black':[11,18,25].includes(index)?'white':''}"></i>`).join('')}</div><i class="world-cover-mark" aria-hidden="true">五</i></div><div class="world-copy"><span>15×15 棋盘 · 人机对弈</span><h3>KAI 五子棋</h3><p>你执黑先行，布局、封堵，在四个方向率先连成五子。</p><button class="btn" data-action="open-gomoku">${gomokuAction} <b>→</b></button></div></article>

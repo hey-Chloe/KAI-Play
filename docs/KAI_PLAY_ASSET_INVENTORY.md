@@ -1,5 +1,11 @@
 # KAI PLAY — Asset Inventory
 
+## 2026-09-03 cover audit addendum
+
+The lobby now has one distinct, production-sized cover for every shipped game: **25 / 25**. Twenty-four are original KAI PLAY renders created for the cover passes; KAI 农场 uses an optimized crop of its existing first-party field visual. All covers are decorative CSS backgrounds, while titles, live badges, saved-state labels and actions remain real DOM. Runtime files, source-master mapping, dimensions, byte sizes and full SHA-256 values are recorded in [`asset-provenance/game-covers-v1.json`](./asset-provenance/game-covers-v1.json).
+
+This closes the prior audit gap where KAI 农场 was the only image-backed catalog entry and the other 24 games rendered gradient, CSS or symbol placeholders. The historical inventory below is retained as evidence of the earlier card-material pass; its former P1 `MISSING` statements for Mahjong, three-card poker and reel lobby media are superseded by this addendum for **catalog covers only**. It does not claim that those raster covers replace live gameplay surfaces.
+
 Snapshot time: 2026-08-28 (Asia/Shanghai)<br>
 Pass: `CARD MATERIAL V11 + FIDELITY V12 + LICENSED FACE ART V13` / historical inventory updated with current project media<br>
 Page implementation status: **V11 card stock adopted; V12 size-aware fidelity active; V13 suit-authentic CC0 courts and distinct Jokers active; semantic DOM faces preserved**

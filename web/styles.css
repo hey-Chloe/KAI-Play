@@ -11661,6 +11661,78 @@ html:has(.topbar.has-primary-nav) {
 }
 
 /* V24 — three complete local games behind the new icon wall */
+
+/* V25 — every game gets a distinct, provenance-tracked cover */
+.lobby-game-center .game-icon-grid {
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:14px;
+}
+.lobby-game-center .game-icon-grid .game-world {
+  padding:8px;
+  border-radius:18px;
+}
+.lobby-game-center .game-icon-grid .world-cover {
+  aspect-ratio:1.6;
+  background-color:#173c31;
+  background-image:var(--game-cover);
+  background-position:center;
+  background-repeat:no-repeat;
+  background-size:cover;
+  border-radius:13px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 7px 16px rgba(20,36,28,.12);
+}
+.lobby-game-center .game-icon-grid .world-cover::before {
+  z-index:1;
+  background:linear-gradient(180deg,rgba(3,15,10,.03) 52%,rgba(3,15,10,.2));
+  pointer-events:none;
+}
+.lobby-game-center .game-icon-grid .world-cover::after {
+  content:"";
+  position:absolute;
+  z-index:1;
+  inset:0;
+  border-radius:inherit;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),inset 0 -1px 0 rgba(0,0,0,.1);
+  pointer-events:none;
+}
+.lobby-game-center .game-icon-grid .world-cover-mark { display:none!important; }
+.lobby-game-center .world-ddz { --game-cover:url('/assets/covers/kai-cover-ddz-v1-75734997.jpg'); }
+.lobby-game-center .world-xiangqi { --game-cover:url('/assets/covers/kai-cover-xiangqi-v1-adc82f4c.jpg'); }
+.lobby-game-center .world-gomoku { --game-cover:url('/assets/covers/kai-cover-gomoku-v1-926db038.jpg'); }
+.lobby-game-center .world-reversi { --game-cover:url('/assets/covers/kai-cover-reversi-v1-be8c8529.jpg'); }
+.lobby-game-center .world-mahjong { --game-cover:url('/assets/covers/kai-cover-mahjong-v1-7bb39c62.jpg'); }
+.lobby-game-center .world-1048 { --game-cover:url('/assets/covers/kai-cover-1048-v1-2e7f659a.jpg'); }
+.lobby-game-center .world-sudoku6 { --game-cover:url('/assets/covers/kai-cover-sudoku6-v1-88f1e623.jpg'); }
+.lobby-game-center .world-minesweeper { --game-cover:url('/assets/covers/kai-cover-minesweeper-v1-60e8515a.jpg'); }
+.lobby-game-center .world-sokoban { --game-cover:url('/assets/covers/kai-cover-sokoban-v1-ea16bc36.jpg'); }
+.lobby-game-center .world-sliding { --game-cover:url('/assets/covers/kai-cover-sliding-v1-58dc68a5.jpg'); }
+.lobby-game-center .world-memory { --game-cover:url('/assets/covers/kai-cover-memory-v1-f3108cd7.jpg'); }
+.lobby-game-center .world-match3 { --game-cover:url('/assets/covers/kai-cover-match3-v1-2d4d94be.jpg'); }
+.lobby-game-center .world-falling { --game-cover:url('/assets/covers/kai-cover-falling-v1-15909f41.jpg'); }
+.lobby-game-center .world-snake { --game-cover:url('/assets/covers/kai-cover-snake-v1-558a8c35.jpg'); }
+.lobby-game-center .world-maze { --game-cover:url('/assets/covers/kai-cover-maze-v1-8f3ecb74.jpg'); }
+.lobby-game-center .world-farm { --game-cover:url('/assets/covers/kai-cover-farm-v1-fe9f4af5.jpg'); }
+.lobby-game-center .world-tictactoe { --game-cover:url('/assets/covers/kai-cover-tictactoe-v1-5b754a27.jpg'); }
+.lobby-game-center .world-lights { --game-cover:url('/assets/covers/kai-cover-lights-v1-2eb6c98d.jpg'); }
+.lobby-game-center .world-guess { --game-cover:url('/assets/covers/kai-cover-guess-v1-54e9241a.jpg'); }
+.lobby-game-center .world-rps { --game-cover:url('/assets/covers/kai-cover-rps-v1-7f42ee88.jpg'); }
+.lobby-game-center .world-math { --game-cover:url('/assets/covers/kai-cover-math-v1-0c88eadf.jpg'); }
+.lobby-game-center .world-sequence { --game-cover:url('/assets/covers/kai-cover-sequence-v1-01763a18.jpg'); }
+.lobby-game-center .world-stroop { --game-cover:url('/assets/covers/kai-cover-stroop-v1-aa565e9e.jpg'); }
+.lobby-game-center .world-three { --game-cover:url('/assets/covers/kai-cover-three-v1-6e7a3e76.jpg'); }
+.lobby-game-center .world-reels { --game-cover:url('/assets/covers/kai-cover-reels-v1-284304fc.jpg'); }
+
+@media (max-width:1120px) {
+  .lobby-game-center .game-icon-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+}
+@media (max-width:820px) {
+  .lobby-game-center .game-icon-grid { grid-template-columns:repeat(3,minmax(0,1fr));gap:11px; }
+}
+@media (max-width:560px) {
+  .lobby-game-center .game-icon-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:9px; }
+  .lobby-game-center .game-icon-grid .game-world { padding:6px;border-radius:15px; }
+  .lobby-game-center .game-icon-grid .world-cover { border-radius:11px; }
+}
 .falling-route { --local-accent:#355cc9;--local-accent-soft:#e5ebff;--local-ink:#1f2b54;--local-surface:#f3f5fb;background:radial-gradient(circle at 12% 18%,rgba(76,111,218,.16),transparent 25%),#edf0f7; }
 .match3-route { --local-accent:#b83b7f;--local-accent-soft:#f8e1ef;--local-ink:#51233e;--local-surface:#fff7fb;background:radial-gradient(circle at 88% 16%,rgba(220,74,145,.15),transparent 26%),#f5eef3; }
 .maze-route { --local-accent:#16826e;--local-accent-soft:#ddf3ec;--local-ink:#183d35;--local-surface:#f5f9f4;background:radial-gradient(circle at 10% 18%,rgba(29,150,124,.14),transparent 26%),#edf2ed; }
@@ -11802,7 +11874,7 @@ html:has(.topbar.has-primary-nav) {
 .portal-ranking-panel li span { min-width:0; }.portal-ranking-panel li b,.portal-ranking-panel li small { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }.portal-ranking-panel li b { font-size:.68rem; }.portal-ranking-panel li small { margin-top:2px;color:#88918b;font-size:.55rem; }
 .portal-ranking-panel li strong { padding:6px 9px;border-radius:8px;background:#edf6f2;color:#187058;font-size:.58rem; }
 
-.world-tictactoe .world-cover,.world-guess .world-cover { background:linear-gradient(145deg,#347a68,#164b3e); }.world-lights .world-cover,.world-math .world-cover { background:linear-gradient(145deg,#d29b3f,#76501b); }.world-rps .world-cover,.world-stroop .world-cover { background:linear-gradient(145deg,#d76565,#78353c); }.world-sequence .world-cover { background:linear-gradient(145deg,#725db5,#3b306a); }
+.world-tictactoe,.world-guess { --world-cover-a:#347a68;--world-cover-b:#164b3e; }.world-lights,.world-math { --world-cover-a:#d29b3f;--world-cover-b:#76501b; }.world-rps,.world-stroop { --world-cover-a:#d76565;--world-cover-b:#78353c; }.world-sequence { --world-cover-a:#725db5;--world-cover-b:#3b306a; }
 
 .quick-route { --local-accent:#1c826a;--local-accent-soft:#e0f2eb;--local-ink:#193c33;--local-surface:#f3f8f5;background:radial-gradient(circle at 12% 18%,rgba(38,155,126,.14),transparent 26%),#edf3ef; }
 .quick-game-stage { width:min(1050px,calc(100% - 40px));display:grid;grid-template-columns:minmax(230px,.7fr) minmax(430px,1.3fr);gap:clamp(25px,5vw,70px);align-items:start;margin:30px auto 50px; }

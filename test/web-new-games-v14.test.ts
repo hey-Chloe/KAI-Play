@@ -41,7 +41,7 @@ test('the catalog publishes exactly twenty-five games in the reviewed order', ()
   assert.match(lobby, /25 款即开即玩的牌桌、策略、益智、反应与经营游戏/);
   assert.match(lobby, /25 款游戏，一眼找到/);
   assert.match(lobby, /显示全部 25 款/);
-  assert.match(lobby, /全部 25 款玩法，小图标网格排列/);
+  assert.match(lobby, /全部 25 款玩法，独立封面网格排列/);
   assert.match(indexSource, /二十五款即开即玩的牌桌、策略、益智、反应与经营玩法/);
   assert.match(lobby, /QUICK_GAME_KINDS\.map/);
 });

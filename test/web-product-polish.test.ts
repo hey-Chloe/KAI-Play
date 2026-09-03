@@ -73,15 +73,17 @@ test('poster cards keep one real action and a truthful benefit promise', () => {
   assert.doesNotMatch(lobby, /\d+\s*人在线|五星|好评率|今日热门/);
 });
 
-test('all twenty-five games form one directly scannable small-icon grid', () => {
+test('all twenty-five games form one directly scannable cover grid', () => {
   const lobby = between(appSource, 'function lobby()', 'function nav(');
   assert.match(lobby, /class="world-strip game-icon-grid"/);
-  assert.match(lobby, /全部 25 款玩法，小图标网格排列/);
+  assert.match(lobby, /全部 25 款玩法，独立封面网格排列/);
+  assert.match(lobby, /独立游戏封面 · 点击即玩/);
   assert.doesNotMatch(lobby, /data-action="world-(?:prev|next)"|data-world-status|world-carousel-hint/);
-  const v24 = stylesSource.slice(stylesSource.indexOf('/* V24'));
-  assert.match(v24, /\.game-icon-grid\s*\{[\s\S]*?grid-template-columns:repeat\(9,minmax\(0,1fr\)\)/);
-  assert.match(v24, /\.game-icon-grid \.world-cover\s*\{[\s\S]*?aspect-ratio:1\.16/);
-  assert.match(v24, /\.game-icon-grid \.world-copy \.btn\s*\{[^}]*min-height:44px/);
+  const v25 = stylesSource.slice(stylesSource.indexOf('/* V25'));
+  assert.match(v25, /\.game-icon-grid\s*\{[\s\S]*?grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
+  assert.match(v25, /\.game-icon-grid \.world-cover\s*\{[\s\S]*?aspect-ratio:1\.6/);
+  assert.match(v25, /max-width:560px[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(stylesSource, /\.game-icon-grid \.world-copy \.btn\s*\{[^}]*min-height:44px/);
   assert.match(appSource, /!worldStrip\.classList\.contains\('game-icon-grid'\)/);
 });
 
