@@ -1,6 +1,7 @@
-import { evaluateFarmAgentPolicies } from '../web/game-agent.js';
+import { evaluateFarmAgentMemoryTransfer, evaluateFarmAgentPolicies } from '../web/game-agent.js';
 
 const results = evaluateFarmAgentPolicies();
+const memoryTransfer = evaluateFarmAgentMemoryTransfer();
 const rows = results.map(({ task, policy, report }) => ({
   task:task.id,
   policy:policy.id,
@@ -15,9 +16,15 @@ const rows = results.map(({ task, policy, report }) => ({
 }));
 
 if (process.argv.includes('--json')) {
-  console.log(JSON.stringify({ schemaVersion:1, environment:'kai-farm-v2', rows }, null, 2));
+  console.log(JSON.stringify({ schemaVersion:2, environment:'kai-farm-v2', rows, memoryTransfer }, null, 2));
 } else {
-  console.log('KAI Play Game Agent P0 · deterministic offline evaluation');
+  console.log('KAI Play Game Agent · deterministic offline evaluation');
   console.table(rows);
-  console.log('Boundary: deterministic policy baselines; no external LLM/VLM inference or SFT/RL claim.');
+  console.table([
+    { phase:'discovery', success:memoryTransfer.discovery.taskSuccess, coins:memoryTransfer.discovery.finalCoins, macroReuse:memoryTransfer.discovery.reusedSkillMacro, macroCoverage:'N/A' },
+    { phase:'replay', success:memoryTransfer.replay.taskSuccess, coins:memoryTransfer.replay.finalCoins, macroReuse:memoryTransfer.replay.reusedSkillMacro, macroCoverage:memoryTransfer.replay.skillMacroCoverage },
+    { phase:'recovery', success:memoryTransfer.recovery.taskSuccess, coins:memoryTransfer.recovery.finalCoins, macroReuse:memoryTransfer.recovery.reusedSkillMacro, macroCoverage:memoryTransfer.recovery.skillMacroCoverage },
+  ]);
+  console.log(`Memory transfer: ${memoryTransfer.macro.sequenceLength}-step successful Skill macro; replay matched ${memoryTransfer.macro.replayMatchedSteps} steps.`);
+  console.log('Boundary: deterministic policy baselines and transparent trajectory retrieval; no external LLM/VLM inference or SFT/RL claim.');
 }

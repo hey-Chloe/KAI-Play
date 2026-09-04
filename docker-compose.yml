@@ -13,6 +13,10 @@ services:
       DOUJOY_TRUST_PROXY: "true"
       DOUJOY_CLOUDPAY_MODE: "${DOUJOY_CLOUDPAY_MODE:-disabled}"
       DOUJOY_CLOUDPAY_SANDBOX_DATA_PATH: "${DOUJOY_CLOUDPAY_SANDBOX_DATA_PATH:-/data/cloudpay-sandbox-orders.json}"
+      DOUJOY_VLM_MODE: "${DOUJOY_VLM_MODE:-disabled}"
+      DOUJOY_VLM_URL: "${DOUJOY_VLM_URL:-}"
+      DOUJOY_VLM_TIMEOUT_MS: "${DOUJOY_VLM_TIMEOUT_MS:-30000}"
+      DOUJOY_VLM_API_KEY: "${DOUJOY_VLM_API_KEY:-}"
     ports:
       - "${DOUJOY_BIND_IP:-127.0.0.1}:${DOUJOY_PORT:-4310}:4310"
     volumes:

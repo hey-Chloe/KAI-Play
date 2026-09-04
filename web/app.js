@@ -78,7 +78,10 @@ import {
 import {
   FARM_AGENT_POLICIES,
   FARM_AGENT_SKILLS,
+  FARM_AGENT_VISUAL_MODES,
   createFarmAgentSession,
+  emptyFarmAgentLongTermMemory,
+  restoreFarmAgentLongTermMemory,
   stepFarmAgent,
 } from './game-agent.js';
 import {
@@ -216,6 +219,9 @@ const SNAKE_SAVE_KEY = 'kai.play.snake.game.v1';
 const SNAKE_DIFFICULTY_KEY = 'kai.play.snake.difficulty.v1';
 const SNAKE_BEST_KEY = 'kai.play.snake.best.v1';
 const FARM_SAVE_KEY = 'kai.play.farm.season.v2';
+const FARM_AGENT_MEMORY_KEY = 'kai.play.agent.memory.v1';
+const FARM_AGENT_LOCAL_STEP_MS = 420;
+const FARM_AGENT_VLM_STEP_MS = 5_200;
 const SOKOBAN_SAVE_KEY = 'kai.play.sokoban.game.v1';
 const SLIDING_PUZZLE_SAVE_KEY = 'kai.play.sliding-puzzle.game.v1';
 const MATCH_THREE_SAVE_KEY = 'kai.play.match-three.game.v1';
@@ -449,11 +455,20 @@ function safeStorageSet(key, value) {
 function safeStorageRemove(key) {
   try { globalThis.localStorage?.removeItem(key); return true; } catch { return false; }
 }
+function loadFarmAgentLongTermMemory() {
+  const raw = safeStorageGet(FARM_AGENT_MEMORY_KEY);
+  if (!raw) return emptyFarmAgentLongTermMemory();
+  try { return restoreFarmAgentLongTermMemory(JSON.parse(raw)); }
+  catch { safeStorageRemove(FARM_AGENT_MEMORY_KEY); return emptyFarmAgentLongTermMemory(); }
+}
+function saveFarmAgentLongTermMemory(memory) {
+  return safeStorageSet(FARM_AGENT_MEMORY_KEY, JSON.stringify(restoreFarmAgentLongTermMemory(memory)));
+}
 function rememberLastLocalGame(game) {
   return LOCAL_GAME_IDS.has(game) && safeStorageSet(LAST_LOCAL_GAME_KEY, game);
 }
 const storedHeroGame = safeStorageGet(HERO_GAME_KEY);
-const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, roomCodeDraft: '', history: null, historyStatus: 'idle', historyError: '', friendsData: null, friendsStatus: 'idle', friendSearchQuery: '', friendSearchResults: [], selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, agentLab: null, agentAuto: false, agentSpeed: 1, agentInjectFailure: false, quickRun: { stars:0, completed:0, wins:0 }, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
+const state = { token: safeStorageGet(TOKEN_KEY) || safeStorageGet(LEGACY_TOKEN_KEY), profile: null, view: 'lobby', game: null, room: null, roomCodeDraft: '', history: null, historyStatus: 'idle', historyError: '', friendsData: null, friendsStatus: 'idle', friendSearchQuery: '', friendSearchResults: [], selected: new Set(), busy: false, error: '', dealingGameId: null, dealTimer: null, waitController: null, roomWaitController: null, exitConfirm: false, roomExitConfirm: false, casual: null, agentLab: null, agentAuto: false, agentSpeed: 1, agentInjectFailure: false, agentLongTermMemory:loadFarmAgentLongTermMemory(), agentMemorySaveAvailable:true, agentVlm: { status:'idle', service:null, observation:null, error:'', busy:false }, quickRun: { stars:0, completed:0, wins:0 }, heroGame: storedHeroGame === 'mahjong' ? 'mahjong' : 'ddz' };
 let heroPointer = null;
 let merge1048Pointer = null;
 let heroTransitionTimer = null;
@@ -866,7 +881,8 @@ async function api(path, options = {}) {
   if (externalSignal?.aborted) controller.abort();
   else externalSignal?.addEventListener('abort', forwardAbort, { once: true });
   fetchOptions.signal = controller.signal;
-  const timeoutMs = path.includes('/wait?') ? 30_000 : 12_000;
+  let timeoutMs = path.includes('/wait?') ? 30_000 : 12_000;
+  if(path.includes('/agent/vlm/observe'))timeoutMs=35_000;
   let timedOut = false;
   const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   let res;
@@ -2329,10 +2345,10 @@ function farmCropArt(cropId, stage = 'ready') {
   return `<span class="farm-crop-art crop-${cropId} stage-${stage}" aria-hidden="true"></span>`;
 }
 
-function farmPlotMarkup(game, index, focused) {
+function farmPlotMarkup(game, index, focused, interactionLocked = false) {
   const plot = game.plots[index];
   const selected = FARM_CROPS[game.selectedCrop];
-  const disabled = game.status === 'finished' ? ' disabled' : '';
+  const disabled = game.status === 'finished' || interactionLocked ? ' disabled' : '';
   const status = farmPlotStatus(plot);
   if (status === 'empty') {
     return `<button type="button" class="farm-plot is-empty" data-farm-plot="${index}" role="gridcell" tabindex="${focused ? '0' : '-1'}" aria-label="第 ${index + 1} 块空地，播种${selected.label}"${disabled}><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span><span class="farm-empty-mark" aria-hidden="true">＋</span><b>第 ${index + 1} 块田</b><small>${selected.label}种子 · ${selected.seedCost} 金币</small></button>`;
@@ -2365,25 +2381,61 @@ function farmGame() {
   const market = farmMarketForDay(game.day);
   const focusCrop = FARM_CROPS[market.focusId];
   const tomorrowCrop = FARM_CROPS[market.tomorrowFocusId];
+  const farmAgent = casual.agent || { session:null, auto:false, busy:false, lastAction:null };
+  const agentSession = farmAgent.session;
+  const agentLocked = farmAgent.auto || farmAgent.busy || state.agentVlm.busy;
+  const agentLast = agentSession?.trajectory?.at(-1) || null;
+  const vlmReady = state.agentVlm.status === 'ready';
+  const liveAgentEpisode = game.status === 'finished' && agentSession?.game === game && ['succeeded','completed'].includes(agentSession.status) ? {
+    success:agentSession.status==='succeeded', steps:agentSession.metrics.decisions, uniqueSkills:agentSession.metrics.uniqueSkills,
+    recoveries:agentSession.metrics.recoveries, visualObservations:agentSession.metrics.visualObservations,
+    visualBlocks:agentSession.metrics.visualBlocks, totalEpisodes:agentSession.memory.longTerm.totalEpisodes,
+  } : null;
+  const storedAgentEpisode = state.agentLongTermMemory.episodes.at(-1);
+  const restoredAgentEpisode = game.status==='finished' && !liveAgentEpisode
+    && storedAgentEpisode?.finalRevision===game.revision && storedAgentEpisode.finalCoins===game.coins
+    && storedAgentEpisode.xp===game.xp && storedAgentEpisode.harvests===game.harvests ? {
+      success:storedAgentEpisode.success, steps:storedAgentEpisode.steps, uniqueSkills:storedAgentEpisode.uniqueSkills,
+      recoveries:storedAgentEpisode.recoveries, visualObservations:storedAgentEpisode.visualObservations,
+      visualBlocks:storedAgentEpisode.visualBlocks, totalEpisodes:state.agentLongTermMemory.totalEpisodes,
+    } : null;
+  const agentEpisode = liveAgentEpisode || restoredAgentEpisode;
+  const agentStatus = game.status==='finished' ? agentEpisode?.success ? '金牌目标已达成' : agentEpisode ? 'Agent 已完成本季' : '本季已经结算'
+      : agentSession?.status === 'guarded' ? '视觉冲突，已停手'
+    : farmAgent.busy || state.agentVlm.busy ? vlmReady ? 'VLM 正在观察当前农场' : '正在读取当前状态'
+      : farmAgent.auto ? vlmReady ? '等待下一次视觉核对' : '正在连续托管'
+        : agentLast ? '托管已暂停，可随时继续' : '等待你的授权';
+  const agentCopy = game.status==='finished' ? agentSession?.reflection || (agentEpisode ? `本季由 Agent 完成 ${agentEpisode.steps} 次决策；摘要已保留，可进入 Agent Lab 查看研究视图。` : '上一季结果已保存；再开一季后可以重新授权 Agent 托管。')
+    : agentSession?.status === 'guarded' ? agentSession.reflection
+    : agentLast ? `${agentLast.actionLabel} · ${agentSession.reflection}`
+      : vlmReady ? '每步先读取真实农场画面；视觉与规则状态冲突时立即暂停，不会修改存档。'
+        : '当前 VLM 未启用，将只依据本地规则状态托管；开启模型服务后自动使用视觉守卫。';
+  const agentTrace = agentSession?.trajectory?.length ? agentSession.trajectory.slice(-3).reverse().map((entry)=>`<li class="is-${entry.outcome}"><b>${esc(entry.actionLabel)}</b><span>${esc(entry.outcome==='guarded'?'视觉守卫阻止动作':entry.reasoning)}</span></li>`).join('') : '<li><b>尚未执行</b><span>点击“帮我走一步”先观察一次，或开启连续托管。</span></li>';
+  const agentSubgoal = game.status==='finished' ? '九日经营已经结算' : agentSession?.plan?.subgoal || '目标：九日内取得农场金牌';
+  const farmAgentPanel = `<section class="farm-agent-assist ${farmAgent.auto?'is-running':''} ${agentSession?.status==='guarded'?'is-guarded':''}" aria-label="KAI Agent 农场托管"><canvas data-farm-agent-frame width="512" height="340" aria-hidden="true"></canvas><div class="farm-agent-assist-copy"><span>AI 托管 · ${vlmReady?'VLM 视觉守卫':'结构化模式'}</span><div><h2>${agentStatus}</h2><b>${esc(agentSubgoal)}</b></div><p>${esc(agentCopy)}</p><details><summary>最近决策</summary><ol>${agentTrace}</ol></details></div><div class="farm-agent-assist-actions"><button class="btn ${farmAgent.auto?'':'accent'}" data-action="farm-agent-auto" aria-pressed="${farmAgent.auto}" ${game.status==='finished'||(!farmAgent.auto&&(farmAgent.busy||state.agentVlm.busy))?'disabled':''}>${farmAgent.auto?'暂停托管':'开始托管'}</button><button class="btn" data-action="farm-agent-step" ${game.status==='finished'||agentLocked?'disabled':''}>帮我走一步</button><small>${vlmReady?'首步立即执行 · 后续约 5 秒一次':'VLM 未启用 · 不伪造视觉结果'}</small></div></section>`;
   const cropChoices = Object.values(FARM_CROPS).map((crop) => {
     const locked = crop.unlockLevel > game.level;
     const selected = crop.id === game.selectedCrop;
     const price = market.prices[crop.id];
-    return `<button type="button" class="farm-crop-choice crop-${crop.id} ${selected ? 'is-selected' : ''} ${locked ? 'is-locked' : ''}" data-action="farm-select" data-farm-crop="${crop.id}" aria-pressed="${selected}" ${locked || game.status === 'finished' ? `disabled aria-label="${crop.label}，${locked ? `${crop.unlockXp} 经验解锁` : '本季已结算'}"` : `aria-label="选择${crop.label}种子，成本 ${crop.seedCost} 金币，今日售价 ${price} 金币"`}>${farmCropArt(crop.id,'ready')}<span><b>${crop.label}</b><small>${locked ? `${crop.unlockXp} XP 解锁` : `种 ${crop.seedCost} · 售 ${price} · ${crop.growDays} 个成长日`}</small></span>${market.focusId === crop.id ? '<strong>今日旺需</strong>' : ''}</button>`;
+    return `<button type="button" class="farm-crop-choice crop-${crop.id} ${selected ? 'is-selected' : ''} ${locked ? 'is-locked' : ''}" data-action="farm-select" data-farm-crop="${crop.id}" aria-pressed="${selected}" ${locked || game.status === 'finished' || agentLocked ? `disabled aria-label="${crop.label}，${locked ? `${crop.unlockXp} 经验解锁` : game.status==='finished' ? '本季已结算' : 'Agent 托管中'}"` : `aria-label="选择${crop.label}种子，成本 ${crop.seedCost} 金币，今日售价 ${price} 金币"`}>${farmCropArt(crop.id,'ready')}<span><b>${crop.label}</b><small>${locked ? `${crop.unlockXp} XP 解锁` : `种 ${crop.seedCost} · 售 ${price} · ${crop.growDays} 个成长日`}</small></span>${market.focusId === crop.id ? '<strong>今日旺需</strong>' : ''}</button>`;
   }).join('');
   const status = casual.saveConflict ? '另一标签页已更新农场，本页已停止写入，请重新打开'
     : casual.announcement || (game.status === 'finished' ? '本季已经结算' : readyCount ? `${readyCount} 块作物成熟了，看看今天的行情` : growingCount ? `${growingCount} 块作物需要继续照料` : '选种后点击空地，开始安排今天的五次行动');
   const medalRaw = game.status === 'finished' ? farmSeasonMedal(game.coins) : null;
   const medalKey = typeof medalRaw === 'string' ? medalRaw : medalRaw?.key;
   const medalLabel = ({ gold:'金穗', silver:'银穗', bronze:'铜穗', none:'本季完成' })[medalKey] || '本季完成';
-  const result = game.status === 'finished' ? `<section class="farm-result" data-farm-result tabindex="-1"><span>九日经营完成</span><strong>${medalLabel}</strong><h2>${game.coins} 金币</h2><p>共收获 ${game.harvests} 次 · ${game.xp} 经验。地里未收作物不计入结算。</p><button class="btn primary" data-action="farm-reset">再开一季</button></section>` : '';
+  const agentCompletedSeason = Boolean(agentEpisode);
+  const agentReview = agentEpisode ? `<div class="farm-agent-review"><b>AI 本季复盘</b><p>${agentEpisode.success?'金牌目标已达成':'本季完成，目标未达成'}：自主完成 ${agentEpisode.steps} 次决策，调用 ${agentEpisode.uniqueSkills}/${FARM_AGENT_SKILLS.length} 个 Skill${agentEpisode.recoveries?`，从 ${agentEpisode.recoveries} 次失败中恢复`:''}。</p><dl><div><dt>视觉核对</dt><dd>${agentEpisode.visualObservations||'未启用'}</dd></div><div><dt>守卫停手</dt><dd>${agentEpisode.visualBlocks}</dd></div><div><dt>长期记忆</dt><dd>${agentEpisode.totalEpisodes} 轮</dd></div></dl><small>${state.agentMemorySaveAvailable?'成功摘要与 Skill 宏已保存在当前浏览器，可用于下一季计划检索。':'当前浏览器未允许保存，本次摘要仅在页面内有效。'}</small></div>` : '';
+  const result = game.status === 'finished' ? `<section class="farm-result ${agentCompletedSeason?'has-agent-review':''}" data-farm-result tabindex="-1"><span>九日经营完成</span><strong>${medalLabel}</strong><h2>${game.coins} 金币</h2><p>共收获 ${game.harvests} 次 · ${game.xp} 经验。地里未收作物不计入结算。</p>${agentReview}<div class="farm-result-actions"><button class="btn primary" data-action="farm-reset">再开一季</button>${agentCompletedSeason?'<button class="btn" data-view="agent">打开 Agent Lab</button>':''}</div></section>` : '';
+  const farmHeadline = game.status==='finished' ? '这一季，<b>收成如何？</b>' : '今天这五步，<b>种在哪里？</b>';
   const marketRows = Object.values(FARM_CROPS).map((crop) => `<span class="${market.focusId === crop.id ? 'is-focus' : ''}">${crop.label}<b>${market.prices[crop.id]}</b></span>`).join('');
   return `<div class="shell casual-shell farm-route">${casualHeader('KAI 农场','NINE DAY HARVEST',`第 ${game.day}/${FARM_SEASON_DAYS} 日 · ${persistenceAvailable ? '本地自动保存' : '仅本次可玩'}`)}<main class="farm-stage">
-    <section class="farm-play"><div class="farm-scene-head"><div><span>九日丰收挑战</span><h1>今天这五步，<b>种在哪里？</b></h1></div><div class="farm-metrics" aria-label="本季数据"><div><small>第几日</small><strong>${game.day}<i> / ${FARM_SEASON_DAYS}</i></strong></div><div><small>剩余行动</small><strong>${game.actionsLeft}<i> / ${FARM_ACTIONS_PER_DAY}</i></strong></div><div><small>金币</small><strong>${game.coins}</strong></div><div><small>经验</small><strong>${game.xp}${nextLevelXp ? `<i> / ${nextLevelXp}</i>` : ''}</strong><span role="progressbar" aria-label="农场升级进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${xpProgress}"><i style="--farm-xp:${xpProgress}%"></i></span></div></div></div>
+    <section class="farm-play"><div class="farm-scene-head"><div><span>九日丰收挑战</span><h1>${farmHeadline}</h1></div><div class="farm-metrics" aria-label="本季数据"><div><small>第几日</small><strong>${game.day}<i> / ${FARM_SEASON_DAYS}</i></strong></div><div><small>剩余行动</small><strong>${game.actionsLeft}<i> / ${FARM_ACTIONS_PER_DAY}</i></strong></div><div><small>金币</small><strong>${game.coins}</strong></div><div><small>经验</small><strong>${game.xp}${nextLevelXp ? `<i> / ${nextLevelXp}</i>` : ''}</strong><span role="progressbar" aria-label="农场升级进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${xpProgress}"><i style="--farm-xp:${xpProgress}%"></i></span></div></div></div>
       <div class="farm-market" aria-label="今日市场行情"><div><span>今日旺需</span><strong>${focusCrop.label}</strong><small>卖价提升 25%</small></div><div class="farm-market-prices">${marketRows}</div><p>明日旺需：<b>${tomorrowCrop.label}</b></p></div>
       <div class="farm-status ${readyCount ? 'is-ready' : growingCount ? 'is-growing' : ''} ${weedCount ? 'has-weeds' : ''} ${casual.saveConflict ? 'is-warning' : ''}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status === 'finished' ? medalLabel : `${game.actionsLeft} 次行动`}</b></div>
-      <div class="farm-field" data-farm-field role="grid" aria-label="2 行 3 列农场地块，方向键移动，回车或空格操作" aria-rowcount="2" aria-colcount="3" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${game.plots.map((_, index) => farmPlotMarkup(game, index, casual.focusedPlot === index)).join('')}</div>
-      <div class="farm-command-dock"><div class="farm-crop-picker" role="group" aria-label="选择要播种的作物">${cropChoices}</div><div class="farm-actions"><button class="btn" data-action="farm-harvest-all" ${readyCount && game.actionsLeft && game.status !== 'finished' ? '' : 'disabled'}>收获成熟作物${readyCount ? ` · ${Math.min(readyCount,game.actionsLeft)} 块` : ''}</button><button class="btn primary" data-action="farm-next-day" ${game.status === 'finished' ? 'disabled' : ''}>${game.day === FARM_SEASON_DAYS ? '结算本季' : '结束本日'} <b>→</b></button><button class="btn text" data-action="farm-reset">重新开垦</button></div></div>
+      ${farmAgentPanel}
+      <div class="farm-field" data-farm-field role="grid" aria-label="2 行 3 列农场地块，方向键移动，回车或空格操作" aria-rowcount="2" aria-colcount="3" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${game.plots.map((_, index) => farmPlotMarkup(game, index, casual.focusedPlot === index, agentLocked)).join('')}</div>
+      <div class="farm-command-dock"><div class="farm-crop-picker" role="group" aria-label="选择要播种的作物">${cropChoices}</div><div class="farm-actions"><button class="btn" data-action="farm-harvest-all" ${readyCount && game.actionsLeft && game.status !== 'finished' && !agentLocked ? '' : 'disabled'}>收获成熟作物${readyCount ? ` · ${Math.min(readyCount,game.actionsLeft)} 块` : ''}</button><button class="btn primary" data-action="farm-next-day" ${game.status === 'finished' || agentLocked ? 'disabled' : ''}>${game.day === FARM_SEASON_DAYS ? '结算本季' : '结束本日'} <b>→</b></button><button class="btn text" data-action="farm-reset" ${game.status==='finished'||agentLocked?'disabled':''}>重新开垦</button></div></div>
       <details class="farm-guide"><summary>玩法与行情规则</summary><div><p>每次播种、浇水、收获或清理杂草消耗 1 次行动。播种当天算已浇水，结束本日后才成长。</p><p>连续两天缺水会变成杂草；成熟作物不会枯萎，可以等到旺需日再卖。第 9 日结束时只按金币结算。</p></div></details><p class="farm-key-hint" id="farm-key-hint">键盘：方向键移动 · Enter / 空格操作地块</p>${result}
     </section>
   </main><p class="casual-disclaimer">${persistenceAvailable ? '本季在当前浏览器本地运行并自动保存' : casual.saveConflict ? '检测到另一标签页的更新，本页为只读状态' : '当前浏览器存储不可用，本局仍可游玩但刷新后不会恢复'}。农场金币和奖章只用于本地娱乐，不可购买、提现、转让或兑换，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
@@ -2397,36 +2449,91 @@ function agentFarmPlot(game, plot, index, activePlot) {
   return `<div class="agent-farm-plot is-${status} ${activePlot === index ? 'is-active' : ''}" role="gridcell" aria-label="第 ${index + 1} 块田，${label}"><span class="farm-soil" aria-hidden="true"><i></i><i></i><i></i></span>${crop ? farmCropArt(crop.id,stage) : status === 'weed' ? '<span class="farm-weed-art" aria-hidden="true"><i></i><i></i><i></i></span>' : '<i class="agent-empty-mark" aria-hidden="true">＋</i>'}<b>${index + 1}</b><small>${label}</small></div>`;
 }
 
+function drawFarmAgentFrame(selector, game) {
+  const canvas = document.querySelector(selector);
+  if (!(canvas instanceof HTMLCanvasElement) || !game) return null;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  const width = canvas.width;
+  const height = canvas.height;
+  context.clearRect(0,0,width,height);
+  context.fillStyle='#173f32';context.fillRect(0,0,width,height);
+  const glow=context.createRadialGradient(width*.5,80,10,width*.5,80,width*.65);
+  glow.addColorStop(0,'rgba(113,190,145,.35)');glow.addColorStop(1,'rgba(12,45,34,0)');
+  context.fillStyle=glow;context.fillRect(0,0,width,height);
+  context.fillStyle='#f8f3e7';context.font='700 19px sans-serif';context.fillText(`KAI 农场 · 第 ${game.day} 日`,24,34);
+  context.fillStyle='rgba(248,243,231,.76)';context.font='13px sans-serif';context.fillText(`${game.coins} 金币  ·  ${game.xp} 经验  ·  剩余 ${game.actionsLeft} 次行动`,24,57);
+  const plotWidth=142,plotHeight=112,gap=12,startX=25,startY=76;
+  game.plots.forEach((plot,index)=>{
+    const x=startX+(index%3)*(plotWidth+gap),y=startY+Math.floor(index/3)*(plotHeight+gap);
+    const status=farmPlotStatus(plot);
+    context.fillStyle=status==='weed'?'#5b5941':status==='ready'?'#a4673f':'#805d3f';
+    context.fillRect(x,y,plotWidth,plotHeight);
+    context.strokeStyle=status==='ready'?'#f1c75b':'rgba(255,255,255,.17)';context.lineWidth=status==='ready'?4:1;context.strokeRect(x+1,y+1,plotWidth-2,plotHeight-2);
+    context.fillStyle='rgba(255,255,255,.14)';
+    for(let row=0;row<4;row+=1)context.fillRect(x+8,y+18+row*20,plotWidth-16,1);
+    const crop=plot.cropId?FARM_CROPS[plot.cropId]:null;
+    const label=status==='empty'?'空地':status==='weed'?'杂草':`${crop?.label||'作物'} · ${status==='ready'?'成熟':plot.wateredToday?'已浇水':'成长中'}`;
+    const glyph=crop?.glyph||(status==='weed'?'草':'＋');
+    context.fillStyle='#fff9ed';context.font='800 22px sans-serif';context.textAlign='center';context.fillText(glyph,x+plotWidth/2,y+62);
+    context.font='700 12px sans-serif';context.fillText(`${index+1}号 · ${label}`,x+plotWidth/2,y+91);
+    context.textAlign='left';
+  });
+  context.fillStyle='rgba(255,255,255,.68)';context.font='11px sans-serif';context.fillText(`frame revision ${game.revision} · rendered from live rule state`,24,height-17);
+  return canvas;
+}
+
+function drawAgentVlmFrame() {
+  return drawFarmAgentFrame('[data-agent-vlm-frame]', state.agentLab?.game);
+}
+
 function agentLab() {
-  if (!state.agentLab) state.agentLab = createFarmAgentSession({ policy:'skill_memory', injectFailureAtStep:state.agentInjectFailure ? 2 : null });
+  if (!state.agentLab) resetAgentLab('skill_memory');
   const session = state.agentLab;
   const game = session.game;
   const market = farmMarketForDay(game.day);
   const last = session.trajectory.at(-1) || null;
   const activePlot = Number.isInteger(last?.action?.plotIndex) && last.action.plotIndex < game.plots.length ? last.action.plotIndex : null;
-  const statusLabel = session.status === 'succeeded' ? '目标达成' : session.status === 'completed' ? '赛季结束' : session.status === 'blocked' ? '需要人工检查' : state.agentAuto ? '持续行动中' : session.trajectory.length ? '已暂停' : '等待开始';
+  const statusLabel = session.status === 'succeeded' ? '目标达成' : session.status === 'completed' ? '赛季结束' : session.status === 'blocked' ? '需要人工检查' : session.status === 'guarded' ? '视觉冲突暂停' : state.agentAuto ? '持续行动中' : session.trajectory.length ? '已暂停' : '等待开始';
   const progress = Math.min(100, Math.round(game.coins / session.goal.targetCoins * 100));
   const attempts = session.metrics.validActions + session.metrics.invalidActions;
   const validRate = attempts ? Math.round(session.metrics.validActions / attempts * 100) : 100;
   const policyButtons = Object.values(FARM_AGENT_POLICIES).map((policy) => `<button type="button" data-action="agent-policy" data-agent-policy="${policy.id}" aria-pressed="${session.policy === policy.id}" class="${session.policy === policy.id ? 'is-active' : ''}"><b>${policy.label}</b><small>${policy.description}</small></button>`).join('');
   const planRows = session.plan.phases.map((phase,index) => `<li class="is-${phase.status}"><i aria-hidden="true">${phase.status === 'completed' ? '✓' : phase.status === 'active' ? '→' : index + 1}</i><span><b>${phase.label}</b><small>${phase.status === 'completed' ? '已完成' : phase.status === 'active' ? '执行中' : '待执行'}</small></span></li>`).join('');
-  const skillRows = FARM_AGENT_SKILLS.map((skill) => { const stats=session.memory.skillStats[skill.id]; return `<article class="agent-skill ${session.activeSkill?.id === skill.id ? 'is-active' : ''}"><div><span>${session.activeSkill?.id === skill.id ? '正在调用' : '内置 Skill'}</span><h3>${skill.label}</h3></div><p>${skill.precondition}</p><dl><div><dt>调用</dt><dd>${stats.uses}</dd></div><div><dt>成功</dt><dd>${stats.successes}</dd></div><div><dt>失败</dt><dd>${stats.failures}</dd></div></dl></article>`; }).join('');
-  const traceRows = session.trajectory.length ? session.trajectory.slice(-12).reverse().map((entry) => `<li class="is-${entry.outcome}"><span>STEP ${entry.step}</span><div><b>${esc(entry.actionLabel)}</b><small>${esc(entry.subgoal)}</small></div><strong>${entry.outcome === 'success' ? '成功' : entry.outcome === 'failed' ? `回退 · ${esc(entry.error)}` : '完成'}</strong></li>`).join('') : '<li class="is-empty"><span>READY</span><div><b>等待第一步</b><small>点击“单步执行”观察一次完整决策。</small></div><strong>—</strong></li>';
-  const memoryRows = session.memory.failures.length ? session.memory.failures.slice(-3).map((failure) => `<li><b>失败记忆</b><span>${esc(failure.error)} · 已禁止原动作并重规划</span></li>`).join('') : session.memory.episodes.length ? session.memory.episodes.slice(-2).map((episode) => `<li><b>Episode 总结</b><span>${episode.finalCoins} 金币 · ${episode.success ? '目标达成' : '未达目标'}</span></li>`).join('') : '<li><b>Working Memory</b><span>当前计划和最近 8 步会进入下一次观察。</span></li>';
+  const lifetime = session.memory.longTerm;
+  const skillRows = FARM_AGENT_SKILLS.map((skill) => { const stats=session.memory.skillStats[skill.id]; const total=lifetime.skillStats[skill.id]; return `<article class="agent-skill ${session.activeSkill?.id === skill.id ? 'is-active' : ''}"><div><span>${session.activeSkill?.id === skill.id ? '正在调用' : '内置 Skill'}</span><h3>${skill.label}</h3></div><p>${skill.precondition}</p><dl><div><dt>本轮调用</dt><dd>${stats.uses}</dd></div><div><dt>长期成功</dt><dd>${total.successes}</dd></div><div><dt>长期失败</dt><dd>${total.failures}</dd></div></dl></article>`; }).join('');
+  const traceRows = session.trajectory.length ? session.trajectory.slice(-12).reverse().map((entry) => `<li class="is-${entry.outcome}"><span>STEP ${entry.step}</span><div><b>${esc(entry.actionLabel)}</b><small>${esc(entry.subgoal)}</small></div><strong>${entry.outcome === 'success' ? '成功' : entry.outcome === 'failed' ? `回退 · ${esc(entry.error)}` : entry.outcome === 'guarded' ? `守卫 · ${esc(entry.error)}` : '完成'}</strong></li>`).join('') : '<li class="is-empty"><span>READY</span><div><b>等待第一步</b><small>点击“单步执行”观察一次完整决策。</small></div><strong>—</strong></li>';
+  const recentLongTerm = lifetime.episodes.at(-1);
+  const memoryItems = [];
+  if (session.plan.memoryHint) memoryItems.push(`<li><b>已检索 Skill 宏</b><span>${esc(session.plan.memoryHint)}</span></li>`);
+  if (session.memory.visualConflicts.length) memoryItems.push(...session.memory.visualConflicts.slice(-2).map((conflict) => `<li><b>视觉冲突</b><span>${esc(conflict.reason)} · 保留状态并暂停动作</span></li>`));
+  if (session.memory.failures.length) memoryItems.push(...session.memory.failures.slice(-2).map((failure) => `<li><b>失败记忆</b><span>${esc(failure.error)} · 已禁止原动作并重规划</span></li>`));
+  if (session.memory.episodes.length) memoryItems.push(...session.memory.episodes.slice(-1).map((episode) => `<li><b>本轮 Episode</b><span>${episode.finalCoins} 金币 · ${episode.success ? '目标达成' : '未达目标'} · 已写入本地长期记忆</span></li>`));
+  else if (recentLongTerm) memoryItems.push(`<li><b>最近历史 Episode</b><span>${recentLongTerm.finalCoins} 金币 · ${recentLongTerm.success ? '目标达成' : '未达目标'} · ${recentLongTerm.skillSequence.length} 步 Skill 宏</span></li>`);
+  if (!memoryItems.length) memoryItems.push('<li><b>Working Memory</b><span>当前计划和最近 8 步会进入下一次观察；完成后写入本地长期记忆。</span></li>');
+  const memoryRows = memoryItems.slice(0,4).join('');
   const observation = session.observation ? `画面识别到 ${session.observation.modalities.screen.objects.length} 块田；${session.observation.summary.ready.length} 块成熟、${session.observation.summary.growing.length} 块成长中、${session.observation.summary.weeds.length} 块杂草。` : '尚未读取环境；首次执行会融合画面语义、界面文本、RPC 状态和历史动作。';
+  const vlmReady=state.agentVlm.status==='ready';
+  const vlmStatusLabel=state.agentVlm.busy?'正在推理':vlmReady?'VLM 在线':state.agentVlm.status==='loading'?'正在探测':state.agentVlm.status==='disabled'?'本地未启用':'服务离线';
+  const vlmResult=state.agentVlm.observation;
+  const vlmCopy=state.agentVlm.error||(!vlmResult?'尚未进行视觉一致性判断。':vlmResult.matched?`视觉判断通过：模型选择 ${vlmResult.label}，与 RPC 真值一致。`:`视觉判断不一致：模型选择 ${vlmResult.label}，真值为 ${vlmResult.expectedLabel}；视觉守卫会暂停动作。`);
+  const visualMode=FARM_AGENT_VISUAL_MODES[session.visualMode]||FARM_AGENT_VISUAL_MODES.shadow;
+  const vlmAgreement=session.metrics.visualObservations?`${session.metrics.visualMatches}/${session.metrics.visualObservations}`:'0 次';
+  const vlmAverageLatency=session.metrics.visualObservations?`${Math.round(session.metrics.visualLatencyMs/session.metrics.visualObservations)} ms`:'—';
+  const vlmTokens=session.metrics.vlmInputTokens+session.metrics.vlmOutputTokens;
   return `<div class="shell page-shell agent-lab-page">${header('default','agent')}<main class="agent-lab-main">
-    <section class="agent-lab-hero"><div><span>AGENT LAB · P0 RESEARCH PREVIEW</span><h1>让 Agent 自主完成<br><b>九日农场经营</b></h1><p>每一步真实调用 KAI 农场规则引擎。当前是可复现的规则策略基线，不冒充已经接入的 VLM、LLM 或强化学习模型。</p></div><div class="agent-run-state is-${session.status}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${statusLabel}</span><strong>${game.day} / 9 日</strong></div></section>
-    <section class="agent-capability-strip" aria-label="Agent 能力接入状态"><span class="is-ready">画面语义 + 文本 + RPC</span><span class="is-ready">层级规划</span><span class="is-ready">Skill Library</span><span class="is-ready">轨迹 Memory</span><span>真实 VLM / LLM 待接入</span><span>MCTS / RL 待实验</span></section>
+    <section class="agent-lab-hero"><div><span>AGENT LAB · VLM INTEGRATION</span><h1>让 Agent 自主完成<br><b>九日农场经营</b></h1><p>规则引擎提供可复现基线；可选的真实 VLM 服务读取当前像素观察帧并与 RPC 真值做跨域一致性判断。服务离线时明确降级，不伪造模型输出。</p></div><div class="agent-run-state is-${session.status}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${statusLabel}</span><strong>${game.day} / 9 日</strong></div></section>
+    <section class="agent-capability-strip" aria-label="Agent 能力接入状态"><span class="is-ready">画面 + 文本 + RPC</span><span class="is-ready">层级规划</span><span class="is-ready">Skill Library</span><span class="is-ready">本地 Episodic Memory</span><span class="${vlmReady?'is-ready':''}">${vlmStatusLabel}</span><span class="${session.visualMode==='guard'?'is-ready':''}">${visualMode.label}</span><span>MCTS / RL 待实验</span></section>
     <section class="agent-goal-card"><div><span>HIGH-LEVEL GOAL</span><h2>${session.goal.title}</h2><p>完成条件：${esc(session.goal.successCondition)}</p></div><div class="agent-goal-progress"><strong>${game.coins}<small> / ${session.goal.targetCoins} 金币</small></strong><span role="progressbar" aria-label="金牌目标进度 ${progress}%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="--agent-progress:${progress}%"></i></span></div></section>
     <section class="agent-policy-picker" aria-label="选择 Agent 对照策略">${policyButtons}</section>
     <section class="agent-workbench">
-      <article class="agent-panel agent-plan"><header><span>PLAN</span><h2>层级计划</h2></header><p class="agent-subgoal"><small>当前子目标</small><b>${esc(session.plan.subgoal)}</b></p><ol>${planRows}</ol></article>
+      <article class="agent-panel agent-plan"><header><span>PLAN</span><h2>层级计划</h2></header><p class="agent-subgoal"><small>当前子目标</small><b>${esc(session.plan.subgoal)}</b>${session.plan.memoryHint?`<em>${esc(session.plan.memoryHint)}</em>`:''}</p><ol>${planRows}</ol></article>
       <article class="agent-panel agent-environment"><header><span>ENVIRONMENT</span><h2>真实农场状态</h2><small>今日旺需 · ${FARM_CROPS[market.focusId].label}</small></header><div class="agent-farm-metrics"><span><small>金币</small><b>${game.coins}</b></span><span><small>经验</small><b>${game.xp}</b></span><span><small>行动</small><b>${game.actionsLeft}</b></span><span><small>收获</small><b>${game.harvests}</b></span></div><div class="agent-farm-field" role="grid" aria-label="Agent 农场环境，2 行 3 列">${game.plots.map((plot,index)=>agentFarmPlot(game,plot,index,activePlot)).join('')}</div></article>
-      <article class="agent-panel agent-decision"><header><span>DECISION</span><h2>当前决策摘要</h2></header><dl><div><dt>观察</dt><dd>${esc(observation)}</dd></div><div><dt>Skill</dt><dd>${session.activeSkill ? esc(session.activeSkill.label) : '等待选择'}</dd></div><div><dt>动作</dt><dd>${last ? esc(last.actionLabel) : '尚未执行'}</dd></div><div><dt>反馈</dt><dd class="is-${last?.outcome || 'pending'}">${last?.outcome === 'failed' ? esc(`失败：${last.error}`) : esc(session.reflection)}</dd></div></dl></article>
+      <article class="agent-panel agent-decision"><header><span>DECISION</span><h2>当前决策摘要</h2></header><dl><div><dt>结构化观察</dt><dd>${esc(observation)}</dd></div><div><dt>Skill</dt><dd>${session.activeSkill ? esc(session.activeSkill.label) : '等待选择'}</dd></div><div><dt>动作</dt><dd>${last ? esc(last.actionLabel) : '尚未执行'}</dd></div><div><dt>反馈</dt><dd class="is-${last?.outcome || 'pending'}">${last?.outcome === 'failed' ? esc(`失败：${last.error}`) : esc(session.reflection)}</dd></div></dl><div class="agent-vlm-observer"><div><span>VLM PIXEL FRAME</span><b>${esc(vlmStatusLabel)}</b></div><canvas data-agent-vlm-frame width="512" height="340" role="img" aria-label="发送给 VLM 的当前 KAI 农场像素观察帧"></canvas><p class="${vlmResult&&!vlmResult.matched?'is-mismatch':''}">${esc(vlmCopy)}</p>${vlmResult?`<small>${esc(vlmResult.model||'Kai VLM')} · ${Math.round(vlmResult.latencyMs||0)} ms</small>`:''}</div></article>
     </section>
-    <section class="agent-metric-grid" aria-label="当前评测指标"><div><small>目标进度</small><strong>${progress}%</strong></div><div><small>有效动作率</small><strong>${validRate}%</strong></div><div><small>无效动作</small><strong>${session.metrics.invalidActions}</strong></div><div><small>恢复次数</small><strong>${session.metrics.recoveries}</strong></div><div><small>重规划</small><strong>${session.metrics.replans}</strong></div><div><small>模型 Token</small><strong>未接入</strong></div></section>
-    <section class="agent-detail-grid"><article class="agent-panel agent-trace"><header><span>TRAJECTORY</span><h2>行动轨迹</h2><small>最近 ${Math.min(12,session.trajectory.length)} / ${session.trajectory.length} 步</small></header><ol>${traceRows}</ol></article><div class="agent-side-stack"><details class="agent-panel" open><summary>Skill Library · ${session.metrics.uniqueSkills}/${FARM_AGENT_SKILLS.length}</summary><div class="agent-skill-list">${skillRows}</div></details><details class="agent-panel" open><summary>Memory · 本次运行</summary><ul class="agent-memory-list">${memoryRows}</ul><p class="agent-boundary">当前 Memory 仅存在于本页实验会话，不是跨用户长期记忆。</p></details></div></section>
-    <section class="agent-run-controls" aria-label="Agent 运行控制"><button class="btn primary" data-action="agent-auto">${state.agentAuto ? '暂停运行' : session.trajectory.length ? '继续运行' : '开始运行'}</button><button class="btn" data-action="agent-step" ${state.agentAuto || ['succeeded','completed','blocked'].includes(session.status) ? 'disabled' : ''}>单步执行</button><button class="btn" data-action="agent-speed">速度 ${state.agentSpeed}×</button><button class="btn ${state.agentInjectFailure ? 'danger' : ''}" data-action="agent-fault" aria-pressed="${state.agentInjectFailure}">故障恢复测试 ${state.agentInjectFailure ? '开' : '关'}</button><button class="btn text" data-action="agent-reset">重置实验</button></section>
+    <section class="agent-metric-grid" aria-label="当前评测指标"><div><small>目标进度</small><strong>${progress}%</strong></div><div><small>有效动作率</small><strong>${validRate}%</strong></div><div><small>无效动作</small><strong>${session.metrics.invalidActions}</strong></div><div><small>恢复次数</small><strong>${session.metrics.recoveries}</strong></div><div><small>重规划</small><strong>${session.metrics.replans}</strong></div><div><small>VLM 一致</small><strong>${vlmAgreement}</strong></div><div><small>视觉阻断</small><strong>${session.metrics.visualBlocks}</strong></div><div><small>平均延迟</small><strong>${vlmAverageLatency}</strong></div><div><small>VLM Token</small><strong>${vlmTokens||'—'}</strong></div></section>
+    <section class="agent-detail-grid"><article class="agent-panel agent-trace"><header><span>TRAJECTORY</span><h2>行动轨迹</h2><small>最近 ${Math.min(12,session.trajectory.length)} / ${session.trajectory.length} 步</small></header><ol>${traceRows}</ol></article><div class="agent-side-stack"><details class="agent-panel" open><summary>Skill Library · ${session.metrics.uniqueSkills}/${FARM_AGENT_SKILLS.length}</summary><div class="agent-skill-list">${skillRows}</div></details><details class="agent-panel" open><summary>Memory · 本地长期 · ${lifetime.totalEpisodes} 轮</summary><ul class="agent-memory-list">${memoryRows}</ul><p class="agent-boundary">${state.agentMemorySaveAvailable?'最多保留最近 20 轮，仅存当前浏览器，不跨设备、不上传服务器。':'当前浏览器拒绝持久化，Memory 仅在本次页面会话可用。'} Skill 宏来自成功轨迹归纳，不代表模型训练。</p></details></div></section>
+    <section class="agent-run-controls" aria-label="Agent 运行控制"><button class="btn primary" data-action="agent-auto">${state.agentAuto ? '暂停运行' : session.trajectory.length ? '继续运行' : '开始运行'}</button><button class="btn" data-action="agent-step" ${state.agentAuto || ['succeeded','completed','blocked'].includes(session.status) ? 'disabled' : ''}>单步执行</button><button class="btn ${session.visualMode==='guard'?'is-active':''}" data-action="agent-vlm-mode" aria-pressed="${session.visualMode==='guard'}" title="${esc(visualMode.description)}">${session.visualMode==='guard'?'视觉守卫 开':'视觉旁路'}</button><button class="btn" data-action="agent-vlm-observe" ${!vlmReady||state.agentVlm.busy?'disabled':''}>${state.agentVlm.busy?'VLM 推理中…':'VLM 观察一帧'}</button><button class="btn" data-action="agent-vlm-refresh">刷新 VLM 状态</button><button class="btn" data-action="agent-speed">速度 ${state.agentSpeed}×</button><button class="btn ${state.agentInjectFailure ? 'danger' : ''}" data-action="agent-fault" aria-pressed="${state.agentInjectFailure}">故障恢复测试 ${state.agentInjectFailure ? '开' : '关'}</button><button class="btn text" data-action="agent-reset">重置实验</button><button class="btn text" data-action="agent-memory-clear" ${lifetime.totalEpisodes?'':'disabled'}>清除长期记忆</button></section>
   </main></div>`;
 }
 
@@ -2713,6 +2820,50 @@ function historyMatchWon(match) {
   return Number(match.delta) > 0;
 }
 
+async function loadAgentVlmStatus() {
+  if (state.agentVlm.status === 'loading') return;
+  state.agentVlm.status='loading';state.agentVlm.error='';
+  if(['agent','farm'].includes(state.view))render();
+  try {
+    const result=await api('/v1/agent/vlm/status');
+    state.agentVlm.service=result.status;
+    state.agentVlm.status=result.status.ready?'ready':result.status.enabled?'offline':'disabled';
+  } catch(error) {
+    state.agentVlm.status='offline';state.agentVlm.error=error.message||'无法读取 VLM 状态';
+  }
+  if(['agent','farm'].includes(state.view))render();
+}
+
+async function requestFarmSessionVlm(session, canvasSelector, isCurrent) {
+  if(state.agentVlm.busy||!session)return null;
+  state.agentVlm.busy=true;state.agentVlm.error='';render();
+  const canvas=drawFarmAgentFrame(canvasSelector,session.game);
+  if(!canvas){state.agentVlm.busy=false;state.agentVlm.error='无法生成观察画面';render();return null;}
+  const game=session.game;
+  const rpc={
+    day:game.day,revision:game.revision,actionsLeft:game.actionsLeft,coins:game.coins,xp:game.xp,
+    plots:game.plots.map(plot=>({status:farmPlotStatus(plot),cropId:plot.cropId,wateredToday:plot.wateredToday})),
+  };
+  try {
+    const result=await api('/v1/agent/vlm/observe',{method:'POST',body:JSON.stringify({imageDataUrl:canvas.toDataURL('image/jpeg',.84),rpc})});
+    if(!isCurrent())return null;
+    state.agentVlm.observation=result.observation;
+    state.agentVlm.status='ready';
+    return result.observation;
+  } catch(error) {
+    state.agentVlm.error=error.message||'VLM 观察失败，已保留结构化状态';
+    if(['VLM_DISABLED','VLM_UNAVAILABLE','VLM_TIMEOUT'].includes(error.code))state.agentVlm.status=error.code==='VLM_DISABLED'?'disabled':'offline';
+    return null;
+  } finally {
+    state.agentVlm.busy=false;if(isCurrent())render();
+  }
+}
+
+async function runAgentVlmObservation() {
+  const session=state.agentLab;
+  return requestFarmSessionVlm(session,'[data-agent-vlm-frame]',()=>state.view==='agent'&&state.agentLab===session);
+}
+
 function currentWinStreak(matches) {
   let streak = 0;
   for (const match of matches) {
@@ -2771,6 +2922,8 @@ function rules() { return `<div class="shell page-shell">${header('default','rul
 function render() {
   app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='reversi'?reversiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='sokoban'?sokobanGame():state.view==='sliding'?slidingPuzzleGame():state.view==='memory'?memoryMatchGame():state.view==='match3'?matchThreeGame():state.view==='falling'?fallingBlocksGame():state.view==='snake'?snakeGame():state.view==='maze'?mazeGame():state.view==='farm'?farmGame():state.view==='agent'?agentLab():state.view==='quick'?quickGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
   if(state.view==='lobby')updateWorldCarouselStatus(app.querySelector('[data-world-strip]'));
+  if(state.view==='agent')drawAgentVlmFrame();
+  if(state.view==='farm')drawFarmAgentFrame('[data-farm-agent-frame]',state.casual?.game);
   app.setAttribute('aria-busy', String(state.busy));
   if (state.busy) {
     app.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
@@ -2800,6 +2953,10 @@ function stopCasualTimers() {
   farmTimer = null;
   agentTimer = null;
   state.agentAuto = false;
+  if(state.casual?.kind==='farm'&&state.casual.agent){
+    state.casual.agent.auto=false;
+    state.casual.agent.runGeneration=(state.casual.agent.runGeneration||0)+1;
+  }
   fallingTimer = null;
   cancelMinesweeperLongPress();
   minesweeperSuppressedClick = null;
@@ -3717,6 +3874,90 @@ function queueFarmTick() {
   farmTimer = null;
 }
 
+function ensureFarmGameAgentSession() {
+  const casual=state.casual;
+  if(state.view!=='farm'||casual?.kind!=='farm'||!casual.game)return null;
+  if(!casual.agent)casual.agent={session:null,auto:false,busy:false,lastAction:null,runGeneration:0};
+  const current=casual.agent.session;
+  if(!current||current.game.revision!==casual.game.revision||current.game.status!==casual.game.status){
+    casual.agent.session=createFarmAgentSession({
+      game:casual.game,
+      policy:'skill_memory',
+      visualMode:state.agentVlm.status==='ready'?'guard':'shadow',
+      longTermMemory:state.agentLongTermMemory,
+    });
+  }
+  return casual.agent.session;
+}
+
+function stopFarmGameAgent(message='Agent 托管已暂停 · 你可以继续手动经营') {
+  queueFarmTick();
+  const farmAgent=state.casual?.agent;
+  if(!farmAgent)return;
+  farmAgent.auto=false;
+  farmAgent.runGeneration=(farmAgent.runGeneration||0)+1;
+  if(state.view==='farm'&&state.casual?.kind==='farm')state.casual.announcement=message;
+}
+
+async function performFarmGameAgentStep({ automatic=false }={}) {
+  const casual=state.casual;
+  if(state.view!=='farm'||casual?.kind!=='farm'||casual.saveConflict||casual.game?.status==='finished')return false;
+  const session=ensureFarmGameAgentSession();
+  const farmAgent=casual.agent;
+  if(!session||farmAgent.busy)return false;
+  const generation=farmAgent.runGeneration||0;
+  farmAgent.busy=true;
+  session.visualMode=state.agentVlm.status==='ready'?'guard':'shadow';
+  render();
+  const visualObservation=session.visualMode==='guard'
+    ? await requestFarmSessionVlm(session,'[data-farm-agent-frame]',()=>state.view==='farm'&&state.casual===casual&&casual.agent?.session===session)
+    : null;
+  if(state.view!=='farm'||state.casual!==casual||casual.agent?.session!==session)return false;
+  if(automatic&&(!farmAgent.auto||generation!==farmAgent.runGeneration)){
+    farmAgent.busy=false;render();return false;
+  }
+  stepFarmAgent(session,{visualObservation,visualRequired:session.visualMode==='guard'});
+  farmAgent.busy=false;
+  const last=session.trajectory.at(-1);
+  farmAgent.lastAction=last?.actionLabel||null;
+  if(session.status==='guarded'){
+    stopFarmGameAgent('Agent 已停手 · 视觉观察与规则状态不一致，请检查后重试');
+    render();return false;
+  }
+  if(['succeeded','completed'].includes(session.status)){
+    farmAgent.auto=false;
+    state.agentLongTermMemory=session.memory.longTerm;
+    state.agentMemorySaveAvailable=saveFarmAgentLongTermMemory(state.agentLongTermMemory);
+  }
+  const plotIndex=Number.isInteger(last?.action?.plotIndex)?last.action.plotIndex:casual.focusedPlot;
+  const visionPrefix=visualObservation?.matched?'VLM 已核对 · ':'';
+  commitFarmGame(session.game,`Agent：${visionPrefix}${last?.actionLabel||session.reflection}`,plotIndex);
+  return farmAgent.auto&&!['succeeded','completed','blocked','guarded'].includes(session.status);
+}
+
+function queueFarmGameAgentStep() {
+  queueFarmTick();
+  const casual=state.casual;
+  if(state.view!=='farm'||casual?.kind!=='farm'||!casual.agent?.auto)return;
+  farmTimer=setTimeout(async()=>{
+    farmTimer=null;
+    if(state.view!=='farm'||state.casual!==casual||!casual.agent.auto)return;
+    const shouldContinue=await performFarmGameAgentStep({automatic:true});
+    if(shouldContinue)queueFarmGameAgentStep();
+  },state.agentVlm.status==='ready'?FARM_AGENT_VLM_STEP_MS:FARM_AGENT_LOCAL_STEP_MS);
+}
+
+async function startFarmGameAgentAuto(casual) {
+  try {
+    const shouldContinue=await performFarmGameAgentStep({automatic:true});
+    if(state.view==='farm'&&state.casual===casual&&casual.agent?.auto&&shouldContinue)queueFarmGameAgentStep();
+  } catch(error) {
+    if(state.view!=='farm'||state.casual!==casual)return;
+    stopFarmGameAgent(`Agent 托管已暂停 · ${error?.message||'执行失败，请重试'}`);
+    render();
+  }
+}
+
 function stopAgentRun() {
   if (agentTimer) clearTimeout(agentTimer);
   agentTimer = null;
@@ -3727,20 +3968,32 @@ function resetAgentLab(policy = state.agentLab?.policy || 'skill_memory') {
   stopAgentRun();
   state.agentLab = createFarmAgentSession({
     policy,
+    visualMode:state.agentLab?.visualMode || 'shadow',
     injectFailureAtStep:state.agentInjectFailure ? 2 : null,
+    longTermMemory:state.agentLongTermMemory,
   });
+  state.agentVlm.observation=null;
+  state.agentVlm.error='';
 }
 
 function agentRunFinished() {
   return ['succeeded','completed','blocked'].includes(state.agentLab?.status);
 }
 
-function performAgentStep() {
+async function performAgentStep() {
   if (!state.agentLab) resetAgentLab();
   if (agentRunFinished()) return false;
-  stepFarmAgent(state.agentLab);
+  const session=state.agentLab;
+  const shouldObserve=session.visualMode==='guard'&&state.agentVlm.status==='ready';
+  const visualObservation=shouldObserve?await runAgentVlmObservation():null;
+  if(state.agentLab!==session||state.view!=='agent')return false;
+  stepFarmAgent(session,{visualObservation,visualRequired:session.visualMode==='guard'});
+  if (['succeeded','completed'].includes(session.status)) {
+    state.agentLongTermMemory = session.memory.longTerm;
+    state.agentMemorySaveAvailable = saveFarmAgentLongTermMemory(state.agentLongTermMemory);
+  }
   render();
-  return !agentRunFinished();
+  return !agentRunFinished()&&session.status!=='guarded';
 }
 
 function queueAgentStep() {
@@ -3751,13 +4004,13 @@ function queueAgentStep() {
     if (state.view === 'agent') render();
     return;
   }
-  agentTimer = setTimeout(() => {
+  agentTimer = setTimeout(async () => {
     agentTimer = null;
     if (!state.agentAuto || state.view !== 'agent') return;
-    const shouldContinue = performAgentStep();
+    const shouldContinue = await performAgentStep();
     if (shouldContinue) queueAgentStep();
     else { state.agentAuto = false; render(); }
-  }, state.agentSpeed === 2 ? 170 : 360);
+  }, state.agentLab?.visualMode === 'guard' ? 5_200 : state.agentSpeed === 2 ? 170 : 360);
 }
 
 function startFarmSession(game, announcement = '选好种子，点击空地开始播种') {
@@ -3765,6 +4018,7 @@ function startFarmSession(game, announcement = '选好种子，点击空地开�
   state.casual = {
     kind:'farm',
     game,
+    agent:{ session:null, auto:false, busy:false, lastAction:null, runGeneration:0 },
     focusedPlot:0,
     announcement,
     readySignature:farmReadySignature(game),
@@ -3789,6 +4043,7 @@ function openFarm() {
       : readyCount ? `${readyCount} 块作物已经成熟，看看今天是否旺需` : `已恢复第 ${game.day} 日经营进度`;
   startFarmSession(game, announcement);
   rememberLastLocalGame('farm');
+  loadAgentVlmStatus();
 }
 
 function farmActionError(error) {
@@ -3809,6 +4064,10 @@ function farmActionError(error) {
 function commitFarmGame(next, announcement, focusedPlot = state.casual?.focusedPlot ?? 0) {
   const casual = state.casual;
   if (state.view !== 'farm' || casual?.kind !== 'farm') return;
+  if (casual.agent?.session && casual.agent.session.game !== next) {
+    casual.agent.session = null;
+    casual.agent.lastAction = null;
+  }
   casual.game = next;
   casual.focusedPlot = focusedPlot;
   casual.announcement = announcement;
@@ -4732,7 +4991,7 @@ app.addEventListener('click', e => {
     if(state.view!=='room') stopRoomSync();
     if(state.view==='agent'&&!state.agentLab) resetAgentLab();
     globalThis.scrollTo?.(0,0);
-    if(state.view==='history') act(loadHistoryData); else render();
+    if(state.view==='history') act(loadHistoryData); else { render(); if(state.view==='agent')loadAgentVlmStatus(); }
     return;
   }
   if(el.dataset.bid!==undefined) act(async()=>{const current=state.game;const body={score:Number(el.dataset.bid),expectedSequence:current.sequence};const r=await api(`/v1/games/${current.id}/bid`,{method:'POST',body:JSON.stringify(body),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);});
@@ -4747,8 +5006,28 @@ app.addEventListener('click', e => {
   if(a==='agent-step'){
     stopAgentRun();performAgentStep();return;
   }
+  if(a==='agent-vlm-observe'){
+    runAgentVlmObservation();return;
+  }
+  if(a==='agent-vlm-mode'){
+    if(!state.agentLab)resetAgentLab();
+    state.agentLab.visualMode=state.agentLab.visualMode==='guard'?'shadow':'guard';
+    state.agentLab.reflection=state.agentLab.visualMode==='guard'
+      ? '视觉守卫已启用：每次动作前必须取得一致的 VLM 观察。'
+      : '视觉旁路已启用：记录 VLM 结果，但继续以 RPC 真值执行。';
+    render();return;
+  }
+  if(a==='agent-vlm-refresh'){
+    state.agentVlm.status='idle';loadAgentVlmStatus();return;
+  }
   if(a==='agent-reset'){
     resetAgentLab();render();return;
+  }
+  if(a==='agent-memory-clear'){
+    stopAgentRun();
+    state.agentLongTermMemory=emptyFarmAgentLongTermMemory();
+    state.agentMemorySaveAvailable=safeStorageRemove(FARM_AGENT_MEMORY_KEY);
+    resetAgentLab();render();toast('Agent 本地长期记忆已清除');return;
   }
   if(a==='agent-speed'){
     state.agentSpeed=state.agentSpeed===1?2:1;render();if(state.agentAuto)queueAgentStep();return;
@@ -5186,6 +5465,20 @@ app.addEventListener('click', e => {
     if(!confirmLocalGameReplacement(['playing','paused'].includes(game.status)&&Number(game.ticks)>0,'切换速度会重新开始本轮，确定继续吗？'))return;
     newSnakeSession(difficulty);
     render();focusSnakeInteraction();return;
+  }
+  if(a==='farm-agent-auto'&&state.view==='farm'){
+    const casual=state.casual;if(casual?.kind!=='farm'||casual.saveConflict)return;
+    if(casual.agent?.auto){stopFarmGameAgent();render();focusFarmInteraction();return;}
+    const session=ensureFarmGameAgentSession();if(!session)return;
+    casual.agent.auto=true;
+    casual.agent.runGeneration=(casual.agent.runGeneration||0)+1;
+    casual.announcement=state.agentVlm.status==='ready'?'Agent 托管已开始 · 每步先通过 VLM 视觉守卫':'Agent 托管已开始 · 当前使用结构化规则状态';
+    render();startFarmGameAgentAuto(casual);return;
+  }
+  if(a==='farm-agent-step'&&state.view==='farm'){
+    const casual=state.casual;if(casual?.kind!=='farm'||casual.saveConflict)return;
+    stopFarmGameAgent('Agent 将只执行一步');
+    performFarmGameAgentStep();return;
   }
   if(a==='farm-select'&&state.view==='farm'){
     const cropId=el.dataset.farmCrop;const game=state.casual?.game;
@@ -5787,6 +6080,7 @@ document.addEventListener('visibilitychange', () => {
   if (state.view === 'maze' && document.visibilityState === 'hidden') saveMazeGame(state.casual.game);
   if (state.view === 'farm') {
     if (document.visibilityState === 'hidden') {
+      stopFarmGameAgent('页面已隐藏，Agent 托管自动暂停');
       saveFarmGame(state.casual.game);
       return;
     }
@@ -5819,5 +6113,9 @@ globalThis.addEventListener?.('storage', (event) => {
   state.casual.announcement = '另一个标签页已更新农场，本页已停止写入';
   if (farmTimer) clearTimeout(farmTimer);
   farmTimer = null;
+  if(state.casual.agent){
+    state.casual.agent.auto=false;
+    state.casual.agent.runGeneration=(state.casual.agent.runGeneration||0)+1;
+  }
   render();focusFarmInteraction();
 });

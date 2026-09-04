@@ -6,6 +6,7 @@ import { CloudPayBillingService, SandboxBillingStore, sandboxWarning, type Cloud
 import { DouJoyPlatform, PlatformError } from './platform.ts';
 import { JsonGameStore } from './store.ts';
 import { SlidingWindowLimiter } from './security.ts';
+import { VlmError, VlmService, vlmConfigFromEnvironment } from './vlm.ts';
 
 const port = Number(process.env.DOUJOY_PORT ?? 4310);
 const dataPath = process.env.DOUJOY_DATA_PATH ?? resolve(fileURLToPath(new URL('../data/state.json', import.meta.url)));
@@ -18,6 +19,7 @@ const waitTimeoutMaxMs = Number(process.env.DOUJOY_WAIT_TIMEOUT_MAX_MS ?? 25_000
 const cloudPayMode = process.env.DOUJOY_CLOUDPAY_MODE ?? 'disabled';
 const trustProxyValue = process.env.DOUJOY_TRUST_PROXY ?? 'false';
 const trustProxy = ['1', 'true'].includes(trustProxyValue.toLowerCase());
+const vlmConfig = vlmConfigFromEnvironment();
 const cloudPaySandboxDataPath = process.env.DOUJOY_CLOUDPAY_SANDBOX_DATA_PATH
   ?? resolve(dirname(dataPath), 'cloudpay-sandbox-orders.json');
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('DOUJOY_PORT_INVALID');
@@ -44,6 +46,8 @@ const billing = new CloudPayBillingService(cloudPayMode as CloudPayMode, sandbox
 const requestLimiter = new SlidingWindowLimiter();
 const guestLimiter = new SlidingWindowLimiter();
 const friendSearchLimiter = new SlidingWindowLimiter();
+const vlmLimiter = new SlidingWindowLimiter();
+const vlm = new VlmService(vlmConfig);
 const pendingWaitsByUser = new Map<string, number>();
 const pendingWaitsByAddress = new Map<string, number>();
 const activeWaitControllers = new Set<AbortController>();
@@ -62,12 +66,12 @@ function json(response: import('node:http').ServerResponse, status: number, body
   response.end(JSON.stringify(body));
 }
 
-async function body(request: import('node:http').IncomingMessage) {
+async function body(request: import('node:http').IncomingMessage, maximumBytes = 64 * 1024) {
   const chunks: Buffer[] = [];
   let length = 0;
   for await (const chunk of request) {
     length += chunk.length;
-    if (length > 64 * 1024) throw new PlatformError(413, 'BODY_TOO_LARGE', '请求内容过大。');
+    if (length > maximumBytes) throw new PlatformError(413, 'BODY_TOO_LARGE', '请求内容过大。');
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -168,6 +172,15 @@ const server = createServer(async (request, response) => {
       return json(response, 201, { ok: true, ...(await platform.guest(typeof input.name === 'string' ? input.name : undefined)) });
     }
     const user = platform.authenticate(request.headers.authorization);
+    if (request.method === 'GET' && url.pathname === '/v1/agent/vlm/status') {
+      return json(response, 200, { ok:true, status:await vlm.status() });
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/agent/vlm/observe') {
+      const vlmRate = vlmLimiter.consume(`${requesterAddress}:${user.id}`, 12, 60_000);
+      if (!vlmRate.allowed) throw new PlatformError(429, 'VLM_RATE_LIMITED', 'VLM 观察过于频繁，请稍后重试。');
+      const input = await body(request, 768 * 1024);
+      return json(response, 200, { ok:true, observation:await vlm.observe(input as never) });
+    }
     if (request.method === 'GET' && url.pathname === '/v1/billing/catalog') {
       return json(response, 200, { ok: true, catalog: billing.catalog() });
     }
@@ -263,7 +276,7 @@ const server = createServer(async (request, response) => {
     }
     throw new PlatformError(404, 'NOT_FOUND', '接口不存在。');
   } catch (error) {
-    if (error instanceof PlatformError) return json(response, error.status, { ok: false, error: { code: error.code, message: error.message } });
+    if (error instanceof PlatformError || error instanceof VlmError) return json(response, error.status, { ok: false, error: { code: error.code, message: error.message } });
     console.error(error);
     return json(response, 500, { ok: false, error: { code: 'INTERNAL_ERROR', message: '服务暂时不可用。' } });
   }
@@ -273,6 +286,7 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`DouJoy server listening on http://0.0.0.0:${port}`);
   console.log('Token mode: play-only; purchase/withdraw/transfer/redeem are disabled');
   console.log(`CloudPay card-hour billing mode: ${cloudPayMode}`);
+  console.log(`VLM observation mode: ${vlmConfig.mode}`);
 });
 
 let shuttingDown = false;

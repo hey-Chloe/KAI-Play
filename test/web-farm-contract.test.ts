@@ -79,6 +79,53 @@ test('the route exposes day, action, market, drought, harvest, and season-result
   assert.match(route, /地里未收作物不计入结算/);
 });
 
+test('the game route connects the agent to the real farm state with explicit player control', () => {
+  const controller = between(appSource, 'function ensureFarmGameAgentSession()', 'function stopAgentRun()');
+  const clickHandler = between(appSource, "if(a==='farm-agent-auto'&&state.view==='farm')", "if(a==='farm-agent-step'&&state.view==='farm')");
+  assert.match(route, /data-farm-agent-frame/);
+  assert.match(route, /data-action="farm-agent-auto"/);
+  assert.match(route, /aria-pressed="\$\{farmAgent\.auto\}"/);
+  assert.match(route, /data-action="farm-agent-step"/);
+  assert.match(route, /VLM 未启用 · 不伪造视觉结果/);
+  assert.match(controller, /createFarmAgentSession\(\{[\s\S]*?game:casual\.game/);
+  assert.match(controller, /stepFarmAgent\(session,\{visualObservation,visualRequired:session\.visualMode===['"]guard['"]\}\)/);
+  assert.match(controller, /commitFarmGame\(session\.game/);
+  assert.match(controller, /state\.agentLongTermMemory=session\.memory\.longTerm/);
+  assert.match(controller, /generation!==farmAgent\.runGeneration/);
+  assert.match(appSource, /const FARM_AGENT_VLM_STEP_MS\s*=\s*5_200/);
+  assert.match(controller, /state\.agentVlm\.status===['"]ready['"]\?FARM_AGENT_VLM_STEP_MS:FARM_AGENT_LOCAL_STEP_MS/);
+  assert.match(clickHandler, /startFarmGameAgentAuto\(casual\)/);
+  assert.doesNotMatch(clickHandler, /queueFarmGameAgentStep\(\)/, 'the first delegated action should execute immediately');
+  assert.match(farmUi, /interactionLocked/);
+  assert.match(farmUi, /game\.status === ['"]finished['"] \|\| interactionLocked/);
+  assert.match(appSource, /页面已隐藏，Agent 托管自动暂停/);
+});
+
+test('an agent-completed season explains its result and keeps Agent Lab reachable', () => {
+  assert.match(route, /agentCompletedSeason/);
+  assert.match(route, /storedAgentEpisode\?\.finalRevision===game\.revision/);
+  assert.match(route, /storedAgentEpisode\.finalCoins===game\.coins/);
+  assert.match(route, /storedAgentEpisode\.xp===game\.xp/);
+  assert.match(route, /storedAgentEpisode\.harvests===game\.harvests/);
+  assert.match(route, /agentEpisode\?\.success \? '金牌目标已达成'/);
+  assert.match(route, /本季由 Agent 完成 \$\{agentEpisode\.steps\} 次决策/);
+  assert.match(route, /金牌目标已达成/);
+  assert.match(route, /Agent 已完成本季/);
+  assert.match(route, /九日经营已经结算/);
+  assert.match(route, /这一季，<b>收成如何？<\/b>/);
+  assert.match(route, /AI 本季复盘/);
+  assert.match(route, /agentSession\.metrics\.decisions/);
+  assert.match(route, /agentSession\.metrics\.uniqueSkills/);
+  assert.match(route, /agentSession\.metrics\.visualObservations/);
+  assert.match(route, /agentSession\.metrics\.visualBlocks/);
+  assert.match(route, /agentSession\.memory\.longTerm\.totalEpisodes/);
+  assert.match(route, /成功摘要与 Skill 宏已保存在当前浏览器/);
+  assert.match(route, /data-view="agent">打开 Agent Lab/);
+  assert.match(styleSource, /\.farm-result\.has-agent-review/);
+  assert.match(styleSource, /\.farm-agent-review\s*\{/);
+  assert.match(styleSource, /\.farm-result:focus-visible/);
+});
+
 test('farm-next-day advances the turn, reports weeds or maturity, and settles day nine', () => {
   const handler = between(appSource, "if(a==='farm-next-day'&&state.view==='farm')", "if(a==='farm-reset'&&state.view==='farm')");
   assert.match(handler, /advanceFarmDay\(game\)/);

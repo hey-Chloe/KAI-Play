@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "kai-farm-vlm-v1",
+  "status": "SYNTHETIC_FIXTURES_READY_REAL_MODEL_NOT_RUN",
+  "source": "Deterministic project-owned raster renderer aligned with the Agent Lab observation surface.",
+  "license": "Project-generated evaluation fixtures; no ScienceQA examples or third-party images are embedded.",
+  "truthBoundary": "These frames test the integration and bounded visual-state task. They are not real-player screenshots and do not establish general game understanding.",
+  "samples": [
+    {
+      "id": "day1-empty-start",
+      "frame": "frames/day1-empty-start.png",
+      "sha256": "cf8dbcba577265517ed3636448b7e1d5f5f84ce18f4c2dfeebf18b82eb2dd1e1",
+      "dimensions": [
+        512,
+        340
+      ],
+      "tags": [
+        "empty",
+        "opening"
+      ],
+      "rpc": {
+        "day": 1,
+        "revision": 0,
+        "actionsLeft": 5,
+        "coins": 36,
+        "xp": 0,
+        "plots": [
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "day1-wheat-planted",
+      "frame": "frames/day1-wheat-planted.png",
+      "sha256": "3cc68d7dac6d3cec748c6a5f02ac39641a0abb216b1c57a897746ff67f5459d8",
+      "dimensions": [
+        512,
+        340
+      ],
+      "tags": [
+        "growing",
+        "watered"
+      ],
+      "rpc": {
+        "day": 1,
+        "revision": 1,
+        "actionsLeft": 2,
+        "coins": 21,
+        "xp": 0,
+        "plots": [
+          {
+            "status": "growing",
+            "cropId": "wheat",
+            "wateredToday": true
+          },
+          {
+            "status": "growing",
+            "cropId": "wheat",
+            "wateredToday": true
+          },
+          {
+            "status": "growing",
+            "cropId": "wheat",
+            "wateredToday": true
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "day3-ready-harvest",
+      "frame": "frames/day3-ready-harvest.png",
+      "sha256": "5513e00d3f919797e415fb124296ac81dd4d768b5daa2bd1c1877f7050470603",
+      "dimensions": [
+        512,
+        340
+      ],
+      "tags": [
+        "ready",
+        "mixed"
+      ],
+      "rpc": {
+        "day": 3,
+        "revision": 2,
+        "actionsLeft": 4,
+        "coins": 44,
+        "xp": 10,
+        "plots": [
+          {
+            "status": "ready",
+            "cropId": "wheat",
+            "wateredToday": false
+          },
+          {
+            "status": "ready",
+            "cropId": "wheat",
+            "wateredToday": false
+          },
+          {
+            "status": "growing",
+            "cropId": "carrot",
+            "wateredToday": true
+          },
+          {
+            "status": "growing",
+            "cropId": "carrot",
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "day5-drought-and-weed",
+      "frame": "frames/day5-drought-and-weed.png",
+      "sha256": "55e29c3579cf11edb6f269d1f143f5d85a131f2a18fc4440955a57614b7c4983",
+      "dimensions": [
+        512,
+        340
+      ],
+      "tags": [
+        "weed",
+        "dry",
+        "recovery"
+      ],
+      "rpc": {
+        "day": 5,
+        "revision": 3,
+        "actionsLeft": 3,
+        "coins": 73,
+        "xp": 24,
+        "plots": [
+          {
+            "status": "weed",
+            "cropId": null,
+            "wateredToday": false
+          },
+          {
+            "status": "growing",
+            "cropId": "carrot",
+            "wateredToday": false
+          },
+          {
+            "status": "growing",
+            "cropId": "wheat",
+            "wateredToday": true
+          },
+          {
+            "status": "ready",
+            "cropId": "carrot",
+            "wateredToday": false
+          },
+          {
+            "status": "ready",
+            "cropId": "wheat",
+            "wateredToday": false
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "day7-strawberry-chain",
+      "frame": "frames/day7-strawberry-chain.png",
+      "sha256": "cd590249555a73b92bfddde40eb6a0b99e5c87cf4870cf71ab6825d9ff71e3ea",
+      "dimensions": [
+        512,
+        340
+      ],
+      "tags": [
+        "strawberry",
+        "long-horizon"
+      ],
+      "rpc": {
+        "day": 7,
+        "revision": 4,
+        "actionsLeft": 1,
+        "coins": 91,
+        "xp": 36,
+        "plots": [
+          {
+            "status": "growing",
+            "cropId": "strawberry",
+            "wateredToday": true
+          },
+          {
+            "status": "growing",
+            "cropId": "strawberry",
+            "wateredToday": true
+          },
+          {
+            "status": "growing",
+            "cropId": "strawberry",
+            "wateredToday": false
+          },
+          {
+            "status": "ready",
+            "cropId": "strawberry",
+            "wateredToday": false
+          },
+          {
+            "status": "growing",
+            "cropId": "carrot",
+            "wateredToday": true
+          },
+          {
+            "status": "empty",
+            "cropId": null,
+            "wateredToday": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "day9-final-harvest",
+      "frame": "frames/day9-final-harvest.png",
+      "sha256": "8ba1abe56d052da70a227bf1bccadb2d86faf6187c4bd9bfd4e54413240b1e0e",
+      "dimensions": [
+        512,
+        340
+      ],
+      "tags": [
+        "final-day",
+        "ready",
+        "dense"
+      ],
+      "rpc": {
+        "day": 9,
+        "revision": 5,
+        "actionsLeft": 2,
+        "coins": 248,
+        "xp": 58,
+        "plots": [
+          {
+            "status": "ready",
+            "cropId": "strawberry",
+            "wateredToday": false
+          },
+          {
+            "status": "ready",
+            "cropId": "strawberry",
+            "wateredToday": false
+          },
+          {
+            "status": "ready",
+            "cropId": "strawberry",
+            "wateredToday": false
+          },
+          {
+            "status": "ready",
+            "cropId": "carrot",
+            "wateredToday": false
+          },
+          {
+            "status": "ready",
+            "cropId": "wheat",
+            "wateredToday": false
+          },
+          {
+            "status": "weed",
+            "cropId": null,
+            "wateredToday": false
+          }
+        ]
+      }
+    }
+  ]
+}

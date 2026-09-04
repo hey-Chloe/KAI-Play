@@ -17,7 +17,12 @@ import {
 export const FARM_AGENT_POLICIES = Object.freeze({
   myopic: Object.freeze({ id:'myopic', label:'即时贪心基线', description:'只种周转最快的小麦，不做长期解锁规划。' }),
   hierarchical: Object.freeze({ id:'hierarchical', label:'层级规划 Agent', description:'按解锁、成长和金牌目标分阶段执行。' }),
-  skill_memory: Object.freeze({ id:'skill_memory', label:'Skill + Memory Agent', description:'在层级规划上记录技能结果，并从失败中重规划。' }),
+  skill_memory: Object.freeze({ id:'skill_memory', label:'Skill + Memory Agent', description:'记录失败并检索历史成功 Skill 宏，持续重规划。' }),
+});
+
+export const FARM_AGENT_VISUAL_MODES = Object.freeze({
+  shadow: Object.freeze({ id:'shadow', label:'视觉旁路', description:'记录 VLM 判断和延迟，但继续以 RPC 真值执行。' }),
+  guard: Object.freeze({ id:'guard', label:'视觉守卫', description:'画面与 RPC 冲突或 VLM 离线时暂停动作并请求重规划。' }),
 });
 
 export const FARM_AGENT_GOAL = Object.freeze({
@@ -51,7 +56,11 @@ export const FARM_AGENT_SKILLS = Object.freeze([
   }),
 ]);
 
+export const FARM_AGENT_MEMORY_SCHEMA_VERSION = 1;
+export const FARM_AGENT_MEMORY_LIMIT = 20;
+
 const POLICY_IDS = new Set(Object.keys(FARM_AGENT_POLICIES));
+const VISUAL_MODE_IDS = new Set(Object.keys(FARM_AGENT_VISUAL_MODES));
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -93,7 +102,13 @@ function currentSubgoal(game, policy) {
   return '收获成熟草莓，使金币达到金牌线';
 }
 
-function buildPlan(game, policy) {
+function bestMacroFor(memory, policy) {
+  return memory?.macros
+    ?.filter((macro) => macro.policy === policy && macro.successes > 0)
+    .sort((left, right) => right.successes - left.successes || right.bestFinalCoins - left.bestFinalCoins)[0] || null;
+}
+
+function buildPlan(game, policy, longTermMemory = null) {
   const phases = policy === 'myopic'
     ? [{ id:'cash-now', label:'重复种植小麦并立即出售', status:game.status === 'finished' ? 'completed' : 'active' }]
     : [
@@ -101,11 +116,36 @@ function buildPlan(game, policy) {
       { id:'unlock-strawberry', label:'胡萝卜成长 · 解锁草莓', status:game.xp >= 30 ? 'completed' : game.xp >= 10 ? 'active' : 'pending' },
       { id:'gold-harvest', label:'草莓三日成长 · 冲击金牌', status:game.status === 'finished' ? 'completed' : game.xp >= 30 ? 'active' : 'pending' },
     ];
-  return { goal:FARM_AGENT_GOAL, subgoal:currentSubgoal(game, policy), phases };
+  const macro = policy === 'skill_memory' ? bestMacroFor(longTermMemory, policy) : null;
+  return {
+    goal:FARM_AGENT_GOAL,
+    subgoal:currentSubgoal(game, policy),
+    phases,
+    memoryHint:macro ? `检索到 ${macro.successes} 次成功轨迹，复用 ${macro.sequence.length} 步 Skill 宏作为计划先验。` : null,
+  };
 }
 
-export function observeFarmAgent(game, { history = [], frame = null, uiText = '' } = {}) {
+function normalizeVisualObservation(value) {
+  if (!value || typeof value !== 'object' || typeof value.matched !== 'boolean') return null;
+  const usage = value.usage && typeof value.usage === 'object' ? value.usage : {};
+  return {
+    matched:value.matched,
+    label:typeof value.label === 'string' ? value.label : null,
+    expectedLabel:typeof value.expectedLabel === 'string' ? value.expectedLabel : null,
+    model:typeof value.model === 'string' ? value.model : null,
+    latencyMs:Number.isFinite(value.latencyMs) && value.latencyMs >= 0 ? Number(value.latencyMs) : null,
+    structuredObservation:value.structuredObservation && typeof value.structuredObservation === 'object'
+      ? clone(value.structuredObservation) : null,
+    usage:{
+      inputTokens:Number.isSafeInteger(usage.inputTokens) && usage.inputTokens >= 0 ? usage.inputTokens : null,
+      outputTokens:Number.isSafeInteger(usage.outputTokens) && usage.outputTokens >= 0 ? usage.outputTokens : null,
+    },
+  };
+}
+
+export function observeFarmAgent(game, { history = [], frame = null, uiText = '', visualObservation = null } = {}) {
   const restored = requireGame(game);
+  const visual = normalizeVisualObservation(visualObservation);
   const market = farmMarketForDay(restored.day);
   const objects = restored.plots.map((plot, index) => {
     const status = farmPlotStatus(plot);
@@ -136,6 +176,10 @@ export function observeFarmAgent(game, { history = [], frame = null, uiText = ''
         status:restored.status, selectedCrop:restored.selectedCrop,
       },
       history:history.slice(-8).map((entry) => ({ step:entry.step, action:entry.action, outcome:entry.outcome })),
+      vision:visual ? {
+        source:'vlm', matched:visual.matched, model:visual.model, latencyMs:visual.latencyMs,
+        structuredObservation:visual.structuredObservation,
+      } : null,
     },
     summary:{
       ready:objects.filter((plot) => plot.status === 'ready').map((plot) => plot.position),
@@ -196,22 +240,154 @@ function newSkillStats() {
   return Object.fromEntries(FARM_AGENT_SKILLS.map((skill) => [skill.id, { uses:0, successes:0, failures:0 }]));
 }
 
-export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_memory', injectFailureAtStep = null } = {}) {
+export function emptyFarmAgentLongTermMemory() {
+  return {
+    schemaVersion:FARM_AGENT_MEMORY_SCHEMA_VERSION,
+    totalEpisodes:0,
+    episodes:[],
+    macros:[],
+    skillStats:newSkillStats(),
+  };
+}
+
+function safeCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? Math.min(value, 1_000_000) : 0;
+}
+
+function safeSkillSequence(value) {
+  if (!Array.isArray(value) || value.length > 96) return null;
+  const allowed = new Set(FARM_AGENT_SKILLS.map((skill) => skill.id));
+  return value.every((skillId) => allowed.has(skillId)) ? [...value] : null;
+}
+
+export function restoreFarmAgentLongTermMemory(value) {
+  const empty = emptyFarmAgentLongTermMemory();
+  if (!value || typeof value !== 'object' || value.schemaVersion !== FARM_AGENT_MEMORY_SCHEMA_VERSION) return empty;
+  const episodes = Array.isArray(value.episodes) ? value.episodes.slice(-FARM_AGENT_MEMORY_LIMIT).flatMap((episode) => {
+    const sequence = safeSkillSequence(episode?.skillSequence);
+    if (!episode || typeof episode !== 'object' || !POLICY_IDS.has(episode.policy) || !sequence) return [];
+    return [{
+      id:typeof episode.id === 'string' ? episode.id.slice(0, 80) : `episode-restored-${safeCount(value.totalEpisodes)}`,
+      goalId:episode.goalId === FARM_AGENT_GOAL.id ? episode.goalId : FARM_AGENT_GOAL.id,
+      policy:episode.policy,
+      success:episode.success === true,
+      finalCoins:safeCount(episode.finalCoins),
+      finalRevision:safeCount(episode.finalRevision),
+      xp:safeCount(episode.xp),
+      harvests:safeCount(episode.harvests),
+      medal:['gold','silver','bronze','none'].includes(episode.medal) ? episode.medal : 'none',
+      steps:safeCount(episode.steps),
+      uniqueSkills:safeCount(episode.uniqueSkills),
+      recoveries:safeCount(episode.recoveries),
+      visualObservations:safeCount(episode.visualObservations),
+      lesson:typeof episode.lesson === 'string' ? episode.lesson.slice(0, 240) : '',
+      skillSequence:sequence,
+      invalidActions:safeCount(episode.invalidActions),
+      visualBlocks:safeCount(episode.visualBlocks),
+    }];
+  }) : [];
+  const macros = Array.isArray(value.macros) ? value.macros.slice(-FARM_AGENT_MEMORY_LIMIT).flatMap((macro) => {
+    const sequence = safeSkillSequence(macro?.sequence);
+    if (!macro || typeof macro !== 'object' || !POLICY_IDS.has(macro.policy) || !sequence?.length) return [];
+    return [{
+      id:typeof macro.id === 'string' ? macro.id.slice(0, 80) : `macro-${macro.policy}`,
+      policy:macro.policy,
+      sequence,
+      successes:safeCount(macro.successes),
+      uses:safeCount(macro.uses),
+      bestFinalCoins:safeCount(macro.bestFinalCoins),
+    }];
+  }) : [];
+  const skillStats = newSkillStats();
+  for (const skill of FARM_AGENT_SKILLS) {
+    const stats = value.skillStats?.[skill.id];
+    skillStats[skill.id] = {
+      uses:safeCount(stats?.uses),
+      successes:safeCount(stats?.successes),
+      failures:safeCount(stats?.failures),
+    };
+  }
+  return {
+    schemaVersion:FARM_AGENT_MEMORY_SCHEMA_VERSION,
+    totalEpisodes:Math.max(safeCount(value.totalEpisodes), episodes.length),
+    episodes,
+    macros,
+    skillStats,
+  };
+}
+
+function successfulSkillSequence(trajectory) {
+  const sequence = [];
+  for (const entry of trajectory) {
+    if (!['success','done'].includes(entry.outcome) || !entry.skillId) continue;
+    if (sequence.at(-1) !== entry.skillId) sequence.push(entry.skillId);
+  }
+  return sequence;
+}
+
+function commitEpisodeToLongTermMemory(memory, session, episode) {
+  const next = restoreFarmAgentLongTermMemory(memory);
+  next.totalEpisodes += 1;
+  const skillSequence = successfulSkillSequence(session.trajectory);
+  const stored = {
+    ...episode,
+    id:`farm-episode-${next.totalEpisodes}`,
+    skillSequence,
+    invalidActions:session.metrics.invalidActions,
+    visualBlocks:session.metrics.visualBlocks,
+  };
+  next.episodes = [...next.episodes, stored].slice(-FARM_AGENT_MEMORY_LIMIT);
+  for (const skill of FARM_AGENT_SKILLS) {
+    const current = session.memory.skillStats[skill.id];
+    next.skillStats[skill.id].uses += current.uses;
+    next.skillStats[skill.id].successes += current.successes;
+    next.skillStats[skill.id].failures += current.failures;
+  }
+  if (stored.success && skillSequence.length) {
+    const signature = `${stored.policy}:${skillSequence.join('>')}`;
+    const existing = next.macros.find((macro) => `${macro.policy}:${macro.sequence.join('>')}` === signature);
+    if (existing) {
+      existing.successes += 1;
+      existing.uses += 1;
+      existing.bestFinalCoins = Math.max(existing.bestFinalCoins, stored.finalCoins);
+    } else {
+      next.macros.push({
+        id:`farm-macro-${next.totalEpisodes}`,
+        policy:stored.policy,
+        sequence:skillSequence,
+        successes:1,
+        uses:1,
+        bestFinalCoins:stored.finalCoins,
+      });
+      next.macros = next.macros.slice(-FARM_AGENT_MEMORY_LIMIT);
+    }
+  }
+  return next;
+}
+
+export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_memory', visualMode = 'shadow', injectFailureAtStep = null, longTermMemory = null } = {}) {
   if (!POLICY_IDS.has(policy)) throw new Error('FARM_AGENT_POLICY_INVALID');
+  if (!VISUAL_MODE_IDS.has(visualMode)) throw new Error('FARM_AGENT_VISUAL_MODE_INVALID');
+  const restoredGame = requireGame(game);
+  const restoredMemory = restoreFarmAgentLongTermMemory(longTermMemory);
+  const retrievedMacro = policy === 'skill_memory' ? bestMacroFor(restoredMemory, policy) : null;
   return {
     schemaVersion:1,
     id:`farm-agent-${policy}`,
     policy,
+    visualMode,
     status:'ready',
-    game:requireGame(game),
+    game:restoredGame,
     goal:clone(FARM_AGENT_GOAL),
-    plan:buildPlan(game, policy),
+    plan:buildPlan(restoredGame, policy, restoredMemory),
     observation:null,
     activeSkill:null,
     reflection:'等待第一次观察。',
     trajectory:[],
-    memory:{ episodes:[], failures:[], skillStats:newSkillStats() },
-    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0 },
+    memory:{ episodes:[], failures:[], visualConflicts:[], skillStats:newSkillStats(), longTerm:restoredMemory },
+    retrievedMacro:retrievedMacro ? clone(retrievedMacro) : null,
+    macroCursor:0,
+    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0, macroMatches:0, visualObservations:0, visualMatches:0, visualMismatches:0, visualBlocks:0, visualLatencyMs:0, vlmInputTokens:0, vlmOutputTokens:0 },
     injectFailureAtStep:Number.isInteger(injectFailureAtStep) ? injectFailureAtStep : null,
     faultInjected:false,
     pendingRecovery:false,
@@ -228,10 +404,12 @@ function rememberSkill(session, skillId, succeeded) {
 
 function reasoningFor(session, action) {
   const skill = FARM_AGENT_SKILLS.find((entry) => entry.id === action.skillId);
-  const memoryHint = session.policy === 'skill_memory' && session.memory.failures.length
+  const failureHint = session.policy === 'skill_memory' && session.memory.failures.length
     ? `；已避开 ${session.memory.failures.length} 条失败动作记录`
     : '';
-  return `${session.plan.subgoal}。调用「${skill?.label || '直接决策'}」：${actionLabel(action)}${memoryHint}`;
+  const macroSkill = session.retrievedMacro?.sequence?.[session.macroCursor];
+  const macroHint = macroSkill && macroSkill === action.skillId ? '；当前动作与历史成功 Skill 宏匹配' : '';
+  return `${session.plan.subgoal}。调用「${skill?.label || '直接决策'}」：${actionLabel(action)}${failureHint}${macroHint}`;
 }
 
 function finishEpisode(session) {
@@ -241,25 +419,80 @@ function finishEpisode(session) {
   session.reflection = success
     ? `目标达成：${result.finalCoins} 金币，获得${result.medal === 'gold' ? '金牌' : result.medal}。`
     : `赛季完成但未达到 ${session.goal.targetCoins} 金币，需要调整作物与成长周期。`;
-  session.memory.episodes.push({
+  const episode = {
     goalId:session.goal.id,
     policy:session.policy,
     success,
     finalCoins:result?.finalCoins ?? session.game.coins,
+    finalRevision:session.game.revision,
+    xp:session.game.xp,
+    harvests:session.game.harvests,
     medal:result?.medal ?? farmSeasonMedal(session.game.coins),
     steps:session.trajectory.length,
+    uniqueSkills:session.metrics.uniqueSkills,
+    recoveries:session.metrics.recoveries,
+    visualObservations:session.metrics.visualObservations,
     lesson:session.reflection,
-  });
+  };
+  session.memory.episodes.push(episode);
+  session.memory.longTerm = commitEpisodeToLongTermMemory(session.memory.longTerm, session, episode);
 }
 
 export function stepFarmAgent(session, context = {}) {
   if (!session || !POLICY_IDS.has(session.policy)) throw new Error('FARM_AGENT_SESSION_INVALID');
   if (['succeeded','completed','blocked'].includes(session.status)) return session;
   session.status = 'running';
-  session.observation = observeFarmAgent(session.game, { history:session.trajectory, ...context });
-  session.plan = buildPlan(session.game, session.policy);
+  const visual = normalizeVisualObservation(context.visualObservation);
+  const visualRequired = context.visualRequired === true;
+  session.observation = observeFarmAgent(session.game, { history:session.trajectory, ...context, visualObservation:visual });
+  session.plan = buildPlan(session.game, session.policy, session.memory.longTerm);
   session.metrics.decisions += 1;
   session.metrics.estimatedTokens += Math.ceil(JSON.stringify(session.observation).length / 4);
+
+  if (visual) {
+    session.metrics.visualObservations += 1;
+    session.metrics[visual.matched ? 'visualMatches' : 'visualMismatches'] += 1;
+    session.metrics.visualLatencyMs += visual.latencyMs ?? 0;
+    session.metrics.vlmInputTokens += visual.usage.inputTokens ?? 0;
+    session.metrics.vlmOutputTokens += visual.usage.outputTokens ?? 0;
+  }
+  const guardReason = session.visualMode === 'guard' && (!visual || !visual.matched)
+    ? !visual && visualRequired ? 'VLM_UNAVAILABLE' : !visual ? null : 'VLM_RPC_MISMATCH'
+    : null;
+  if (guardReason) {
+    const before = { day:session.game.day, revision:session.game.revision, coins:session.game.coins, xp:session.game.xp };
+    const conflict = {
+      observationId:session.observation.id,
+      reason:guardReason,
+      label:visual?.label ?? null,
+      expectedLabel:visual?.expectedLabel ?? null,
+      frameRevision:visual?.structuredObservation?.frameRevision ?? session.game.revision,
+    };
+    session.memory.visualConflicts.push(conflict);
+    session.metrics.visualBlocks += 1;
+    session.metrics.replans += 1;
+    session.activeSkill = null;
+    session.status = 'guarded';
+    session.reflection = guardReason === 'VLM_UNAVAILABLE'
+      ? '视觉守卫未取得可靠观察，已暂停动作并保留当前状态。'
+      : '视觉观察与 RPC 真值冲突，已阻止动作并等待重新观察或人工确认。';
+    session.trajectory.push({
+      step:session.metrics.decisions,
+      observationId:session.observation.id,
+      goalId:session.goal.id,
+      subgoal:session.plan.subgoal,
+      skillId:null,
+      action:{ type:'hold', reason:guardReason },
+      actionLabel:'视觉守卫暂停动作',
+      reasoning:session.reflection,
+      before,
+      after:before,
+      outcome:'guarded',
+      error:guardReason,
+      visual,
+    });
+    return session;
+  }
 
   let action = chooseAction(session.game, session.policy);
   if (session.injectFailureAtStep === session.metrics.decisions && !session.faultInjected) {
@@ -269,6 +502,7 @@ export function stepFarmAgent(session, context = {}) {
   session.activeSkill = FARM_AGENT_SKILLS.find((entry) => entry.id === action.skillId) || null;
   const before = { day:session.game.day, revision:session.game.revision, coins:session.game.coins, xp:session.game.xp };
   const reasoning = reasoningFor(session, action);
+  const matchesRetrievedMacro = session.retrievedMacro?.sequence?.[session.macroCursor] === action.skillId;
   const entry = {
     step:session.metrics.decisions,
     observationId:session.observation.id,
@@ -278,6 +512,7 @@ export function stepFarmAgent(session, context = {}) {
     action:clone(action),
     actionLabel:actionLabel(action),
     reasoning,
+    visual,
     before,
     outcome:'pending',
   };
@@ -286,6 +521,10 @@ export function stepFarmAgent(session, context = {}) {
     session.game = executeAction(session.game, action);
     session.metrics.validActions += action.type === 'done' ? 0 : 1;
     rememberSkill(session, action.skillId, true);
+    if (matchesRetrievedMacro) {
+      session.macroCursor += 1;
+      session.metrics.macroMatches += 1;
+    }
     entry.outcome = action.type === 'done' ? 'done' : 'success';
     entry.after = { day:session.game.day, revision:session.game.revision, coins:session.game.coins, xp:session.game.xp };
     if (session.pendingRecovery) {
@@ -333,6 +572,14 @@ export function runFarmAgentEpisode(options = {}) {
       recoveryRate:session.metrics.invalidActions ? session.metrics.recoveries / session.metrics.invalidActions : null,
       decisions:session.metrics.decisions,
       estimatedTokens:session.metrics.estimatedTokens,
+      visualAgreementRate:session.metrics.visualObservations ? session.metrics.visualMatches / session.metrics.visualObservations : null,
+      visualBlocks:session.metrics.visualBlocks,
+      averageVisualLatencyMs:session.metrics.visualObservations ? session.metrics.visualLatencyMs / session.metrics.visualObservations : null,
+      vlmInputTokens:session.metrics.vlmInputTokens,
+      vlmOutputTokens:session.metrics.vlmOutputTokens,
+      longTermEpisodes:session.memory.longTerm.totalEpisodes,
+      reusedSkillMacro:Boolean(session.retrievedMacro && session.metrics.macroMatches > 0),
+      skillMacroCoverage:session.retrievedMacro?.sequence?.length ? session.metrics.macroMatches / session.retrievedMacro.sequence.length : null,
     },
   };
 }
@@ -346,4 +593,21 @@ export function evaluateFarmAgentPolicies() {
     const episode = runFarmAgentEpisode({ policy, injectFailureAtStep:task.injectFailureAtStep });
     return { task, policy:FARM_AGENT_POLICIES[policy], report:episode.report };
   }));
+}
+
+export function evaluateFarmAgentMemoryTransfer() {
+  const discovery = runFarmAgentEpisode({ policy:'skill_memory' });
+  const replay = runFarmAgentEpisode({ policy:'skill_memory', longTermMemory:discovery.memory.longTerm });
+  const recovery = runFarmAgentEpisode({ policy:'skill_memory', injectFailureAtStep:2, longTermMemory:discovery.memory.longTerm });
+  return {
+    discovery:discovery.report,
+    replay:replay.report,
+    recovery:recovery.report,
+    macro:{
+      sequenceLength:discovery.memory.longTerm.macros[0]?.sequence.length ?? 0,
+      storedEpisodes:discovery.memory.longTerm.totalEpisodes,
+      replayMatchedSteps:replay.metrics.macroMatches,
+      recoveryMatchedSteps:recovery.metrics.macroMatches,
+    },
+  };
 }
