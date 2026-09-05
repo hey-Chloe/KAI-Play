@@ -102,28 +102,96 @@ function currentSubgoal(game, policy) {
   return '收获成熟草莓，使金币达到金牌线';
 }
 
+function activePhaseId(game, policy) {
+  if (policy === 'myopic') return 'cash-now';
+  if (game.xp < FARM_CROPS.carrot.unlockXp) return 'unlock-carrot';
+  if (game.xp < FARM_CROPS.strawberry.unlockXp) return 'unlock-strawberry';
+  return 'gold-harvest';
+}
+
+export function farmAgentActionId(action) {
+  if (!action || typeof action !== 'object') return 'invalid';
+  return [action.type, Number.isInteger(action.plotIndex) ? action.plotIndex : '-', action.cropId || '-'].join(':');
+}
+
+export function enumerateFarmAgentActions(game, policy = 'skill_memory') {
+  const restored = requireGame(game);
+  if (!POLICY_IDS.has(policy)) throw new Error('FARM_AGENT_POLICY_INVALID');
+  if (restored.status === 'finished') return [{
+    id:'done:-:-', rank:1, phaseId:activePhaseId(restored,policy), skillId:null,
+    action:{ type:'done' }, projected:{ coinDelta:0, xpDelta:0, harvestInDays:0 },
+  }];
+  const actions = [];
+  const phaseId = activePhaseId(restored,policy);
+  const add = (action, skillId, projected = {}) => actions.push({
+    id:farmAgentActionId(action), rank:actions.length + 1, phaseId, skillId,
+    action:{ ...action, skillId }, projected:{ coinDelta:0, xpDelta:0, harvestInDays:null, ...projected },
+  });
+  if (restored.actionsLeft > 0) {
+    for (const index of plotIndexes(restored,'ready')) {
+      const crop = FARM_CROPS[restored.plots[index].cropId];
+      add({ type:'harvest', plotIndex:index },'harvest_ready_crop',{ coinDelta:crop?.sellPrice || 0, xpDelta:crop?.xp || 0, harvestInDays:0 });
+    }
+    for (const index of plotIndexes(restored,'weed')) add({ type:'clear', plotIndex:index },'clear_failed_plot');
+    for (const index of plotIndexes(restored,'growing').filter((index)=>!restored.plots[index].wateredToday)) {
+      add({ type:'water', plotIndex:index },'care_for_growth',{ harvestInDays:farmRemainingDays(restored.plots[index]) });
+    }
+    const empty = plotIndexes(restored,'empty');
+    const target = targetCropFor(restored,policy);
+    const crops = availableCropIds(restored).filter((id)=>restored.coins >= FARM_CROPS[id].seedCost)
+      .sort((left,right)=>Number(right === target)-Number(left === target));
+    for (const cropId of crops) for (const plotIndex of empty) {
+      const crop = FARM_CROPS[cropId];
+      add({ type:'plant', plotIndex, cropId },'plant_for_subgoal',{ coinDelta:-crop.seedCost, xpDelta:crop.xp, harvestInDays:crop.growDays });
+    }
+  }
+  add({ type:'advance_day' },'advance_when_stable',{ harvestInDays:1 });
+  return actions;
+}
+
 function bestMacroFor(memory, policy) {
   return memory?.macros
     ?.filter((macro) => macro.policy === policy && macro.successes > 0)
     .sort((left, right) => right.successes - left.successes || right.bestFinalCoins - left.bestFinalCoins)[0] || null;
 }
 
-function buildPlan(game, policy, longTermMemory = null) {
+export function planFarmAgent(game, { policy = 'skill_memory', longTermMemory = null, excludedActionIds = [], previousPlan = null, trigger = 'initial' } = {}) {
+  const restored = requireGame(game);
+  if (!POLICY_IDS.has(policy)) throw new Error('FARM_AGENT_POLICY_INVALID');
+  const excluded = new Set(Array.isArray(excludedActionIds) ? excludedActionIds.filter((id)=>typeof id === 'string').slice(-12) : []);
   const phases = policy === 'myopic'
-    ? [{ id:'cash-now', label:'重复种植小麦并立即出售', status:game.status === 'finished' ? 'completed' : 'active' }]
+    ? [{ id:'cash-now', label:'重复种植小麦并立即出售', status:restored.status === 'finished' ? 'completed' : 'active' }]
     : [
-      { id:'unlock-carrot', label:'小麦启动 · 解锁胡萝卜', status:game.xp >= 10 ? 'completed' : 'active' },
-      { id:'unlock-strawberry', label:'胡萝卜成长 · 解锁草莓', status:game.xp >= 30 ? 'completed' : game.xp >= 10 ? 'active' : 'pending' },
-      { id:'gold-harvest', label:'草莓三日成长 · 冲击金牌', status:game.status === 'finished' ? 'completed' : game.xp >= 30 ? 'active' : 'pending' },
+      { id:'unlock-carrot', label:'小麦启动 · 解锁胡萝卜', status:restored.xp >= 10 ? 'completed' : 'active' },
+      { id:'unlock-strawberry', label:'胡萝卜成长 · 解锁草莓', status:restored.xp >= 30 ? 'completed' : restored.xp >= 10 ? 'active' : 'pending' },
+      { id:'gold-harvest', label:'草莓三日成长 · 冲击金牌', status:restored.status === 'finished' ? 'completed' : restored.xp >= 30 ? 'active' : 'pending' },
     ];
   const macro = policy === 'skill_memory' ? bestMacroFor(longTermMemory, policy) : null;
+  const candidates = enumerateFarmAgentActions(restored,policy);
+  const selected = candidates.find((candidate)=>!excluded.has(candidate.id)) || candidates.at(-1);
+  const revision = Math.max(1,Number.isSafeInteger(previousPlan?.revision) ? previousPlan.revision + 1 : 1);
   return {
+    id:`farm-plan-${restored.revision}-${revision}`,
+    revision,
+    stateRevision:restored.revision,
+    trigger,
     goal:FARM_AGENT_GOAL,
-    subgoal:currentSubgoal(game, policy),
+    subgoal:currentSubgoal(restored, policy),
+    activePhaseId:activePhaseId(restored,policy),
     phases,
-    memoryHint:[macro ? `检索到 ${macro.successes} 次成功轨迹，复用 ${macro.sequence.length} 步 Skill 宏作为计划先验。` : '',
+    candidates,
+    selectedActionId:selected?.id || null,
+    selectedAction:selected ? clone(selected.action) : { type:'done' },
+    selectedCandidateRank:selected?.rank ?? null,
+    alternativesConsidered:Math.max(0,candidates.length - 1),
+    excludedActionIds:[...excluded],
+    memoryHint:[macro ? `检索到 ${macro.successes} 次成功轨迹，用 ${macro.sequence.length} 步 Skill 宏核对当前执行序列。` : '',
       policy === 'skill_memory' && longTermMemory?.evolution?.active ? `自改进 Skill v${longTermMemory.evolution.version}：播种前验证收获期限，当前状态退步时回退基线。` : ''].filter(Boolean).join(' ') || null,
   };
+}
+
+function buildPlan(game, policy, longTermMemory = null) {
+  return planFarmAgent(game,{ policy,longTermMemory });
 }
 
 function normalizeVisualObservation(value) {
@@ -142,6 +210,20 @@ function normalizeVisualObservation(value) {
       outputTokens:Number.isSafeInteger(usage.outputTokens) && usage.outputTokens >= 0 ? usage.outputTokens : null,
     },
   };
+}
+
+export function farmVisualGuardReason(game, visualObservation, { required = false } = {}) {
+  const restored = requireGame(game);
+  const visual = normalizeVisualObservation(visualObservation);
+  if (!visual) return required ? 'VLM_UNAVAILABLE' : null;
+  if (!visual.matched) return 'VLM_RPC_MISMATCH';
+  const structured = visual.structuredObservation;
+  if (!structured || structured.scene !== 'farm') return 'VLM_STATE_MISMATCH';
+  if (!Number.isSafeInteger(structured.frameRevision) || structured.frameRevision !== restored.revision) return 'VLM_STALE_FRAME';
+  for (const [key,value] of [['day',restored.day],['actionsLeft',restored.actionsLeft],['coins',restored.coins],['xp',restored.xp]]) {
+    if (Object.hasOwn(structured,key) && structured[key] !== value) return 'VLM_STATE_MISMATCH';
+  }
+  return null;
 }
 
 export function observeFarmAgent(game, { history = [], frame = null, uiText = '', visualObservation = null } = {}) {
@@ -358,7 +440,7 @@ function learnFarmSkill(session) {
 }
 
 function selectSessionAction(session) {
-  const base = chooseAction(session.game,session.policy);
+  const base = session.plan?.selectedAction ? clone(session.plan.selectedAction) : chooseAction(session.game,session.policy);
   const variant = session.policy === 'skill_memory' ? session.memory.longTerm.evolution.active : null;
   const proposed = evolvedAction(session.game,base,variant);
   if (proposed === base) return base;
@@ -511,13 +593,14 @@ function commitEpisodeToLongTermMemory(memory, session, episode) {
   return next;
 }
 
-export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_memory', visualMode = 'shadow', injectFailureAtStep = null, longTermMemory = null } = {}) {
+export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_memory', visualMode = 'shadow', injectFailureAtStep = null, injectPlannedFailureAtStep = null, longTermMemory = null } = {}) {
   if (!POLICY_IDS.has(policy)) throw new Error('FARM_AGENT_POLICY_INVALID');
   if (!VISUAL_MODE_IDS.has(visualMode)) throw new Error('FARM_AGENT_VISUAL_MODE_INVALID');
   const restoredGame = requireGame(game);
   const restoredMemory = restoreFarmAgentLongTermMemory(longTermMemory);
   const restoredValidation = validateRestoredEvolution(restoredMemory);
   const retrievedMacro = policy === 'skill_memory' ? bestMacroFor(restoredMemory, policy) : null;
+  const initialPlan = buildPlan(restoredGame,policy,restoredMemory);
   return {
     schemaVersion:1,
     id:`farm-agent-${policy}`,
@@ -526,7 +609,7 @@ export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_m
     status:'ready',
     game:restoredGame,
     goal:clone(FARM_AGENT_GOAL),
-    plan:buildPlan(restoredGame, policy, restoredMemory),
+    plan:initialPlan,
     observation:null,
     activeSkill:null,
     reflection:'等待第一次观察。',
@@ -535,10 +618,14 @@ export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_m
     retrievedMacro:retrievedMacro ? clone(retrievedMacro) : null,
     macroCursor:0,
     evolutionEvent:restoredMemory.evolution.history.at(-1)?.status==='rollback' ? clone(restoredMemory.evolution.history.at(-1)) : null,
-    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0, macroMatches:0, evolvedActions:0, skillTrialRollouts:restoredValidation.rollouts, skillTrialSteps:restoredValidation.steps, visualObservations:0, visualMatches:0, visualMismatches:0, visualBlocks:0, visualLatencyMs:0, vlmInputTokens:0, vlmOutputTokens:0 },
+    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0, macroMatches:0, evolvedActions:0, skillTrialRollouts:restoredValidation.rollouts, skillTrialSteps:restoredValidation.steps, visualObservations:0, visualMatches:0, visualMismatches:0, visualBlocks:0, visualLatencyMs:0, vlmInputTokens:0, vlmOutputTokens:0, alternativeActionsConsidered:0 },
     injectFailureAtStep:Number.isInteger(injectFailureAtStep) ? injectFailureAtStep : null,
+    injectPlannedFailureAtStep:Number.isInteger(injectPlannedFailureAtStep) ? injectPlannedFailureAtStep : null,
     faultInjected:false,
     pendingRecovery:false,
+    failedActionIds:[],
+    failedStateRevision:null,
+    nextPlanTrigger:'initial',
   };
 }
 
@@ -593,8 +680,19 @@ export function stepFarmAgent(session, context = {}) {
   session.status = 'running';
   const visual = normalizeVisualObservation(context.visualObservation);
   const visualRequired = context.visualRequired === true;
+  if (session.failedStateRevision !== null && session.failedStateRevision !== session.game.revision) {
+    session.failedActionIds = [];
+    session.failedStateRevision = null;
+  }
   session.observation = observeFarmAgent(session.game, { history:session.trajectory, ...context, visualObservation:visual });
-  session.plan = buildPlan(session.game, session.policy, session.memory.longTerm);
+  session.plan = planFarmAgent(session.game, {
+    policy:session.policy,
+    longTermMemory:session.memory.longTerm,
+    excludedActionIds:session.failedActionIds,
+    previousPlan:session.plan,
+    trigger:session.nextPlanTrigger || 'state_changed',
+  });
+  session.nextPlanTrigger = 'state_changed';
   session.metrics.decisions += 1;
   session.metrics.estimatedTokens += Math.ceil(JSON.stringify(session.observation).length / 4);
 
@@ -605,8 +703,8 @@ export function stepFarmAgent(session, context = {}) {
     session.metrics.vlmInputTokens += visual.usage.inputTokens ?? 0;
     session.metrics.vlmOutputTokens += visual.usage.outputTokens ?? 0;
   }
-  const guardReason = session.visualMode === 'guard' && (!visual || !visual.matched)
-    ? !visual && visualRequired ? 'VLM_UNAVAILABLE' : !visual ? null : 'VLM_RPC_MISMATCH'
+  const guardReason = session.visualMode === 'guard'
+    ? farmVisualGuardReason(session.game,visual,{required:visualRequired})
     : null;
   if (guardReason) {
     const before = { day:session.game.day, revision:session.game.revision, coins:session.game.coins, xp:session.game.xp };
@@ -620,10 +718,15 @@ export function stepFarmAgent(session, context = {}) {
     session.memory.visualConflicts.push(conflict);
     session.metrics.visualBlocks += 1;
     session.metrics.replans += 1;
+    session.nextPlanTrigger = guardReason === 'VLM_STALE_FRAME' ? 'stale_visual_frame' : 'visual_guard';
     session.activeSkill = null;
     session.status = 'guarded';
     session.reflection = guardReason === 'VLM_UNAVAILABLE'
       ? '视觉守卫未取得可靠观察，已暂停动作并保留当前状态。'
+      : guardReason === 'VLM_STALE_FRAME'
+        ? '视觉帧已落后于当前 RPC 状态，已阻止动作并请求最新画面。'
+        : guardReason === 'VLM_STATE_MISMATCH'
+          ? '视觉结构化状态与当前环境不一致，已阻止动作并请求重新观察。'
       : '视觉观察与 RPC 真值冲突，已阻止动作并等待重新观察或人工确认。';
     session.trajectory.push({
       step:session.metrics.decisions,
@@ -639,6 +742,11 @@ export function stepFarmAgent(session, context = {}) {
       outcome:'guarded',
       error:guardReason,
       visual,
+      planId:session.plan.id,
+      planRevision:session.plan.revision,
+      replanTrigger:session.plan.trigger,
+      candidateRank:null,
+      alternativesConsidered:session.plan.alternativesConsidered,
     });
     return session;
   }
@@ -662,11 +770,20 @@ export function stepFarmAgent(session, context = {}) {
     actionLabel:actionLabel(action),
     reasoning,
     visual,
+    planId:session.plan.id,
+    planRevision:session.plan.revision,
+    replanTrigger:session.plan.trigger,
+    candidateRank:session.plan.selectedCandidateRank,
+    alternativesConsidered:session.plan.alternativesConsidered,
     before,
     outcome:'pending',
   };
 
   try {
+    if (context.rejectPlannedAction === true || (session.injectPlannedFailureAtStep === session.metrics.decisions && !session.faultInjected)) {
+      session.faultInjected = true;
+      throw new Error('PLANNED_ACTION_REJECTED');
+    }
     session.game = executeAction(session.game, action);
     if (action.evolvedSkill) session.metrics.evolvedActions += 1;
     session.metrics.validActions += action.type === 'done' ? 0 : 1;
@@ -680,11 +797,13 @@ export function stepFarmAgent(session, context = {}) {
     if (session.pendingRecovery) {
       session.metrics.recoveries += 1;
       session.pendingRecovery = false;
+      session.metrics.alternativeActionsConsidered += Math.max(1,session.plan.selectedCandidateRank - 1);
       session.reflection = `替代路径成功：${actionLabel(action)}。`;
     } else {
       session.reflection = `执行成功：${actionLabel(action)}。下一步根据新状态重规划。`;
     }
     if (action.evolvedSkill) session.reflection += ` 自改进 Skill v${session.memory.longTerm.evolution.version} 已修订原动作，避免无法兑现的播种。`;
+    session.nextPlanTrigger = 'state_changed';
   } catch (error) {
     session.metrics.invalidActions += 1;
     session.metrics.replans += 1;
@@ -693,6 +812,9 @@ export function stepFarmAgent(session, context = {}) {
     entry.error = error?.message || 'UNKNOWN_ACTION_ERROR';
     session.memory.failures.push({ observationId:session.observation.id, action:clone(action), error:entry.error });
     session.pendingRecovery = true;
+    session.failedActionIds = [...new Set([...session.failedActionIds,farmAgentActionId(action)])].slice(-12);
+    session.failedStateRevision = session.game.revision;
+    session.nextPlanTrigger = 'action_failed';
     session.reflection = `动作失败（${entry.error}），保留环境状态并搜索替代路径。`;
   }
   session.trajectory.push(entry);
@@ -736,17 +858,19 @@ export function runFarmAgentEpisode(options = {}) {
       activeEvolvedSkill:session.memory.longTerm.evolution.active,
       skillTrialRollouts:session.metrics.skillTrialRollouts,
       skillTrialSteps:session.metrics.skillTrialSteps,
+      planRevisions:session.plan.revision,
+      alternativeActionsConsidered:session.metrics.alternativeActionsConsidered,
     },
   };
 }
 
 export function evaluateFarmAgentPolicies() {
   const tasks = [
-    { id:'normal-season', label:'标准九日赛季', injectFailureAtStep:null },
-    { id:'action-recovery', label:'含一次无效动作的恢复任务', injectFailureAtStep:2 },
+    { id:'normal-season', label:'标准九日赛季', options:{} },
+    { id:'action-recovery', label:'含一次被环境拒绝动作的替代路径任务', options:{ injectPlannedFailureAtStep:2 } },
   ];
   return Object.keys(FARM_AGENT_POLICIES).flatMap((policy) => tasks.map((task) => {
-    const episode = runFarmAgentEpisode({ policy, injectFailureAtStep:task.injectFailureAtStep });
+    const episode = runFarmAgentEpisode({ policy, ...task.options });
     return { task, policy:FARM_AGENT_POLICIES[policy], report:episode.report };
   }));
 }
@@ -754,7 +878,7 @@ export function evaluateFarmAgentPolicies() {
 export function evaluateFarmAgentMemoryTransfer() {
   const discovery = runFarmAgentEpisode({ policy:'skill_memory' });
   const replay = runFarmAgentEpisode({ policy:'skill_memory', longTermMemory:discovery.memory.longTerm });
-  const recovery = runFarmAgentEpisode({ policy:'skill_memory', injectFailureAtStep:2, longTermMemory:discovery.memory.longTerm });
+  const recovery = runFarmAgentEpisode({ policy:'skill_memory', injectPlannedFailureAtStep:2, longTermMemory:discovery.memory.longTerm });
   return {
     discovery:discovery.report,
     replay:replay.report,

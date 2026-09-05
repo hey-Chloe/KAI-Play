@@ -6,9 +6,13 @@ import {
   FARM_AGENT_VISUAL_MODES,
   createFarmAgentSession,
   emptyFarmAgentLongTermMemory,
+  enumerateFarmAgentActions,
   evaluateFarmAgentMemoryTransfer,
   evaluateFarmAgentPolicies,
+  farmAgentActionId,
+  farmVisualGuardReason,
   observeFarmAgent,
+  planFarmAgent,
   restoreFarmAgentLongTermMemory,
   runFarmAgentEpisode,
   stepFarmAgent,
@@ -43,6 +47,37 @@ test('farm agent session exposes goal, hierarchical plan, skill library stats, a
   assert.equal(session.trajectory.length, 1);
   assert.equal(session.trajectory[0].outcome, 'success');
   assert.equal(session.activeSkill?.id, 'plant_for_subgoal');
+});
+
+test('executable plans select an active-phase candidate and expose bounded alternatives', () => {
+  const game = newFarmGame();
+  const candidates = enumerateFarmAgentActions(game,'skill_memory');
+  assert.equal(candidates.length,7);
+  assert.equal(candidates[0].id,'plant:0:wheat');
+  assert.equal(candidates.at(-1)?.id,'advance_day:-:-');
+  const plan = planFarmAgent(game,{policy:'skill_memory'});
+  assert.equal(plan.activePhaseId,'unlock-carrot');
+  assert.equal(plan.selectedActionId,candidates[0].id);
+  assert.deepEqual(plan.selectedAction,candidates[0].action);
+  assert.equal(plan.alternativesConsidered,6);
+  assert.equal(farmAgentActionId(plan.selectedAction),'plant:0:wheat');
+  assert.throws(()=>enumerateFarmAgentActions(game,'unknown'),/FARM_AGENT_POLICY_INVALID/);
+});
+
+test('a rejected planned action is excluded and the next plan executes a real alternative', () => {
+  const session = createFarmAgentSession({ policy:'skill_memory' });
+  stepFarmAgent(session,{rejectPlannedAction:true});
+  assert.equal(session.game.revision,0);
+  assert.equal(session.trajectory[0].action.plotIndex,0);
+  assert.equal(session.trajectory[0].error,'PLANNED_ACTION_REJECTED');
+  assert.deepEqual(session.failedActionIds,['plant:0:wheat']);
+  stepFarmAgent(session);
+  assert.equal(session.trajectory[1].replanTrigger,'action_failed');
+  assert.equal(session.trajectory[1].action.plotIndex,1);
+  assert.equal(session.trajectory[1].candidateRank,2);
+  assert.equal(session.trajectory[1].outcome,'success');
+  assert.equal(session.metrics.recoveries,1);
+  assert.equal(session.metrics.alternativeActionsConsidered,1);
 });
 
 test('farm agent can take over the exact live game instead of resetting a parallel simulation', () => {
@@ -194,12 +229,30 @@ test('visual guard blocks a conflicting or unavailable frame without mutating ga
   assert.equal(session.metrics.visualMatches, 1);
 });
 
+test('visual guard rejects a matched but stale or structurally inconsistent frame', () => {
+  const game = newFarmGame();
+  const stale = { matched:true, structuredObservation:{scene:'farm',frameRevision:9}, usage:{} };
+  assert.equal(farmVisualGuardReason(game,stale),'VLM_STALE_FRAME');
+  assert.equal(farmVisualGuardReason(game,{matched:true,structuredObservation:{scene:'farm',frameRevision:0,coins:999},usage:{}}),'VLM_STATE_MISMATCH');
+  const session = createFarmAgentSession({ policy:'skill_memory', visualMode:'guard' });
+  const before = JSON.stringify(session.game);
+  stepFarmAgent(session,{visualRequired:true,visualObservation:stale});
+  assert.equal(JSON.stringify(session.game),before);
+  assert.equal(session.trajectory[0].error,'VLM_STALE_FRAME');
+  assert.equal(session.trajectory[0].replanTrigger,'initial');
+  assert.equal(session.nextPlanTrigger,'stale_visual_frame');
+});
+
 test('offline evaluation compares three policies across normal and recovery tasks', () => {
   const results = evaluateFarmAgentPolicies();
   assert.equal(results.length, 6);
   assert.deepEqual(new Set(results.map((entry) => entry.policy.id)), new Set(['myopic','hierarchical','skill_memory']));
   assert.deepEqual(new Set(results.map((entry) => entry.task.id)), new Set(['normal-season','action-recovery']));
   assert.equal(results.filter((entry) => entry.report.taskSuccess).length, 4);
+  const recoveries = results.filter((entry) => entry.task.id === 'action-recovery');
+  assert.ok(recoveries.every((entry) => entry.report.recoveryRate === 1));
+  assert.ok(recoveries.every((entry) => entry.report.alternativeActionsConsidered === 1));
+  assert.ok(results.every((entry) => entry.report.planRevisions === entry.report.decisions + 1));
 });
 
 test('offline memory-transfer evaluation separates discovery, replay, and recovery evidence', () => {

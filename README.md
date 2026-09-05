@@ -93,6 +93,7 @@ npm run agent:eval
 - [工程质量与容量边界](docs/ENGINEERING_QUALITY.md)
 - [Game Agent P0 能力与评测边界](docs/GAME_AGENT_P0.md)
 - [Game Skill 自改进、版本验收与回退](docs/GAME_SKILL_EVOLUTION.md)
+- [游戏多模态 Agent JD 对齐、证据边界与面试补习](docs/GAME_AGENT_JD_ALIGNMENT.md)
 - [VLM 研究接入、结构化视觉观察、视觉守卫与许可边界](docs/VLM_INTEGRATION.md)
 - `npm run agent:vlm-fixtures` 可重建六帧 KAI Farm 领域评测集；`npm run agent:vlm-eval` 在已连接模型时输出准确率、P50/P95 延迟和真实 Token 用量
 - [第三方素材与许可声明](THIRD_PARTY_NOTICES.md)

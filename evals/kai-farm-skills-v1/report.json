@@ -12,7 +12,9 @@
       "invalidActionRate": 0,
       "recoveryRate": "N/A",
       "skillCoverage": 0.6,
-      "estimatedTokens": 25510
+      "estimatedTokens": 25510,
+      "planRevisions": 55,
+      "alternativeActionsConsidered": 0
     },
     {
       "task": "action-recovery",
@@ -24,7 +26,9 @@
       "invalidActionRate": 0.0182,
       "recoveryRate": 1,
       "skillCoverage": 0.6,
-      "estimatedTokens": 26048
+      "estimatedTokens": 26014,
+      "planRevisions": 56,
+      "alternativeActionsConsidered": 1
     },
     {
       "task": "normal-season",
@@ -36,7 +40,9 @@
       "invalidActionRate": 0,
       "recoveryRate": "N/A",
       "skillCoverage": 0.8,
-      "estimatedTokens": 25405
+      "estimatedTokens": 25405,
+      "planRevisions": 55,
+      "alternativeActionsConsidered": 0
     },
     {
       "task": "action-recovery",
@@ -48,7 +54,9 @@
       "invalidActionRate": 0.0182,
       "recoveryRate": 1,
       "skillCoverage": 0.8,
-      "estimatedTokens": 25942
+      "estimatedTokens": 25908,
+      "planRevisions": 56,
+      "alternativeActionsConsidered": 1
     },
     {
       "task": "normal-season",
@@ -60,7 +68,9 @@
       "invalidActionRate": 0,
       "recoveryRate": "N/A",
       "skillCoverage": 0.8,
-      "estimatedTokens": 25405
+      "estimatedTokens": 25405,
+      "planRevisions": 55,
+      "alternativeActionsConsidered": 0
     },
     {
       "task": "action-recovery",
@@ -72,7 +82,9 @@
       "invalidActionRate": 0.0182,
       "recoveryRate": 1,
       "skillCoverage": 0.8,
-      "estimatedTokens": 25942
+      "estimatedTokens": 25908,
+      "planRevisions": 56,
+      "alternativeActionsConsidered": 1
     }
   ],
   "memoryTransfer": {
@@ -97,7 +109,9 @@
       "evolutionVersion": 0,
       "activeEvolvedSkill": null,
       "skillTrialRollouts": 0,
-      "skillTrialSteps": 0
+      "skillTrialSteps": 0,
+      "planRevisions": 55,
+      "alternativeActionsConsidered": 0
     },
     "replay": {
       "taskSuccess": true,
@@ -120,7 +134,9 @@
       "evolutionVersion": 0,
       "activeEvolvedSkill": null,
       "skillTrialRollouts": 0,
-      "skillTrialSteps": 0
+      "skillTrialSteps": 0,
+      "planRevisions": 55,
+      "alternativeActionsConsidered": 0
     },
     "recovery": {
       "taskSuccess": true,
@@ -130,7 +146,7 @@
       "invalidActionRate": 0.01818181818181818,
       "recoveryRate": 1,
       "decisions": 55,
-      "estimatedTokens": 25942,
+      "estimatedTokens": 25908,
       "visualAgreementRate": null,
       "visualBlocks": 0,
       "averageVisualLatencyMs": null,
@@ -143,7 +159,9 @@
       "evolutionVersion": 0,
       "activeEvolvedSkill": null,
       "skillTrialRollouts": 0,
-      "skillTrialSteps": 0
+      "skillTrialSteps": 0,
+      "planRevisions": 56,
+      "alternativeActionsConsidered": 1
     },
     "macro": {
       "sequenceLength": 18,
@@ -174,7 +192,9 @@
       "evolutionVersion": 1,
       "activeEvolvedSkill": "replace_late_plant",
       "skillTrialRollouts": 24,
-      "skillTrialSteps": 879
+      "skillTrialSteps": 879,
+      "planRevisions": 43,
+      "alternativeActionsConsidered": 0
     },
     "replay": {
       "taskSuccess": false,
@@ -197,7 +217,9 @@
       "evolutionVersion": 1,
       "activeEvolvedSkill": "replace_late_plant",
       "skillTrialRollouts": 22,
-      "skillTrialSteps": 553
+      "skillTrialSteps": 553,
+      "planRevisions": 43,
+      "alternativeActionsConsidered": 0
     },
     "evolution": {
       "suite": "farm-deadline-v1",
@@ -239,7 +261,9 @@
           "evolutionVersion": 0,
           "activeEvolvedSkill": null,
           "skillTrialRollouts": 0,
-          "skillTrialSteps": 0
+          "skillTrialSteps": 0,
+          "planRevisions": 37,
+          "alternativeActionsConsidered": 0
         },
         "after": {
           "taskSuccess": false,
@@ -262,7 +286,9 @@
           "evolutionVersion": 1,
           "activeEvolvedSkill": "replace_late_plant",
           "skillTrialRollouts": 14,
-          "skillTrialSteps": 460
+          "skillTrialSteps": 460,
+          "planRevisions": 32,
+          "alternativeActionsConsidered": 0
         }
       },
       {
@@ -288,7 +314,9 @@
           "evolutionVersion": 0,
           "activeEvolvedSkill": null,
           "skillTrialRollouts": 0,
-          "skillTrialSteps": 0
+          "skillTrialSteps": 0,
+          "planRevisions": 25,
+          "alternativeActionsConsidered": 0
         },
         "after": {
           "taskSuccess": false,
@@ -311,7 +339,9 @@
           "evolutionVersion": 1,
           "activeEvolvedSkill": "replace_late_plant",
           "skillTrialRollouts": 22,
-          "skillTrialSteps": 553
+          "skillTrialSteps": 553,
+          "planRevisions": 25,
+          "alternativeActionsConsidered": 0
         }
       }
     ],

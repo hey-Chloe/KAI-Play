@@ -124,7 +124,7 @@ test('the VLM guard blocks before an evolved Skill can act', () => {
   assert.equal(session.status,'guarded');
   assert.equal(JSON.stringify(session.game),before);
   assert.equal(session.metrics.evolvedActions,0);
-  stepFarmAgent(session,{visualRequired:true,visualObservation:{matched:true}});
+  stepFarmAgent(session,{visualRequired:true,visualObservation:{matched:true,structuredObservation:{scene:'farm',frameRevision:session.game.revision}}});
   assert.equal(session.game.status,'finished');
   assert.equal(session.game.coins,36);
   assert.equal(session.metrics.evolvedActions,1);

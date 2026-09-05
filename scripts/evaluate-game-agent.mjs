@@ -14,6 +14,8 @@ const rows = results.map(({ task, policy, report }) => ({
   recoveryRate:report.recoveryRate === null ? 'N/A' : Number(report.recoveryRate.toFixed(4)),
   skillCoverage:Number(report.contentCoverage.toFixed(4)),
   estimatedTokens:report.estimatedTokens,
+  planRevisions:report.planRevisions,
+  alternativeActionsConsidered:report.alternativeActionsConsidered,
 }));
 
 if (process.argv.includes('--json')) {
