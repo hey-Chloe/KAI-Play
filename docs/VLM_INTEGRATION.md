@@ -4,7 +4,7 @@
 
 KAI Play can send a rendered 512×340 farm observation frame through its authenticated backend to Kai's separate Qwen2.5-VL-3B-Instruct + ScienceQA LoRA service. The backend builds a bounded four-choice visual consistency question from the same RPC state, randomizes the correct answer position by revision, and maps the model's selected choice back into a structured farm observation containing day, resources, six plot states, frame revision, latency and measured input/output token counts.
 
-This is a real model-provider seam and a real raster input. It is **not** an end-to-end visual game policy: action selection still comes from the deterministic hierarchical/Skill + Memory baseline. The structured VLM result can now participate in execution through the explicit visual modes below. The ScienceQA adapter has not been trained or evaluated on KAI Farm screenshots, so its result remains a cross-domain observation experiment rather than strategy competence.
+This is a real model-provider seam and a real raster input. It is **not** an end-to-end visual game policy: action selection comes from a deterministic hierarchical/Skill + Memory baseline or the bounded UCT-MCTS policy. The structured VLM result can now participate in execution through the explicit visual modes below. The ScienceQA adapter has not been trained or evaluated on KAI Farm screenshots, so its result remains a cross-domain observation experiment rather than strategy competence.
 
 ## Agent execution modes
 

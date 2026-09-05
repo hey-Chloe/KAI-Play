@@ -13,11 +13,13 @@ import {
   restoreFarmGame,
   waterFarmCrop,
 } from './farm.js';
+import { searchFarmMcts } from './farm-mcts.js';
 
 export const FARM_AGENT_POLICIES = Object.freeze({
   myopic: Object.freeze({ id:'myopic', label:'即时贪心基线', description:'只种周转最快的小麦，不做长期解锁规划。' }),
   hierarchical: Object.freeze({ id:'hierarchical', label:'层级规划 Agent', description:'按解锁、成长和金牌目标分阶段执行。' }),
   skill_memory: Object.freeze({ id:'skill_memory', label:'Skill + Memory Agent', description:'复用成功经验，从亏损轨迹提出 Skill 修订，验收通过后再启用。' }),
+  mcts: Object.freeze({ id:'mcts', label:'MCTS 搜索 Agent', description:'每一步在可克隆规则环境中执行 64 次 UCT 树搜索。' }),
 });
 
 export const FARM_AGENT_VISUAL_MODES = Object.freeze({
@@ -168,7 +170,11 @@ export function planFarmAgent(game, { policy = 'skill_memory', longTermMemory = 
     ];
   const macro = policy === 'skill_memory' ? bestMacroFor(longTermMemory, policy) : null;
   const candidates = enumerateFarmAgentActions(restored,policy);
-  const selected = candidates.find((candidate)=>!excluded.has(candidate.id)) || candidates.at(-1);
+  const search = policy === 'mcts' ? searchFarmMcts(restored,{ excludedActionIds:[...excluded] }) : null;
+  const selected = search
+    ? candidates.find((candidate)=>candidate.id===search.selectedActionId&&!excluded.has(candidate.id))
+      || candidates.find((candidate)=>!excluded.has(candidate.id)) || candidates.at(-1)
+    : candidates.find((candidate)=>!excluded.has(candidate.id)) || candidates.at(-1);
   const revision = Math.max(1,Number.isSafeInteger(previousPlan?.revision) ? previousPlan.revision + 1 : 1);
   return {
     id:`farm-plan-${restored.revision}-${revision}`,
@@ -183,8 +189,9 @@ export function planFarmAgent(game, { policy = 'skill_memory', longTermMemory = 
     selectedActionId:selected?.id || null,
     selectedAction:selected ? clone(selected.action) : { type:'done' },
     selectedCandidateRank:selected?.rank ?? null,
-    alternativesConsidered:Math.max(0,candidates.length - 1),
+    alternativesConsidered:search ? Math.max(0,search.rootChildren.length - 1) : Math.max(0,candidates.length - 1),
     excludedActionIds:[...excluded],
+    search:search ? clone(search) : null,
     memoryHint:[macro ? `检索到 ${macro.successes} 次成功轨迹，用 ${macro.sequence.length} 步 Skill 宏核对当前执行序列。` : '',
       policy === 'skill_memory' && longTermMemory?.evolution?.active ? `自改进 Skill v${longTermMemory.evolution.version}：播种前验证收获期限，当前状态退步时回退基线。` : ''].filter(Boolean).join(' ') || null,
   };
@@ -618,7 +625,7 @@ export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_m
     retrievedMacro:retrievedMacro ? clone(retrievedMacro) : null,
     macroCursor:0,
     evolutionEvent:restoredMemory.evolution.history.at(-1)?.status==='rollback' ? clone(restoredMemory.evolution.history.at(-1)) : null,
-    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0, macroMatches:0, evolvedActions:0, skillTrialRollouts:restoredValidation.rollouts, skillTrialSteps:restoredValidation.steps, visualObservations:0, visualMatches:0, visualMismatches:0, visualBlocks:0, visualLatencyMs:0, vlmInputTokens:0, vlmOutputTokens:0, alternativeActionsConsidered:0 },
+    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0, macroMatches:0, evolvedActions:0, skillTrialRollouts:restoredValidation.rollouts, skillTrialSteps:restoredValidation.steps, mctsSearches:0, mctsRollouts:0, mctsExpandedNodes:0, visualObservations:0, visualMatches:0, visualMismatches:0, visualBlocks:0, visualLatencyMs:0, vlmInputTokens:0, vlmOutputTokens:0, alternativeActionsConsidered:0 },
     injectFailureAtStep:Number.isInteger(injectFailureAtStep) ? injectFailureAtStep : null,
     injectPlannedFailureAtStep:Number.isInteger(injectPlannedFailureAtStep) ? injectPlannedFailureAtStep : null,
     faultInjected:false,
@@ -644,7 +651,10 @@ function reasoningFor(session, action) {
     : '';
   const macroSkill = session.retrievedMacro?.sequence?.[session.macroCursor];
   const macroHint = macroSkill && macroSkill === action.skillId ? '；当前动作与历史成功 Skill 宏匹配' : '';
-  return `${session.plan.subgoal}。调用「${skill?.label || '直接决策'}」：${actionLabel(action)}${failureHint}${macroHint}${action.evolvedSkill?'；自改进 Skill：保证能在结算前收获':''}`;
+  const searchHint = session.plan.search?.algorithm === 'uct-mcts'
+    ? `；UCT-MCTS 完成 ${session.plan.search.rollouts} 次 rollout，所选根动作访问 ${session.plan.search.selectedVisits} 次`
+    : '';
+  return `${session.plan.subgoal}。调用「${skill?.label || '直接决策'}」：${actionLabel(action)}${failureHint}${macroHint}${searchHint}${action.evolvedSkill?'；自改进 Skill：保证能在结算前收获':''}`;
 }
 
 function finishEpisode(session) {
@@ -695,6 +705,11 @@ export function stepFarmAgent(session, context = {}) {
   session.nextPlanTrigger = 'state_changed';
   session.metrics.decisions += 1;
   session.metrics.estimatedTokens += Math.ceil(JSON.stringify(session.observation).length / 4);
+  if (session.plan.search?.algorithm === 'uct-mcts') {
+    session.metrics.mctsSearches += 1;
+    session.metrics.mctsRollouts += session.plan.search.rollouts;
+    session.metrics.mctsExpandedNodes += session.plan.search.expandedNodes;
+  }
 
   if (visual) {
     session.metrics.visualObservations += 1;
@@ -747,6 +762,7 @@ export function stepFarmAgent(session, context = {}) {
       replanTrigger:session.plan.trigger,
       candidateRank:null,
       alternativesConsidered:session.plan.alternativesConsidered,
+      search:session.plan.search ? clone(session.plan.search) : null,
     });
     return session;
   }
@@ -775,6 +791,7 @@ export function stepFarmAgent(session, context = {}) {
     replanTrigger:session.plan.trigger,
     candidateRank:session.plan.selectedCandidateRank,
     alternativesConsidered:session.plan.alternativesConsidered,
+    search:session.plan.search ? clone(session.plan.search) : null,
     before,
     outcome:'pending',
   };
@@ -858,6 +875,9 @@ export function runFarmAgentEpisode(options = {}) {
       activeEvolvedSkill:session.memory.longTerm.evolution.active,
       skillTrialRollouts:session.metrics.skillTrialRollouts,
       skillTrialSteps:session.metrics.skillTrialSteps,
+      mctsSearches:session.metrics.mctsSearches,
+      mctsRollouts:session.metrics.mctsRollouts,
+      mctsExpandedNodes:session.metrics.mctsExpandedNodes,
       planRevisions:session.plan.revision,
       alternativeActionsConsidered:session.metrics.alternativeActionsConsidered,
     },

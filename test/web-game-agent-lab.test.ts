@@ -35,7 +35,10 @@ test('Agent Lab renders real state, plan, trajectory, skills, memory, and honest
   assert.match(appSource, /视觉判断通过/);
   assert.match(appSource, /视觉守卫会暂停动作/);
   assert.match(appSource, /visualRequired:session\.visualMode===['"]guard['"]/);
-  assert.match(appSource, /MCTS \/ RL 待实验/);
+  assert.match(appSource, /UCT-MCTS 搜索/);
+  assert.match(appSource, /RL 待实验/);
+  assert.match(appSource, /UCT TREE SEARCH/);
+  assert.match(appSource, /累计 Rollout/);
   assert.match(appSource, /与 RPC 真值做跨域一致性判断/);
 });
 

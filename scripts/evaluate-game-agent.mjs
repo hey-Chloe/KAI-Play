@@ -16,10 +16,13 @@ const rows = results.map(({ task, policy, report }) => ({
   estimatedTokens:report.estimatedTokens,
   planRevisions:report.planRevisions,
   alternativeActionsConsidered:report.alternativeActionsConsidered,
+  mctsSearches:report.mctsSearches,
+  mctsRollouts:report.mctsRollouts,
+  mctsExpandedNodes:report.mctsExpandedNodes,
 }));
 
 if (process.argv.includes('--json')) {
-  console.log(JSON.stringify({ schemaVersion:3, environment:'kai-farm-v2', rows, memoryTransfer, evolution }, null, 2));
+  console.log(JSON.stringify({ schemaVersion:4, environment:'kai-farm-v2', rows, memoryTransfer, evolution }, null, 2));
 } else {
   console.log('KAI Play Game Agent · deterministic offline evaluation');
   console.table(rows);
@@ -35,5 +38,5 @@ if (process.argv.includes('--json')) {
     ...evolution.transfer.map((row)=>({ phase:row.id, before:row.before.finalCoins, coins:row.after.finalCoins, evolvedActions:row.after.evolvedActions })),
   ]);
   console.log(evolution.boundary);
-  console.log('Boundary: deterministic policy baselines and transparent trajectory retrieval; no external LLM/VLM inference or SFT/RL claim.');
+  console.log('Boundary: deterministic baselines plus bounded UCT-MCTS over the exact rule simulator; no external LLM/VLM inference, learned world model, or SFT/RL claim.');
 }

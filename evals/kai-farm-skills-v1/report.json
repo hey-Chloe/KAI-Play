@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "environment": "kai-farm-v2",
   "rows": [
     {
@@ -14,7 +14,10 @@
       "skillCoverage": 0.6,
       "estimatedTokens": 25510,
       "planRevisions": 55,
-      "alternativeActionsConsidered": 0
+      "alternativeActionsConsidered": 0,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0
     },
     {
       "task": "action-recovery",
@@ -28,7 +31,10 @@
       "skillCoverage": 0.6,
       "estimatedTokens": 26014,
       "planRevisions": 56,
-      "alternativeActionsConsidered": 1
+      "alternativeActionsConsidered": 1,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0
     },
     {
       "task": "normal-season",
@@ -42,7 +48,10 @@
       "skillCoverage": 0.8,
       "estimatedTokens": 25405,
       "planRevisions": 55,
-      "alternativeActionsConsidered": 0
+      "alternativeActionsConsidered": 0,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0
     },
     {
       "task": "action-recovery",
@@ -56,7 +65,10 @@
       "skillCoverage": 0.8,
       "estimatedTokens": 25908,
       "planRevisions": 56,
-      "alternativeActionsConsidered": 1
+      "alternativeActionsConsidered": 1,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0
     },
     {
       "task": "normal-season",
@@ -70,7 +82,10 @@
       "skillCoverage": 0.8,
       "estimatedTokens": 25405,
       "planRevisions": 55,
-      "alternativeActionsConsidered": 0
+      "alternativeActionsConsidered": 0,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0
     },
     {
       "task": "action-recovery",
@@ -84,7 +99,44 @@
       "skillCoverage": 0.8,
       "estimatedTokens": 25908,
       "planRevisions": 56,
-      "alternativeActionsConsidered": 1
+      "alternativeActionsConsidered": 1,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0
+    },
+    {
+      "task": "normal-season",
+      "policy": "mcts",
+      "success": true,
+      "finalCoins": 346,
+      "medal": "gold",
+      "decisions": 54,
+      "invalidActionRate": 0,
+      "recoveryRate": "N/A",
+      "skillCoverage": 0.8,
+      "estimatedTokens": 25405,
+      "planRevisions": 55,
+      "alternativeActionsConsidered": 0,
+      "mctsSearches": 54,
+      "mctsRollouts": 3456,
+      "mctsExpandedNodes": 3227
+    },
+    {
+      "task": "action-recovery",
+      "policy": "mcts",
+      "success": true,
+      "finalCoins": 346,
+      "medal": "gold",
+      "decisions": 55,
+      "invalidActionRate": 0.0182,
+      "recoveryRate": 1,
+      "skillCoverage": 0.8,
+      "estimatedTokens": 25908,
+      "planRevisions": 56,
+      "alternativeActionsConsidered": 4,
+      "mctsSearches": 55,
+      "mctsRollouts": 3520,
+      "mctsExpandedNodes": 3291
     }
   ],
   "memoryTransfer": {
@@ -110,6 +162,9 @@
       "activeEvolvedSkill": null,
       "skillTrialRollouts": 0,
       "skillTrialSteps": 0,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0,
       "planRevisions": 55,
       "alternativeActionsConsidered": 0
     },
@@ -135,6 +190,9 @@
       "activeEvolvedSkill": null,
       "skillTrialRollouts": 0,
       "skillTrialSteps": 0,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0,
       "planRevisions": 55,
       "alternativeActionsConsidered": 0
     },
@@ -160,6 +218,9 @@
       "activeEvolvedSkill": null,
       "skillTrialRollouts": 0,
       "skillTrialSteps": 0,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0,
       "planRevisions": 56,
       "alternativeActionsConsidered": 1
     },
@@ -193,6 +254,9 @@
       "activeEvolvedSkill": "replace_late_plant",
       "skillTrialRollouts": 24,
       "skillTrialSteps": 879,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0,
       "planRevisions": 43,
       "alternativeActionsConsidered": 0
     },
@@ -218,6 +282,9 @@
       "activeEvolvedSkill": "replace_late_plant",
       "skillTrialRollouts": 22,
       "skillTrialSteps": 553,
+      "mctsSearches": 0,
+      "mctsRollouts": 0,
+      "mctsExpandedNodes": 0,
       "planRevisions": 43,
       "alternativeActionsConsidered": 0
     },
@@ -262,6 +329,9 @@
           "activeEvolvedSkill": null,
           "skillTrialRollouts": 0,
           "skillTrialSteps": 0,
+          "mctsSearches": 0,
+          "mctsRollouts": 0,
+          "mctsExpandedNodes": 0,
           "planRevisions": 37,
           "alternativeActionsConsidered": 0
         },
@@ -287,6 +357,9 @@
           "activeEvolvedSkill": "replace_late_plant",
           "skillTrialRollouts": 14,
           "skillTrialSteps": 460,
+          "mctsSearches": 0,
+          "mctsRollouts": 0,
+          "mctsExpandedNodes": 0,
           "planRevisions": 32,
           "alternativeActionsConsidered": 0
         }
@@ -315,6 +388,9 @@
           "activeEvolvedSkill": null,
           "skillTrialRollouts": 0,
           "skillTrialSteps": 0,
+          "mctsSearches": 0,
+          "mctsRollouts": 0,
+          "mctsExpandedNodes": 0,
           "planRevisions": 25,
           "alternativeActionsConsidered": 0
         },
@@ -340,6 +416,9 @@
           "activeEvolvedSkill": "replace_late_plant",
           "skillTrialRollouts": 22,
           "skillTrialSteps": 553,
+          "mctsSearches": 0,
+          "mctsRollouts": 0,
+          "mctsExpandedNodes": 0,
           "planRevisions": 25,
           "alternativeActionsConsidered": 0
         }

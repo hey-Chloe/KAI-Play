@@ -13,7 +13,7 @@ The first agent iteration turns KAI Farm into a deterministic long-horizon bench
 - Successful trajectories are compressed into ordered Skill macros, aggregated by policy, retrieved on the next `skill_memory` run, and checked against the live Skill sequence. This proves retrieval usage but does not yet let the macro override the action policy.
 - Reflection and recovery after a rejected environment action.
 - Deterministic trajectory records containing observation, goal, subgoal, plan identity/revision, candidate rank, skill, action, reasoning, before/after state, and outcome.
-- Offline comparison of a myopic baseline, a hierarchical planner, and a Skill + Memory planner.
+- Offline comparison of a myopic baseline, a hierarchical planner, a Skill + Memory planner, and a bounded UCT-MCTS planner.
 - Metrics: task success, final coins, medal, skill coverage, invalid-action rate, recovery rate, decisions, and an observation-size token estimate.
 
 Run the benchmark:
@@ -32,6 +32,7 @@ The same command now emits a separate memory-transfer block: one discovery run, 
 | Myopic wheat baseline | Fail | Fail | 151 |
 | Hierarchical planner | Pass | Pass | 346 |
 | Skill + Memory planner | Pass | Pass | 346 |
+| UCT-MCTS (64 rollouts/action) | Pass | Pass | 346 |
 
 The deterministic memory-transfer check extracts an 18-step Skill macro from the successful route. Clean replay and planned-action rejection recovery both match all 18 macro steps and still finish at 346 coins; this is a same-environment retrieval-and-sequence check, not evidence that the macro improved reward or generalized across games.
 
@@ -47,6 +48,6 @@ When the VLM endpoint reports ready, each in-game action requests a fresh raster
 
 The additive [Skill self-improvement pass](GAME_SKILL_EVOLUTION.md) now repairs a specific planting-deadline failure from trajectories using two bounded candidate templates, isolated non-regression checks, versioned local memory, and runtime rollback. Unlike macro matching, accepted revisions change actions. This is constrained policy repair, not unrestricted learned Skill Discovery; the P0 baseline and model boundaries below still apply.
 
-P0 remains a deterministic, reproducible policy baseline. The provider seam can send a real raster observation to Kai's separately hosted ScienceQA VLM, map its bounded choice back into a structured farm state, and display agreement, latency and measured token use. Agent Lab defaults to `shadow` mode; the real farm route automatically uses `guard` whenever the endpoint is ready. Guard mode stops an action before state mutation when the visual choice disagrees with RPC truth or the provider is unavailable, then records a conflict and replan. This safety gate does **not** turn the VLM into the action policy and does not establish game-domain accuracy. The ordered Skill macro is transparent trajectory summarization and retrieval—not learned Skill Discovery, SFT/RL training, or a neural policy. There is still no LLM planner, production model-serving result, MCTS, or World Model.
+P0 remains deterministic and reproducible. The fourth policy is a real bounded UCT-MCTS search over cloned rule states: 64 rollouts per action, depth cap 72, fixed state-derived seed, root visit/value evidence, and explicit search-cost metrics. Its rollout policy uses farm-domain priors, so the evidence is single-environment planning—not a learned policy or cross-game generalization. The provider seam can send a real raster observation to Kai's separately hosted ScienceQA VLM, map its bounded choice back into a structured farm state, and display agreement, latency and measured token use. Agent Lab defaults to `shadow` mode; the real farm route automatically uses `guard` whenever the endpoint is ready. Guard mode stops an action before state mutation when the visual choice disagrees with RPC truth or the provider is unavailable, then records a conflict and replan. This safety gate does **not** turn the VLM into the action policy and does not establish game-domain accuracy. The ordered Skill macro is transparent trajectory summarization and retrieval—not learned Skill Discovery, SFT/RL training, or a neural policy. There is still no LLM planner, production model-serving result, RL training, learned World Model, or cross-game search result.
 
 The next research gate is to freeze a KAI Farm screenshot evaluation set and compare screenshot-only, shadow and guarded hybrid observations under the same latency/cost budget. Guard mode is currently a conservative consistency gate, not evidence that the ScienceQA adapter improves task success. See `VLM_INTEGRATION.md` for the bridge and license boundary.

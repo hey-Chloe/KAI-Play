@@ -14,10 +14,11 @@ KAI Play 当前是一个可复现的确定性长程 Game Agent 原型：农场�
 | Skill Library | 收获、清理、照料、播种、推进时间五个可调用 Skill | 已实现 | 初始 Skill 由人定义 |
 | Skill 学习 | 成功轨迹压缩为宏；迟播失败触发两种白名单修订候选，隔离试跑、晋级及运行时回退 | 受约束实现 | 不是生成代码、权重训练或通用 Skill Discovery |
 | Working / Episodic / Procedural Memory | 最近 8 步、最近 20 局、成功 Skill 序列宏；恢复时清洗不可信数据 | 已实现原型 | 无向量检索、跨设备和跨游戏泛化 |
+| MCTS 搜索 | 每步在可克隆规则环境中运行 64 次 UCT rollout；根节点保留全部合法动作，内部折叠对称空地；记录访问数、均值、扩展节点、深度与种子 | 已实现确定性原型 | rollout 使用领域先验，不是 learned policy；只在单一农场环境验证 |
 | VLM 与 RPC 协同 | Shadow 记录；Guard 在不一致、缺失、旧帧或结构状态冲突时先阻断再执行 | 已实现接入 | VLM 不负责规划，ScienceQA LoRA 未证明农场域效果 |
 | 评测 | 贪心、层级、Skill+Memory 对照；正常、故障恢复、Memory 迁移、Skill 修订场景 | 已实现离线骨架 | 尚无真实玩家在线长程评测 |
 | 自主目标生成与未知机制探索 | 无 | 待实现 | 不应把固定目标和规则已知环境称为开放探索 |
-| LLM / MCTS / RL / World Model | 无 | 待实验 | 规则引擎可作精确 simulator，但不是学习出的 World Model |
+| LLM / RL / World Model | 无 | 待实验 | 规则引擎是搜索使用的精确 simulator，但不是从数据学习出的 World Model |
 
 ## 当前数据流
 
@@ -29,6 +30,7 @@ KAI Play 当前是一个可复现的确定性长程 Game Agent 原型：农场�
 VLM Shadow / Guard（可选，先校验帧新鲜度）
   ↓
 固定高层目标 → 当前阶段 → 合法动作候选集
+  ↓（MCTS 策略：Selection → Expansion → Simulation → Backpropagation）
   ↓
 选择 Skill 与动作 → 规则引擎校验并执行
   ↓
@@ -67,7 +69,7 @@ RPC 是可靠真值和安全执行边界；VLM 证明像素观察链路并暴露
 
 ### MCTS 与 World Model
 
-MCTS 包含 Selection、Expansion、Simulation、Backpropagation。农场规则可以克隆状态并做反事实 rollout，适合以后实现 MCTS；当前仅对有限 Skill 候选做固定场景试跑，不是 MCTS。规则引擎是精确 simulator，也不能包装成从数据学习出的神经 World Model。
+当前 MCTS 策略完整执行 Selection、Expansion、Simulation、Backpropagation：每个真实动作前用固定种子运行 64 次 UCT rollout，最大深度 72；根节点比较全部合法动作，内部节点将等价空地折叠以控制分支。标准九日场景和一次动作拒绝恢复场景都能达到 346 金币，搜索成本、节点数和根动作价值进入 Trace。rollout policy 使用作物成长与旺需先验，因此它是 prior-guided MCTS，不是无先验的通用搜索，也不是学习出的 World Model。
 
 ### 长程 Agent 的五类风险
 
@@ -93,11 +95,11 @@ MCTS 包含 Selection、Expansion、Simulation、Backpropagation。农场规则�
 1. **真实 VLM 证据**：真实模型、GPU、checkpoint、30–100 张真实或扰动截图；比较 screenshot-only、RPC-only、Shadow、Guard 的准确率、成功率、P50/P95、失败率和 Token。
 2. **Planner 对照**：固定确定性 baseline，新增 schema 化 LLM planner；比较任务成功、无效动作、重规划成功率、延迟和 Token，不让 LLM 直接调用未校验工具。
 3. **探索环境**：加入隐藏市场规律或未知作物收益，评测机制发现率、状态覆盖、重复动作和机会成本。
-4. **真正搜索**：利用可克隆规则环境实现 bounded beam search 或 MCTS，并与固定 planner 在相同预算下比较。
+4. **搜索扩展**：当前 bounded UCT-MCTS 已作为第四个可运行策略；下一步冻结多起始状态与不同 rollout 预算，比较成功率、收益、节点数和延迟，并增加 held-out 机制。
 5. **轨迹与训练**：先导出成功、失败、恢复和 Skill 修订 JSONL，冻结 train/dev/test，再决定 SFT、行为克隆或 RL；没有足够轨迹前不声称训练效果。
 
 ## 履历口径
 
-可以写“实现可复现的多模态 Game Agent 研究原型，融合像素观察、文本、RPC 和轨迹；构建可执行层级计划、Skill/Memory、视觉守卫、失败候选排除、受约束 Skill 修订与离线评测”。
+可以写“实现可复现的多模态 Game Agent 研究原型，融合像素观察、文本、RPC 和轨迹；构建可执行层级计划、Skill/Memory、视觉守卫、失败候选排除、受约束 Skill 修订、UCT-MCTS 与离线评测”。
 
-不能写“实现通用自主游戏 Agent”“完成 MCTS/RL/World Model”“VLM 提升任务成功率”或“跨游戏泛化”。这些都尚无实验支持。
+不能写“实现通用自主游戏 Agent”“完成 RL/World Model”“VLM 提升任务成功率”或“跨游戏泛化”。当前 MCTS 只在确定性农场规则和固定预算下验证。

@@ -243,15 +243,15 @@ test('visual guard rejects a matched but stale or structurally inconsistent fram
   assert.equal(session.nextPlanTrigger,'stale_visual_frame');
 });
 
-test('offline evaluation compares three policies across normal and recovery tasks', () => {
+test('offline evaluation compares four policies across normal and recovery tasks', () => {
   const results = evaluateFarmAgentPolicies();
-  assert.equal(results.length, 6);
-  assert.deepEqual(new Set(results.map((entry) => entry.policy.id)), new Set(['myopic','hierarchical','skill_memory']));
+  assert.equal(results.length, 8);
+  assert.deepEqual(new Set(results.map((entry) => entry.policy.id)), new Set(['myopic','hierarchical','skill_memory','mcts']));
   assert.deepEqual(new Set(results.map((entry) => entry.task.id)), new Set(['normal-season','action-recovery']));
-  assert.equal(results.filter((entry) => entry.report.taskSuccess).length, 4);
+  assert.equal(results.filter((entry) => entry.report.taskSuccess).length, 6);
   const recoveries = results.filter((entry) => entry.task.id === 'action-recovery');
   assert.ok(recoveries.every((entry) => entry.report.recoveryRate === 1));
-  assert.ok(recoveries.every((entry) => entry.report.alternativeActionsConsidered === 1));
+  assert.ok(recoveries.every((entry) => entry.report.alternativeActionsConsidered >= 1));
   assert.ok(results.every((entry) => entry.report.planRevisions === entry.report.decisions + 1));
 });
 
