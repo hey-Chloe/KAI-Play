@@ -35,7 +35,7 @@ test('snapshots carry a validated schema version and checksum', async () => {
     await reloaded.load();
     assert.equal(reloaded.user(user.id)?.name, '持久化玩家');
     assert.equal(reloaded.userForToken(token)?.id, user.id);
-    assert.equal(reloaded.balance(user.id), 10_000);
+    assert.equal(reloaded.balance(user.id), 30_000);
   });
 });
 

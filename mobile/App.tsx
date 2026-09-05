@@ -39,9 +39,9 @@ function greetingForHour(hour = new Date().getHours()) {
 
 function productCopy(value: string) {
   return value
-    .replace(/新玩家欢迎赠豆/g, '新玩家初始竞技分')
-    .replace(/每日补助/g, '每日竞技分补给')
-    .replace(/欢乐豆/g, '竞技分')
+    .replace(/新玩家欢迎赠豆/g, '新玩家初始卡时豆')
+    .replace(/每日补助/g, '每日卡时豆补给')
+    .replace(/欢乐豆/g, '卡时豆')
     .replace(/补助/g, '补给')
     .replace(/扣豆/g, '扣分')
     .replace(/派奖/g, '结算');
@@ -102,7 +102,7 @@ function AppHeader({ profile, onHome }: { profile: Profile; onHome: () => void }
       <View style={styles.brandMark}><Text style={styles.brandMarkText}>K</Text></View>
       <View><Text style={styles.brand}>KAI PLAY</Text><Text style={styles.brandSub}>算力局</Text></View>
     </Pressable>
-    <View accessible accessibilityLabel={`竞技分 ${number(profile.balance)}，不可购买、转让或提现`} style={styles.balance}><View style={styles.scoreDot} /><Text style={styles.balanceText}>{number(profile.balance)}</Text><Text style={styles.balanceUnit}>竞技分</Text></View>
+    <View accessible accessibilityLabel={`卡时豆 ${number(profile.balance)}，不可购买、转让或提现`} style={styles.balance}><View style={styles.scoreDot} /><Text style={styles.balanceText}>{number(profile.balance)}</Text><Text style={styles.balanceUnit}>卡时豆</Text></View>
   </View>;
 }
 
@@ -149,7 +149,7 @@ function Lobby({ profile, busy, onQuick, onRelief, onCreateRoom, onJoinRoom }: {
       <View style={styles.heroBody}>
         <Pill icon="shield-checkmark" tone="lime">公平洗牌 · 服务端判定</Pill>
         <Text style={styles.modeTitle}>斗地主 · 三人争先</Text>
-        <Text style={styles.modeMeta}>竞技分保护性底分 · 最高 64 倍 · 不涉及现实资产</Text>
+        <Text style={styles.modeMeta}>卡时豆保护性底分 · 最高 64 倍 · 不涉及现实资产</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="快速开始三人争先" accessibilityHint="立即匹配一局三人牌局" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={onQuick} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, busy && { opacity: 0.7 }]}>
           {busy ? <ActivityIndicator color={C.deep} /> : <><Text style={styles.primaryText}>{profile.games === 0 ? '开始首局' : '快速人机'}</Text><Ionicons name="arrow-forward" size={20} color={C.deep} /></>}
         </Pressable>
@@ -172,15 +172,15 @@ function Lobby({ profile, busy, onQuick, onRelief, onCreateRoom, onJoinRoom }: {
       </View>
     </View>
 
-    {profile.balance < 2_000 ? <Pressable accessibilityRole="button" accessibilityLabel="领取今日竞技分补给" accessibilityHint="将低竞技分免费补足至两千分" onPress={onRelief} style={styles.reliefCard}>
+    {!profile.dailyReward?.claimed ? <Pressable accessibilityRole="button" accessibilityLabel="领取今日 3,000 卡时豆" accessibilityHint="北京时间每天可领取一次" disabled={busy} onPress={onRelief} style={styles.reliefCard}>
       <View style={styles.reliefIcon}><Ionicons name="gift-outline" size={22} color={C.gold} /></View>
-      <View style={{ flex: 1 }}><Text style={styles.reliefTitle}>今日竞技分补给</Text><Text style={styles.reliefCopy}>低于门槛时可免费补足至 2,000 分</Text></View>
+      <View style={{ flex: 1 }}><Text style={styles.reliefTitle}>每日上线领 3,000 卡时豆</Text><Text style={styles.reliefCopy}>新用户另送 30,000 · 每日限领一次</Text></View>
       <Ionicons name="chevron-forward" size={20} color={C.muted} />
     </Pressable> : null}
 
     <View style={styles.policyCard}>
       <Ionicons name="leaf-outline" size={22} color={C.lime} />
-      <View style={{ flex: 1 }}><Text style={styles.policyTitle}>竞技分只记录游戏表现</Text><Text style={styles.policyCopy}>不可购买 · 不可提现 · 不可转让 · 不可兑换</Text></View>
+      <View style={{ flex: 1 }}><Text style={styles.policyTitle}>卡时豆只记录游戏表现</Text><Text style={styles.policyCopy}>不可购买 · 不可提现 · 不可转让 · 不可兑换</Text></View>
     </View>
 
   </ScrollView>;
@@ -209,7 +209,7 @@ function RoomScreen({ room, busy, onStart, onLeave, onShare }: {
     <View style={styles.roomNotice}><Ionicons name="sync-outline" size={17} color={C.lime} /><Text style={styles.roomNoticeText}>房间状态自动同步，无需手动刷新</Text></View>
     <View style={{ flex: 1 }} />
     {room.isHost ? <Pressable accessibilityRole="button" accessibilityLabel={room.members.length === 3 ? '开始真人对局' : `开始对局并补入 ${3 - room.members.length} 个机器人`} accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={onStart} style={styles.primaryButton}>{busy ? <ActivityIndicator color={C.deep} /> : <><Text style={styles.primaryText}>{room.members.length === 3 ? '开始真人对局' : `开始并补入 ${3 - room.members.length} 个机器人`}</Text><Ionicons name="play" size={19} color={C.deep} /></>}</Pressable> : <View accessible accessibilityLabel="等待房主开始对局" style={styles.waitHost}><ActivityIndicator color={C.lime} size="small" /><Text style={styles.waitHostText}>等待房主开始…</Text></View>}
-    <Text style={styles.roomPolicy}>本房间只结算不可购买、转让或提现的竞技分</Text>
+    <Text style={styles.roomPolicy}>本房间只结算不可购买、转让或提现的卡时豆</Text>
   </ScrollView>;
 }
 
@@ -309,7 +309,7 @@ function Table({ game, profile, busy, onAction, onExit, onReplay, onHistory, onR
       </View> : null}
     </View>
 
-    <View style={styles.myInfo}><View><Text style={styles.myName}>{me.name} <Text style={[styles.role, me.role === 'landlord' && styles.roleLandlord]}>{me.role === 'landlord' ? '领队' : me.role === 'farmer' ? '协作位' : ''}</Text></Text><Text style={styles.myBalance}>● {number(profile.balance)} 竞技分</Text></View><Text style={styles.handCount}>{game.hand.length} 张</Text></View>
+    <View style={styles.myInfo}><View><Text style={styles.myName}>{me.name} <Text style={[styles.role, me.role === 'landlord' && styles.roleLandlord]}>{me.role === 'landlord' ? '领队' : me.role === 'farmer' ? '协作位' : ''}</Text></Text><Text style={styles.myBalance}>● {number(profile.balance)} 卡时豆</Text></View><Text style={styles.handCount}>{game.hand.length} 张</Text></View>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hand}>
       {game.hand.map((card, index) => <View key={card.id} style={{ marginLeft: index ? -20 : 0 }}><PlayingCard card={card} selected={selected.includes(card.id)} onPress={game.phase === 'playing' && myTurn ? () => toggle(card.id) : undefined} /></View>)}
     </ScrollView>
@@ -318,7 +318,7 @@ function Table({ game, profile, busy, onAction, onExit, onReplay, onHistory, onR
       <View style={styles.resultCard}>
         <Text style={styles.resultEyebrow}>{game.settlement?.winner === 'landlord' ? '领队胜利' : '协作位胜利'}</Text>
         <Text style={styles.resultTitle}>{delta >= 0 ? '漂亮！' : '再来一局'}</Text>
-        <Text style={[styles.resultDelta, delta < 0 && { color: C.red }]}>{delta >= 0 ? '+' : ''}{number(delta)} <Text style={styles.resultUnit}>竞技分</Text></Text>
+        <Text style={[styles.resultDelta, delta < 0 && { color: C.red }]}>{delta >= 0 ? '+' : ''}{number(delta)} <Text style={styles.resultUnit}>卡时豆</Text></Text>
         <Text style={styles.resultMeta}>{game.settlement?.multiplier} 倍结算 · 竞技记录已保存</Text>
         <Text style={styles.fairnessCode}>公平校验 {game.fairness.commitment.slice(0, 12)}</Text>
         <View style={styles.resultActions}>
@@ -343,17 +343,17 @@ function HistoryScreen({ data, loading }: { data: History | null; loading: boole
       <View style={{ flex: 1 }}><Text style={styles.historyTitle}>{game.role === 'landlord' ? '领队' : '协作位'} · {game.multiplier} 倍</Text><Text style={styles.historyDate}>{new Date(game.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</Text></View>
       <Text style={[styles.historyDelta, game.delta < 0 && { color: C.red }]}>{game.delta >= 0 ? '+' : ''}{number(game.delta)}</Text>
     </View>)}
-    <Text style={[styles.sectionTitle, { marginTop: 24 }]}>竞技分记录</Text>
+    <Text style={[styles.sectionTitle, { marginTop: 24 }]}>卡时豆记录</Text>
     {data?.ledger.map((entry) => <View key={entry.id} style={styles.ledgerRow}><View><Text style={styles.ledgerMemo}>{productCopy(entry.memo)}</Text><Text style={styles.historyDate}>{new Date(entry.createdAt).toLocaleString('zh-CN')}</Text></View><Text style={[styles.ledgerAmount, entry.amount < 0 && { color: C.red }]}>{entry.amount >= 0 ? '+' : ''}{number(entry.amount)}</Text></View>)}
   </ScrollView>;
 }
 
 function RulesScreen() {
   const rules = [
-    ['01', '竞技分边界', '竞技分只记录游戏表现，不支持购买、提现、转让或兑换。'],
+    ['01', '卡时豆边界', '卡时豆只记录游戏表现，不支持购买、提现、转让或兑换。'],
     ['02', '服务端权威', '洗牌、争分、出牌合法性与最终结算全部由服务端完成。'],
     ['03', '争分与身份', '三人依次选择不争或争 1–3 分，最高分玩家成为领队并获得三张底牌，其余两位成为协作位。'],
-    ['04', '倍数保护', '炸弹、王炸和春天会翻倍，单局最高 64 倍，并按竞技分设置保护底分。'],
+    ['04', '倍数保护', '炸弹、王炸和春天会翻倍，单局最高 64 倍，并按卡时豆设置保护底分。'],
   ];
   return <ScrollView contentContainerStyle={styles.contentPage}><Text style={styles.pageEyebrow}>FAIR PLAY</Text><Text style={styles.pageTitle}>规则与公平</Text><Text style={styles.pageIntro}>我们希望每一局都简单、透明、没有现实金钱压力。</Text>
     {rules.map(([index, title, copy]) => <View key={index} style={styles.ruleRow}><Text style={styles.ruleIndex}>{index}</Text><View style={{ flex: 1 }}><Text style={styles.ruleTitle}>{title}</Text><Text style={styles.ruleCopy}>{copy}</Text></View></View>)}
@@ -448,7 +448,7 @@ export default function App() {
     setBusy(true); try { const result = await gameAction(current.id, current.sequence, kind, input); acceptGame(result.game, result.profile); setConnectionStatus('online'); await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch (value) { showError(value); await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); } finally { setBusy(false); }
   }
   async function relief() {
-    setBusy(true); try { const result = await claimRelief(); setProfile(result.profile); setConnectionStatus('online'); setError(result.claimed ? '今日竞技分补给已到账' : '当前不满足补给条件'); } catch (value) { showError(value); } finally { setBusy(false); }
+    setBusy(true); try { const result = await claimRelief(); setProfile(result.profile); setConnectionStatus('online'); setError(result.claimed ? '今日卡时豆补给已到账' : '当前不满足补给条件'); } catch (value) { showError(value); } finally { setBusy(false); }
   }
   async function makeRoom() {
     setBusy(true); try {
@@ -503,7 +503,7 @@ export default function App() {
     try {
       const result = await Share.share({
         title: `KAI Play 好友房 ${room.code}`,
-        message: `来 KAI Play 一起玩三人争先！好友房房间号：${room.code}\n竞技分仅记录游戏表现，不可购买、转让或提现。`,
+        message: `来 KAI Play 一起玩三人争先！好友房房间号：${room.code}\n卡时豆仅记录游戏表现，不可购买、转让或提现。`,
       });
       if (result.action === Share.sharedAction) {
         setError('房间号已分享');

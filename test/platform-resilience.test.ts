@@ -89,8 +89,8 @@ test('a failed room start preserves the waiting room version and membership', as
     const room = await platform.createRoom(host.profile.id);
     store.post({
       key: 'drain-room-host', referenceType: 'game', referenceId: 'test', entries: [
-        { accountId: host.profile.id, amount: -9_900, memo: '测试扣减' },
-        { accountId: 'treasury', amount: 9_900, memo: '测试扣减' },
+        { accountId: host.profile.id, amount: -(host.profile.balance - 100), memo: '测试扣减至 100' },
+        { accountId: 'treasury', amount: host.profile.balance - 100, memo: '测试扣减至 100' },
       ],
     });
     const before = platform.room(room.id, host.profile.id);

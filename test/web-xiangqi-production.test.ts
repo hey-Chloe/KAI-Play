@@ -101,7 +101,7 @@ test('Xiangqi progress remains local and the mobile client does not advertise an
   assert.match(appSource, /kai\.play\.xiangqi\.tutorial\.v1/);
   const route = sourceBetween(appSource, 'function xiangqiGame()', 'function merge1048Tile(');
   assert.doesNotMatch(route, /api\(/);
-  assert.match(route, /不会?改变竞技分、Token 或 KAI 卡时/);
+  assert.match(route, /不会?改变卡时豆、Token 或 KAI 卡时/);
   assert.doesNotMatch(mobileSource, /open-xiangqi|view\s*[:=]\s*['"]xiangqi['"]/);
   for (const source of [readme, product, productSpec]) {
     assert.match(source, /KAI 象棋/);

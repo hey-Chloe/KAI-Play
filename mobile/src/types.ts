@@ -8,6 +8,7 @@ export type PlayerView = {
 };
 export type Profile = {
   id: string; name: string; balance: number; games: number; wins: number; winRate: number;
+  dailyReward?: { amount: number; date: string; claimed: boolean; timeZone: string };
   tokenPolicy: { purchasable: false; withdrawable: false; transferable: false; redeemable: false };
 };
 export type GameView = {

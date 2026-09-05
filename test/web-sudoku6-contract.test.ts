@@ -95,7 +95,7 @@ test('Sudoku progress is local, restored defensively, and outside competitive se
   assert.match(appSource, /saveSudoku6Game\(next\)/);
   assert.match(appSource, /updateSudoku6Clock\(\)/);
   assert.match(route, /不请求服务端结算/);
-  assert.match(route, /不改变竞技分、Token 或 KAI 卡时/);
+  assert.match(route, /不改变卡时豆、Token 或 KAI 卡时/);
   assert.doesNotMatch(route, /api\(/);
   assert.match(appSource, /state\.view==='sudoku6'\?sudoku6Game\(\)/);
 });

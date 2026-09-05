@@ -26,7 +26,7 @@ test('a guest can finish an authoritative game and receive one ledger settlement
     await store.load();
     const platform = new DouJoyPlatform(store);
     const session = await platform.guest('小测');
-    assert.equal(session.profile.balance, 10_000);
+    assert.equal(session.profile.balance, 30_000);
     let game = await platform.quickGame(session.profile.id);
     let action = 0;
     while (game.phase !== 'finished' && action < 300) {
@@ -100,14 +100,15 @@ test('an offline player is safely auto-played after the configured turn timeout'
   }
 });
 
-test('relief is free, bounded, and claimable only once per day', async () => {
+test('daily beans add 3000 regardless of balance and are claimable only once per day', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'doujoy-relief-'));
   try {
     const store = new JsonGameStore(join(directory, 'state.json'));
     await store.load();
     const platform = new DouJoyPlatform(store);
     const session = await platform.guest('补助测试');
-    assert.equal((await platform.relief(session.profile.id)).claimed, false);
+    assert.equal(session.profile.balance, 30_000);
+    assert.equal(session.profile.dailyReward.claimed, false);
     store.post({
       key: 'test-spend', referenceType: 'game', referenceId: 'test',
       entries: [
@@ -118,9 +119,10 @@ test('relief is free, bounded, and claimable only once per day', async () => {
     const first = await platform.relief(session.profile.id);
     const second = await platform.relief(session.profile.id);
     assert.equal(first.claimed, true);
-    assert.equal(first.profile.balance, 2_000);
+    assert.equal(first.profile.balance, 23_500);
+    assert.equal(first.profile.dailyReward.claimed, true);
     assert.equal(second.claimed, false);
-    assert.equal(second.profile.balance, 2_000);
+    assert.equal(second.profile.balance, 23_500);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -267,6 +267,25 @@ button, input { font: inherit; }
   padding: 7px 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.88);
 }
 .score-pill small { color: var(--muted); font-size: 9px; }.score-pill strong { font-size: 17px; letter-spacing: -.03em; }
+.bean-wallet { position:relative; z-index:80; flex-shrink:0; }
+.bean-wallet > summary { cursor:pointer; list-style:none; min-height:44px; display:grid; grid-template-columns:auto 20px; gap:2px 8px; align-items:center; }
+.bean-wallet > summary::-webkit-details-marker { display:none; }
+.bean-wallet > summary small { font-size:14px; }
+.bean-wallet > summary > span { grid-column:2; grid-row:1 / 3; font-size:20px; line-height:1; }
+.bean-wallet > summary:focus-visible,.bean-wallet-close:focus-visible { outline:3px solid #da744b; outline-offset:3px; }
+.bean-wallet-panel { position:absolute; inset:calc(100% + 10px) 0 auto auto; width:min(340px,calc(100vw - 32px)); max-height:calc(100dvh - 110px); overflow:auto; padding:22px; background:#fffdf8; color:#20372e; border:1px solid #d9e1d9; border-radius:18px; box-shadow:0 16px 46px #142d262e; text-align:left; }
+.bean-wallet-panel header { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:16px; }
+.bean-wallet-close { width:44px; height:44px; padding:0; background:transparent; border:0; color:inherit; font-size:26px; cursor:pointer; }
+.bean-wallet-panel p { font-size:14px; line-height:1.7; margin:10px 0; }
+.bean-wallet-panel .bean-wallet-balance { font-size:32px; font-weight:750; font-variant-numeric:tabular-nums; margin:2px 0 12px; }
+.bean-wallet-balance small { font-size:14px; margin-left:8px; font-weight:400; }
+.bean-wallet-panel > small { display:block; font-size:12px; color:#5c685f; line-height:1.65; }
+.bean-wallet-panel > .btn { display:flex; align-items:center; justify-content:center; min-height:44px; width:100%; margin:14px 0 8px; font-size:14px; text-decoration:none; }
+.bean-wallet-panel > [role="status"] { padding:8px 10px; background:#eef3ee; border-radius:8px; }
+@media(max-width:540px) {
+  .bean-wallet-panel { position:fixed; inset:76px 12px auto auto; width:calc(100vw - 24px); max-width:340px; max-height:calc(100dvh - 100px); }
+  .bean-wallet > summary { padding-inline:10px; gap:6px; }
+}
 .compact-score { min-width: 96px; min-height: 40px; }
 
 .kai-hero {
@@ -6842,7 +6861,7 @@ body:has(.lobby-game-center) {
   .lobby-game-center .live-lobby { gap: 15px; }
   .lobby-game-center .topbar-lobby { margin-bottom: 2px; }
   .lobby-game-center .brand-button { min-height: 44px; }
-  .lobby-game-center .topbar-lobby .score-pill small { font-size: .6875rem; }
+  .lobby-game-center .topbar-lobby .score-pill small { font-size: .875rem; }
   .lobby-game-center .section-kicker { font-size: .6875rem; }
   .game-center-intro {
     grid-template-columns: 1fr;

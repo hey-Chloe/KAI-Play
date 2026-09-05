@@ -116,7 +116,7 @@ test('Minesweeper progress is local, defensive, and protects unfinished games', 
   assert.match(appSource, /safeStorageSet\(MINESWEEPER_SAVE_KEY/);
   assert.doesNotMatch(route, /api\(/);
   assert.match(route, /不请求服务端结算/);
-  assert.match(route, /不会改变竞技分、Token 或 KAI 卡时/);
+  assert.match(route, /不会改变卡时豆、Token 或 KAI 卡时/);
   assert.match(appSource, /data-minesweeper-confirm-dialog[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(appSource, /aria-describedby="minesweeper-confirm-description"/);
   assert.match(appSource, /modalOpen \? ['"] inert aria-hidden=/);

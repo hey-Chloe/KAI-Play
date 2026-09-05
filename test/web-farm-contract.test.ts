@@ -126,6 +126,18 @@ test('an agent-completed season explains its result and keeps Agent Lab reachabl
   assert.match(styleSource, /\.farm-result:focus-visible/);
 });
 
+test('live farm and Agent Lab persist Skill rollback before the season ends', () => {
+  assert.equal((appSource.match(/session\.evolutionEvent\?\.status==='rollback'/g)||[]).length,2);
+  for(const start of ['async function performFarmGameAgentStep(', 'async function performAgentStep(']) {
+    const from=appSource.indexOf(start);
+    assert.ok(from>=0,`missing ${start}`);
+    const source=appSource.slice(from,appSource.indexOf('\n}',from)+2);
+    assert.match(source,/session\.evolutionEvent\?\.status==='rollback'/);
+    assert.match(source,/state\.agentLongTermMemory\s*=\s*session\.memory\.longTerm/);
+    assert.match(source,/saveFarmAgentLongTermMemory/);
+  }
+});
+
 test('farm-next-day advances the turn, reports weeds or maturity, and settles day nine', () => {
   const handler = between(appSource, "if(a==='farm-next-day'&&state.view==='farm')", "if(a==='farm-reset'&&state.view==='farm')");
   assert.match(handler, /advanceFarmDay\(game\)/);
@@ -170,7 +182,7 @@ test('season progress restores defensively without API settlement or redeemable 
   assert.match(route, /当前浏览器本地运行并自动保存/);
   assert.match(route, /农场金币和奖章只用于本地娱乐/);
   assert.match(route, /不可购买、提现、转让或兑换/);
-  assert.match(route, /不会改变竞技分、Token 或 KAI 卡时/);
+  assert.match(route, /不会改变卡时豆、Token 或 KAI 卡时/);
   assert.match(route, /刷新后不会恢复/);
 });
 

@@ -29,7 +29,18 @@ test('HTTP server exposes health, guest session, profile and quick game contract
     const session = await fetch(`http://127.0.0.1:${port}/v1/sessions/guest`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: '契约测试' }),
     }).then((response) => response.json()) as { token: string; profile: { balance: number } };
-    assert.equal(session.profile.balance, 10_000);
+    assert.equal(session.profile.balance, 30_000);
+    const unauthenticated=await fetch(`http://127.0.0.1:${port}/v1/relief`,{method:'POST',body:'{}'});
+    assert.equal(unauthenticated.status,401);
+    for(const expected of [true,false]) {
+      const reward=await fetch(`http://127.0.0.1:${port}/v1/relief`,{
+        method:'POST',headers:{authorization:`Bearer ${session.token}`,'content-type':'application/json'},
+        body:JSON.stringify({amount:999999,date:'2099-01-01'}),
+      }).then(response=>response.json());
+      assert.equal(reward.claimed,expected);
+      assert.equal(reward.profile.balance,33_000);
+      assert.equal(reward.profile.dailyReward.timeZone,'Asia/Shanghai');
+    }
     const quick = await fetch(`http://127.0.0.1:${port}/v1/games/quick`, {
       method: 'POST', headers: { authorization: `Bearer ${session.token}`, 'content-type': 'application/json' }, body: '{}',
     }).then((response) => response.json()) as { ok: boolean; game: { hand: unknown[]; players: unknown[]; phase: string } };

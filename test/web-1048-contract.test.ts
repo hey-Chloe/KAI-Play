@@ -41,7 +41,7 @@ test('the 1048 route renders an accessible four-by-four board and honest product
   assert.match(route, /移动/);
   assert.match(route, /512 \+ 512 = 1048/);
   assert.match(route, /免费本地益智训练/);
-  assert.match(route, /不会改变竞技分、Token 或 KAI 卡时/);
+  assert.match(route, /不会改变卡时豆、Token 或 KAI 卡时/);
   assert.doesNotMatch(route, /api\(/, 'the local training game must not call the server');
   assert.match(appSource, /state\.view==='1048'\?merge1048Game\(\)/);
 });

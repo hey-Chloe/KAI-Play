@@ -262,7 +262,7 @@ const GAME_CONTENT = Object.freeze({
     goal:'判断牌势、竞叫身份，率先让自己或同阵营牌友出完手牌。',
     loop:'竞叫地主 → 选择合法牌型 → 压牌或过牌 → 轮流出牌',
     finish:'地主先出完则地主胜；任一农民先出完则农民阵营胜。',
-    limits:'唯一计入竞技分的玩法；发牌、回合与结算由服务端统一判定。', action:'quick', actionLabel:'快速开局',
+    limits:'唯一计入卡时豆的玩法；发牌、回合与结算由服务端统一判定。', action:'quick', actionLabel:'快速开局',
   },
   xiangqi: {
     name:'KAI 象棋', eyebrow:'棋桌策略', duration:'约 8–20 分钟', mode:'单人 · 三档 KAI 对手', persistence:'本地自动保存',
@@ -367,7 +367,7 @@ const GAME_CONTENT = Object.freeze({
     goal:'在九天内安排有限行动，照料作物并在需求旺盛的日子收获，冲击金穗。',
     loop:'观察行情 → 播种 / 浇水 / 收获 → 结束本日 → 调整下一天计划',
     finish:'第九日结束后按最终金币结算铜穗、银穗或金穗。',
-    limits:'单人本地经营挑战；无好友偷菜、跨设备同步或现金兑换，不计入竞技分。', action:'open-farm', actionLabel:'开始一季',
+    limits:'单人本地经营挑战；无好友偷菜、跨设备同步或现金兑换，不计入卡时豆。', action:'open-farm', actionLabel:'开始一季',
   },
   tictactoe: {
     name:'KAI 井字棋', eyebrow:'三连快棋', duration:'约 1–2 分钟', mode:'单人 · KAI 对手', persistence:'单局不保存',
@@ -950,7 +950,40 @@ function header(mode = 'default', active = '') {
   const name = state.profile?.name || '正在登录';
   const lobbyMode = mode === 'lobby';
   const brandControl = mode === 'room' ? 'data-action="open-room-exit" aria-label="退出好友房"' : 'data-view="lobby" aria-label="返回 KAI PLAY 大厅"';
-  return `<header class="topbar ${lobbyMode?'topbar-lobby':''} ${active?'has-primary-nav':''}"><button class="brand brand-button brand-wordmark" data-wordmark ${brandControl}><div class="logo"><span></span>K</div><span class="wordmark"><b>KAI</b><em>PLAY</em>${lobbyMode?'':'<small>牌桌游乐场</small>'}</span></button>${active?nav(active):''}<div class="top-actions">${lobbyMode?'':`<div class="player-chip"><span class="player-avatar">${esc(name.slice(0,1))}</span><span><b>${esc(name)}</b><small>${tierName(state.profile)}</small></span></div>`}<div class="score-pill"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></div></header>`;
+  return `<header class="topbar ${lobbyMode?'topbar-lobby':''} ${active?'has-primary-nav':''}"><button class="brand brand-button brand-wordmark" data-wordmark ${brandControl}><div class="logo"><span></span>K</div><span class="wordmark"><b>KAI</b><em>PLAY</em>${lobbyMode?'':'<small>牌桌游乐场</small>'}</span></button>${active?nav(active):''}<div class="top-actions">${lobbyMode?'':`<div class="player-chip"><span class="player-avatar">${esc(name.slice(0,1))}</span><span><b>${esc(name)}</b><small>${tierName(state.profile)}</small></span></div>`}${beanWallet()}</div></header>`;
+}
+
+function gpuRechargeUrl() {
+  try {
+    const url=new URL(document.querySelector('meta[name="kai-gpu-url"]')?.content||'');
+    return url.protocol==='https:'&&!url.username&&!url.password ? url.href : null;
+  } catch { return null; }
+}
+
+function beanWallet(compact = false) {
+  const profile=state.profile;
+  const reward=profile?.dailyReward;
+  const today=new Date(Date.now()+8*60*60*1000).toISOString().slice(0,10);
+  const claimed=reward?.claimed&&reward.date===today;
+  const gpuUrl=gpuRechargeUrl();
+  const balance=profile?money(competitiveScore(profile)):'—';
+  return `<details class="bean-wallet" ${state.beanWalletOpen?'open':''}><summary class="score-pill ${compact?'compact-score':''}" aria-label="卡时豆 ${balance}，查看礼包与充值"><small>卡时豆</small><strong>${balance}</strong><span aria-hidden="true">＋</span></summary><section class="bean-wallet-panel" aria-label="卡时豆礼包与充值"><header><b>我的卡时豆</b><button type="button" class="bean-wallet-close" data-action="close-beans" aria-label="关闭卡时豆面板">×</button></header><p class="bean-wallet-balance">${balance}<small>卡时豆</small></p>${state.beanNotice?`<p role="status">${esc(state.beanNotice)}</p>`:''}<p>新用户送 <b>30,000</b> · 每日上线领 <b>3,000</b></p>${profile?`<button class="btn primary" data-action="claim-beans" ${claimed?'disabled':''}>${claimed?'今日已领 3,000':'领取今日 3,000'}</button><small>北京时间每日 00:00 重置 · 同一账户每天一次</small>`:'<p>账户未连接，暂时无法读取余额或领取礼包。</p><button class="btn" data-action="retry-beans">重新连接账户</button>'}${gpuUrl?`<a class="btn bean-recharge" href="${esc(gpuUrl)}" target="_blank" rel="noopener noreferrer">充值 · 前往 GPU 界面 ↗</a>`:'<button class="btn" disabled>充值入口暂未配置</button>'}<small>卡时豆为游戏点数，不等于 GPU 卡时，不可提现或兑换。此入口仅跳转 GPU 页面，尚不支持付款后自动增加卡时豆。</small></section></details>`;
+}
+
+async function claimDailyBeans() {
+  if(!state.profile)throw new Error('请先连接账户再领取卡时豆');
+  const result=await api('/v1/relief',{method:'POST',body:'{}'});
+  state.profile=result.profile;
+  state.beanWalletOpen=true;
+  state.beanNotice=result.claimed?'3,000 卡时豆已到账':'今日已领取，请明天再来';
+  toast(state.beanNotice);
+}
+
+function showBeanShortage(message='卡时豆不足，先领每日礼包，或前往 GPU 界面查看充值入口。') {
+  state.beanWalletOpen=true;
+  state.beanNotice=message;
+  render();
+  app.querySelector('.bean-wallet summary')?.focus();
 }
 
 function competitiveScore(profile) { return Math.max(0, Number(profile?.balance) || 0); }
@@ -1286,7 +1319,7 @@ function lobby() {
             <div class="mahjong-preview-seat seat-east"><span>A</span><b>智能牌友 A</b><small>南家</small></div>
             <div class="mahjong-preview-seat seat-south"><span>${esc((p.name || '你').slice(0,1))}</span><b>${esc(p.name || '你')}</b><small>东家 · 你</small></div>
             <div class="mahjong-hero-copy"><span class="hub-hero-tag">轻松牌桌</span><small>KAI 麻将 · 四人基础速战</small><h1 id="mahjong-hero-title">摸一手好牌，听风入局</h1><p>和三位智能牌友摸打至自摸、荣和或流局。</p></div>
-            <div class="mahjong-hero-action"><button class="btn primary" data-action="open-mahjong">开始麻将 <b>→</b></button><small>免费人机局 · 不影响竞技分</small></div>
+            <div class="mahjong-hero-action"><button class="btn primary" data-action="open-mahjong">开始麻将 <b>→</b></button><small>免费人机局 · 不影响卡时豆</small></div>
           </section>
           <nav class="hero-switcher" aria-label="切换精选玩法"><button class="${ddzActive?'active':''}" data-action="hero-select" data-hero-game="ddz" aria-pressed="${ddzActive}">斗地主</button><button class="${ddzActive?'':'active'}" data-action="hero-select" data-hero-game="mahjong" aria-pressed="${!ddzActive}">麻将</button><span aria-hidden="true">↔ 滑动</span></nav>
           <p class="sr-only" data-hero-status aria-live="polite">当前展示${ddzActive?'斗地主':'麻将'}</p>
@@ -1621,8 +1654,8 @@ function matchResult(g, viewer) {
     : `${lastPlayer?.name || '玩家'}${lastEvent.kind === 'pass' ? '选择略过' : `打出 ${lastCards || `${lastEvent.cards?.length || 0} 张牌`}`}`;
   const fairnessCode = g.fairness?.commitment ? g.fairness.commitment.slice(0, 12) : '未提供';
   return `<main class="match-result ${viewerWon?'is-win':'is-loss'}">
-    <header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主 · 本局结束</small></div></div></div><div class="score-pill compact-score"><small>当前竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></header>
-    <section class="result-score" aria-live="polite"><span>${settlement?.winner === 'landlord' ? '领队获胜' : '协作方获胜'}</span><h1>${viewerWon ? '这局拿下了' : '这局惜败'}</h1><strong class="${delta>=0?'positive':'negative'}">${delta>=0?'+':''}${money(delta)}</strong><small>竞技分 · 服务端已完成结算</small></section>
+    <header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主 · 本局结束</small></div></div></div>${beanWallet(true)}</header>
+    <section class="result-score" aria-live="polite"><span>${settlement?.winner === 'landlord' ? '领队获胜' : '协作方获胜'}</span><h1>${viewerWon ? '这局拿下了' : '这局惜败'}</h1><strong class="${delta>=0?'positive':'negative'}">${delta>=0?'+':''}${money(delta)}</strong><small>卡时豆 · 服务端已完成结算</small></section>
     <section class="review-panel" aria-labelledby="review-title"><div><span>牌局记录</span><h2 id="review-title">复盘预览</h2><p>这里只整理服务端已经记录的事实，当前不提供策略优劣、最优解或胜率推断。</p></div>
       <div class="decision-row"><span>身份与结果</span><b>${viewerRole} · ${viewerWon?'获胜':'落败'}</b><small>本局最高争分 ${Number(g.highestBid) || 0} 档</small></div>
       <div class="decision-row"><span>结算信息</span><b>${Number(settlement?.multiplier) || 1} 倍</b><small>炸弹记录 ${Number(g.bombs) || 0} 次 · 基础分 ${Number(g.baseStake) || 0}</small></div>
@@ -1654,7 +1687,7 @@ function game() {
   const turnText = isDealing?'正在依次发牌':g.phase==='finished'?'本局已结束':viewerTurn?(g.phase==='bidding'?'轮到你选择争分':'轮到你出牌'):`${currentPlayer?.name||'牌友'}正在思考`;
   const handHint = handInteractive ? (selectionCount ? `已选 ${selectionCount} 张 · 可重选或确认出牌` : '点击手牌选择 · 再确认出牌') : '等待轮次 · 规则由服务端统一判定';
   const exitDialog=state.exitConfirm?`<div class="exit-shade"><section class="exit-dialog" role="dialog" aria-modal="true" aria-labelledby="exit-title"><span>结束本局</span><h2 id="exit-title">确定不打了吗？</h2><p>退出会按本局负场结算；好友局也会同时结束。你可以留下继续完成这一局。</p><div><button class="btn" data-action="cancel-exit">继续本局</button><button class="btn danger" data-action="confirm-exit">认输并退出</button></div></section></div>`:'';
-  return `<div class="shell table route-game"><header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主</small></div></div></div><div class="round-state"><span>${turnText}</span><b>基础分 ${g.baseStake} · 明示倍数 ${currentMultiplier}</b></div><div class="score-pill compact-score"><small>竞技分</small><strong>${money(competitiveScore(state.profile))}</strong></div></header>${syncFailureNotice()}<section class="landscape-table ddz-table ${isDealing?'is-dealing':''}">${tableFrame('game')}<button class="table-exit table-exit-float" data-action="open-exit" aria-label="退出当前牌局">← 退出</button><div class="table-score"><b>基础分 ${g.baseStake}</b><span>明示倍数 ${currentMultiplier}</span></div>${playerPod(rivals[0]||viewer,'opponent-left')}${playerPod(rivals[1]||viewer,'opponent-right')}${playerPod(viewer,'viewer-pod')}${g.bottomCards?.length?`<div class="bottom-reveal"><small>增补牌</small>${g.bottomCards.map(c=>poker(c,false)).join('')}</div>`:''}<div class="play-zone"><div class="play-cards">${lead}</div>${actionTrail(g)}</div><div class="center-controls" ${isDealing?'aria-hidden="true"':''}>${turnFeedback(g,viewerTurn)}<div class="game-actions">${actions}</div></div><footer class="hand-dock" ${isDealing?'aria-hidden="true"':''}><div class="hand" style="--hand-count:${g.hand.length}">${g.hand.map((c,index,hand)=>poker(c,handInteractive,false,{index,total:hand.length})).join('')}</div><p>${handHint}</p></footer>${isDealing?dealSequence(g):''}</section>${exitDialog}</div>`;
+  return `<div class="shell table route-game"><header class="game-top"><div class="game-branding"><div class="brand compact"><div class="logo"><span></span>K</div><div>KAI PLAY<small>斗地主</small></div></div></div><div class="round-state"><span>${turnText}</span><b>基础分 ${g.baseStake} · 明示倍数 ${currentMultiplier}</b></div>${beanWallet(true)}</header>${syncFailureNotice()}<section class="landscape-table ddz-table ${isDealing?'is-dealing':''}">${tableFrame('game')}<button class="table-exit table-exit-float" data-action="open-exit" aria-label="退出当前牌局">← 退出</button><div class="table-score"><b>基础分 ${g.baseStake}</b><span>明示倍数 ${currentMultiplier}</span></div>${playerPod(rivals[0]||viewer,'opponent-left')}${playerPod(rivals[1]||viewer,'opponent-right')}${playerPod(viewer,'viewer-pod')}${g.bottomCards?.length?`<div class="bottom-reveal"><small>增补牌</small>${g.bottomCards.map(c=>poker(c,false)).join('')}</div>`:''}<div class="play-zone"><div class="play-cards">${lead}</div>${actionTrail(g)}</div><div class="center-controls" ${isDealing?'aria-hidden="true"':''}>${turnFeedback(g,viewerTurn)}<div class="game-actions">${actions}</div></div><footer class="hand-dock" ${isDealing?'aria-hidden="true"':''}><div class="hand" style="--hand-count:${g.hand.length}">${g.hand.map((c,index,hand)=>poker(c,handInteractive,false,{index,total:hand.length})).join('')}</div><p>${handHint}</p></footer>${isDealing?dealSequence(g):''}</section>${exitDialog}</div>`;
 }
 
 function casualHeader(title, mode, status) {
@@ -1986,7 +2019,7 @@ function xiangqiGame() {
       <div class="xiangqi-tools" aria-label="象棋工具"><button type="button" data-action="xiangqi-undo" ${game.history?.length && !casual.aiThinking ? '' : 'disabled'}><i aria-hidden="true">↶</i><span>悔棋</span></button><button type="button" data-action="xiangqi-new"><i aria-hidden="true">↻</i><span>重新开局</span></button><button type="button" data-action="xiangqi-rules"><i aria-hidden="true">?</i><span>规则</span></button></div>
       <p class="xiangqi-key-hint">键盘：方向键移动 · Enter / 空格选择 · Esc 取消 · Ctrl/⌘ + Z 悔棋</p>${xiangqiResult(game, casual)}
     </section>
-  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '本局仅在当前页面运行，本次无法自动保存；' : '本局在当前浏览器运行并自动保存，'}不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>${xiangqiConfirmDialog(casual)}${xiangqiRulesDialog(casual)}</div>`;
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '本局仅在当前页面运行，本次无法自动保存；' : '本局在当前浏览器运行并自动保存，'}不请求服务端结算，不写入斗地主战绩，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>${xiangqiConfirmDialog(casual)}${xiangqiRulesDialog(casual)}</div>`;
 }
 
 function merge1048Tile(value, index) {
@@ -2017,7 +2050,7 @@ function merge1048Game() {
       <p class="merge-1048-hint">键盘：方向键 / WASD　·　触屏：在棋盘上滑动</p>
       ${merge1048Result(game)}
     </section>
-  </main><p class="casual-disclaimer">本局进度自动保存在当前浏览器。1048 是免费本地益智训练，不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">本局进度自动保存在当前浏览器。1048 是免费本地益智训练，不请求服务端结算，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function slotsGame() {
@@ -2026,7 +2059,7 @@ function slotsGame() {
   const result = casual.last?.result;
   const resultCopy = result?.tier==='jackpot' ? '三个图标完全相同' : result?.tier==='pair' ? '其中两个图标相同' : result ? '三个图标各不相同' : '点击按钮，等待三个转轮依次停止';
   const bestLabel = ({jackpot:'三连共振',pair:'双核同频',none:'继续发现'})[casual.bestTier] || '继续发现';
-  return `<div class="shell casual-shell">${casualHeader('算力转轮','COMPUTE REELS',`本次会话 · 已发现 ${casual.discoveries.length} 种组合`)}<section class="casual-stage slots-stage"><div class="slot-guide"><b>怎么玩？</b><span><i>1</i>点击免费旋转</span><span><i>2</i>三个转轮停止</span><span><i>3</i>收集不同组合</span></div><div class="slot-machine"><div class="slot-crown"><span>KAI PLAY</span><b>算力转轮</b><small>免费娱乐 · 零消耗</small></div><div class="slot-session-metrics" aria-label="本次会话统计"><div><small>旋转</small><strong>${casual.spins}</strong></div><div><small>共振值</small><strong>${casual.resonance}</strong></div><div><small>最佳组合</small><strong>${bestLabel}</strong></div><div><small>已见符号</small><strong>${casual.seenSymbols.length}/5</strong></div></div><div class="slot-reels ${casual.spinning?'spinning':''}">${casual.reels.map((symbol,index)=>`<div class="slot-reel" style="--reel:${index}"><small>◆</small><span class="slot-symbol symbol-${symbol==='7'?'seven':'kai'}">${esc(symbol)}</span><small>★</small></div>`).join('')}</div><div class="slot-paytable"><span><b>三枚相同</b><small>共振值 +3</small></span><span><b>两枚相同</b><small>共振值 +1</small></span><span><b>各不相同</b><small>发现新组合</small></span></div><div class="slot-result ${result?.tier||''}"><b>${casual.spinning?'转轮依次停止中…':result?.label||'准备发现第一种组合'}</b><small>${resultCopy}${result?` · 当前共振值 ${casual.resonance}`:''}</small></div><button class="slot-lever" data-action="slots-spin" ${casual.spinning?'disabled':''}><i></i><span>${casual.spinning?'正在旋转…':'免费旋转一次'}</span></button></div></section><p class="casual-disclaimer">共振值与组合收集仅为本次页面会话的娱乐记录，不支付、不下注、不发放可兑换奖励，也不会扣除竞技分、Token 或 KAI 卡时。</p></div>`;
+  return `<div class="shell casual-shell">${casualHeader('算力转轮','COMPUTE REELS',`本次会话 · 已发现 ${casual.discoveries.length} 种组合`)}<section class="casual-stage slots-stage"><div class="slot-guide"><b>怎么玩？</b><span><i>1</i>点击免费旋转</span><span><i>2</i>三个转轮停止</span><span><i>3</i>收集不同组合</span></div><div class="slot-machine"><div class="slot-crown"><span>KAI PLAY</span><b>算力转轮</b><small>免费娱乐 · 零消耗</small></div><div class="slot-session-metrics" aria-label="本次会话统计"><div><small>旋转</small><strong>${casual.spins}</strong></div><div><small>共振值</small><strong>${casual.resonance}</strong></div><div><small>最佳组合</small><strong>${bestLabel}</strong></div><div><small>已见符号</small><strong>${casual.seenSymbols.length}/5</strong></div></div><div class="slot-reels ${casual.spinning?'spinning':''}">${casual.reels.map((symbol,index)=>`<div class="slot-reel" style="--reel:${index}"><small>◆</small><span class="slot-symbol symbol-${symbol==='7'?'seven':'kai'}">${esc(symbol)}</span><small>★</small></div>`).join('')}</div><div class="slot-paytable"><span><b>三枚相同</b><small>共振值 +3</small></span><span><b>两枚相同</b><small>共振值 +1</small></span><span><b>各不相同</b><small>发现新组合</small></span></div><div class="slot-result ${result?.tier||''}"><b>${casual.spinning?'转轮依次停止中…':result?.label||'准备发现第一种组合'}</b><small>${resultCopy}${result?` · 当前共振值 ${casual.resonance}`:''}</small></div><button class="slot-lever" data-action="slots-spin" ${casual.spinning?'disabled':''}><i></i><span>${casual.spinning?'正在旋转…':'免费旋转一次'}</span></button></div></section><p class="casual-disclaimer">共振值与组合收集仅为本次页面会话的娱乐记录，不支付、不下注、不发放可兑换奖励，也不会扣除卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function sudoku6Cell(game, index, context) {
@@ -2087,7 +2120,7 @@ function sudoku6Game() {
       <div class="sudoku6-tools" aria-label="数独工具"><button type="button" data-action="sudoku6-notes" aria-pressed="${casual.noteMode}" class="${casual.noteMode ? 'active' : ''}" ${game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">N</i><span>笔记</span></button><button type="button" data-action="sudoku6-undo" ${game.undoStack.length && game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">↶</i><span>撤销</span></button><button type="button" data-action="sudoku6-clear" ${game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">×</i><span>擦除</span></button><button type="button" data-action="sudoku6-hint" ${game.hintsUsed < SUDOKU6_MAX_HINTS && game.status === 'playing' ? '' : 'disabled'}><i aria-hidden="true">?</i><span>提示</span></button></div>
       <p class="sudoku6-key-hint">键盘：1–6 填写 · N 笔记 · Delete 擦除 · Ctrl/⌘ + Z 撤销</p>${sudoku6Result(game)}
     </section>
-  </main><p class="casual-disclaimer">数独题目在本地生成并验证唯一解。进度仅保存在当前浏览器，不请求服务端结算，不改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">数独题目在本地生成并验证唯一解。进度仅保存在当前浏览器，不请求服务端结算，不改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function formatMinesweeperTime(totalSeconds) {
@@ -2198,7 +2231,7 @@ function minesweeperGame() {
       ${scrollHint}<div class="minesweeper-board-scroll" data-minesweeper-scroll tabindex="-1"><div class="minesweeper-board" data-minesweeper-board role="grid" aria-label="${game.rows} 行 ${game.columns} 列扫雷棋盘，首击安全；使用方向键移动，回车或空格揭开，F 插旗" aria-describedby="${boardDescription}" aria-rowcount="${game.rows}" aria-colcount="${game.columns}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space F Escape" aria-disabled="${context.locked}" style="--minesweeper-columns:${game.columns}">${minesweeperRows(game, context)}</div></div>
       <p class="minesweeper-key-hint" id="minesweeper-key-hint">键盘：方向键移动 · Enter / 空格揭开或和弦 · F 插旗 · Esc 返回揭开模式</p>${minesweeperResult(game)}
     </section>
-  </main><p class="casual-disclaimer">${saveConflict ? '检测到其他标签页的更新，本页已停止写入以保护最新存档；返回大厅后重新进入即可载入。' : saveUnavailable ? '本浏览器当前无法写入本地存档；本局仍可继续，但刷新后可能无法恢复。' : '本局完全在当前浏览器运行并自动保存；'}不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>${minesweeperConfirmDialog(casual)}</div>`;
+  </main><p class="casual-disclaimer">${saveConflict ? '检测到其他标签页的更新，本页已停止写入以保护最新存档；返回大厅后重新进入即可载入。' : saveUnavailable ? '本浏览器当前无法写入本地存档；本局仍可继续，但刷新后可能无法恢复。' : '本局完全在当前浏览器运行并自动保存；'}不请求服务端结算，不写入斗地主战绩，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>${minesweeperConfirmDialog(casual)}</div>`;
 }
 
 function gomokuCell(game, index, casual) {
@@ -2238,7 +2271,7 @@ function gomokuGame() {
       <div class="gomoku-board-scroll"><div class="gomoku-board" data-gomoku-board role="grid" aria-label="15 乘 15 五子棋棋盘，方向键移动，回车或空格落子" aria-rowcount="15" aria-colcount="15" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space Home End">${Array.from({ length:GOMOKU_CELL_COUNT }, (_, index) => gomokuCell(game, index, casual)).join('')}</div></div>
       <p class="gomoku-key-hint">键盘：方向键移动 · Enter / 空格落子 · Home / End 跳到首尾</p>${gomokuResult(game)}
     </section>
-  </main><p class="casual-disclaimer">${persistenceAvailable ? '本局在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本局仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本局在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本局仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function formatMemoryTime(totalSeconds) {
@@ -2280,7 +2313,7 @@ function memoryMatchGame() {
       <div class="memory-board" data-memory-board role="grid" aria-label="${definition.rows} 行 ${definition.columns} 列记忆翻牌棋盘，使用方向键移动，回车或空格翻牌" aria-rowcount="${definition.rows}" aria-colcount="${definition.columns}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space" style="--memory-columns:${definition.columns}">${game.deck.map((_, index) => memoryMatchCard(game, index, casual.focusedCard === index)).join('')}</div>
       <p class="memory-key-hint">键盘：方向键移动 · Enter / 空格翻牌</p>${memoryMatchResult(casual)}
     </section>
-  </main><p class="casual-disclaimer">${persistenceAvailable ? '本局完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本局仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本局完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本局仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function snakeCellVisual(game, index) {
@@ -2329,7 +2362,7 @@ function snakeGame() {
       <div class="snake-actions"><button class="btn primary" data-action="snake-toggle">${toggleLabel}</button><button class="btn" data-action="snake-new">重新开始</button></div>
       <p class="snake-key-hint" id="snake-key-hint">键盘：方向键 / WASD 控制 · 空格暂停或继续</p>${snakeResult(game)}
     </section>
-  </main><p class="casual-disclaimer">${persistenceAvailable ? '本轮完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本轮仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本轮完全在当前浏览器运行并自动保存' : '当前浏览器存储不可用，本轮仍可继续但刷新后不会恢复'}，不请求服务端结算，不写入斗地主战绩，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function farmReadySignature(game) {
@@ -2438,7 +2471,7 @@ function farmGame() {
       <div class="farm-command-dock"><div class="farm-crop-picker" role="group" aria-label="选择要播种的作物">${cropChoices}</div><div class="farm-actions"><button class="btn" data-action="farm-harvest-all" ${readyCount && game.actionsLeft && game.status !== 'finished' && !agentLocked ? '' : 'disabled'}>收获成熟作物${readyCount ? ` · ${Math.min(readyCount,game.actionsLeft)} 块` : ''}</button><button class="btn primary" data-action="farm-next-day" ${game.status === 'finished' || agentLocked ? 'disabled' : ''}>${game.day === FARM_SEASON_DAYS ? '结算本季' : '结束本日'} <b>→</b></button><button class="btn text" data-action="farm-reset" ${game.status==='finished'||agentLocked?'disabled':''}>重新开垦</button></div></div>
       <details class="farm-guide"><summary>玩法与行情规则</summary><div><p>每次播种、浇水、收获或清理杂草消耗 1 次行动。播种当天算已浇水，结束本日后才成长。</p><p>连续两天缺水会变成杂草；成熟作物不会枯萎，可以等到旺需日再卖。第 9 日结束时只按金币结算。</p></div></details><p class="farm-key-hint" id="farm-key-hint">键盘：方向键移动 · Enter / 空格操作地块</p>${result}
     </section>
-  </main><p class="casual-disclaimer">${persistenceAvailable ? '本季在当前浏览器本地运行并自动保存' : casual.saveConflict ? '检测到另一标签页的更新，本页为只读状态' : '当前浏览器存储不可用，本局仍可游玩但刷新后不会恢复'}。农场金币和奖章只用于本地娱乐，不可购买、提现、转让或兑换，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${persistenceAvailable ? '本季在当前浏览器本地运行并自动保存' : casual.saveConflict ? '检测到另一标签页的更新，本页为只读状态' : '当前浏览器存储不可用，本局仍可游玩但刷新后不会恢复'}。农场金币和奖章只用于本地娱乐，不可购买、提现、转让或兑换，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function agentFarmPlot(game, plot, index, activePlot) {
@@ -2581,7 +2614,7 @@ function reversiGame() {
       <div class="reversi-board" data-reversi-board role="grid" aria-label="8 乘 8 黑白棋棋盘，方向键移动，回车或空格落子" aria-rowcount="8" aria-colcount="8" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${Array.from({length:REVERSI_CELL_COUNT},(_,index)=>reversiCell(game,index,legalMoves,focused)).join('')}</div>
       <div class="local-puzzle-actions"><button class="btn" data-action="reversi-new">重新开局</button><span><i class="black"></i>你 · 黑方</span><span><i class="white"></i>KAI · 白方</span></div><p class="local-key-hint">键盘：方向键移动 · Enter / 空格落子</p>${reversiResult(game)}
     </section>
-  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '棋局在当前浏览器自动保存'}。这是免费本地人机训练，不请求服务端结算，不写入斗地主战绩，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '棋局在当前浏览器自动保存'}。这是免费本地人机训练，不请求服务端结算，不写入斗地主战绩，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function sokobanCell(game, index) {
@@ -2624,7 +2657,7 @@ function sokobanGame() {
       <div class="local-direction-pad" aria-label="推箱子方向控制"><span></span><button type="button" data-action="sokoban-move" data-sokoban-direction="up" aria-label="向上移动" ${game.status === 'won' ? 'disabled' : ''}>↑</button><span></span><button type="button" data-action="sokoban-move" data-sokoban-direction="left" aria-label="向左移动" ${game.status === 'won' ? 'disabled' : ''}>←</button><button type="button" data-action="sokoban-move" data-sokoban-direction="down" aria-label="向下移动" ${game.status === 'won' ? 'disabled' : ''}>↓</button><button type="button" data-action="sokoban-move" data-sokoban-direction="right" aria-label="向右移动" ${game.status === 'won' ? 'disabled' : ''}>→</button></div>
       <div class="local-puzzle-actions"><button class="btn" data-action="sokoban-undo" ${game.moves.length ? '' : 'disabled'}>撤销一步</button><button class="btn" data-action="sokoban-restart">重置本关</button>${game.status === 'won' && hasNextSokobanLevel(game) ? '<button class="btn primary" data-action="sokoban-next">下一关</button>' : ''}</div><p class="local-key-hint">键盘：方向键 / WASD 移动 · 每次成功移动都会自动保存</p>${game.status === 'won' ? `<section class="local-puzzle-result is-win" data-sokoban-result role="status" aria-live="polite" tabindex="-1"><span>第 ${game.levelIndex + 1} 关完成</span><h2>${esc(level.name)} · 箱子归位</h2><p>${game.steps} 步 · ${game.pushes} 次推动</p><div>${hasNextSokobanLevel(game) ? '<button class="btn primary" data-action="sokoban-next">进入下一关</button>' : '<button class="btn primary" data-action="sokoban-level" data-sokoban-level="0">从第一关再挑战</button>'}<button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
     </section>
-  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本关仍可继续' : '当前关卡与每一步进度都会保存在本地'}。这是免费本地空间谜题，不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本关仍可继续' : '当前关卡与每一步进度都会保存在本地'}。这是免费本地空间谜题，不请求服务端结算，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function slidingPuzzleGame() {
@@ -2648,7 +2681,7 @@ function slidingPuzzleGame() {
       <div class="sliding-board size-${game.size}" data-sliding-board role="grid" aria-label="${game.size} 乘 ${game.size} 数字华容道，方向键移动数字" aria-rowcount="${game.size}" aria-colcount="${game.size}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight" tabindex="0" style="--sliding-size:${game.size}">${tiles}</div>
       <div class="local-puzzle-actions"><button class="btn" data-action="sliding-new">重新洗牌</button><span>保证可解</span><span>每步自动保存</span></div><p class="local-key-hint">键盘：方向键移动数字 · 触屏：点击空位旁的数字</p>${game.status === 'won' ? `<section class="local-puzzle-result is-win" data-sliding-result role="status" aria-live="polite" tabindex="-1"><span>${game.size}×${game.size} 拼图完成</span><h2>顺序归位</h2><p>${game.moveCount} 步 · 用时 ${formatSudoku6Time(game.elapsedSeconds)}</p><div><button class="btn primary" data-action="sliding-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
     </section>
-  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '盘面、步数与用时在当前浏览器自动保存'}。每次洗牌都保证可解且不会直接完成；本玩法不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '盘面、步数与用时在当前浏览器自动保存'}。每次洗牌都保证可解且不会直接完成；本玩法不请求服务端结算，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function fallingBlocksGame() {
@@ -2669,7 +2702,7 @@ function fallingBlocksGame() {
       <div class="falling-controls" aria-label="方块操作"><button type="button" data-action="falling-left" aria-label="向左移动" ${game.status !== 'playing' ? 'disabled' : ''}>←</button><button type="button" data-action="falling-rotate" aria-label="顺时针旋转" ${game.status !== 'playing' ? 'disabled' : ''}>↻</button><button type="button" data-action="falling-right" aria-label="向右移动" ${game.status !== 'playing' ? 'disabled' : ''}>→</button><button type="button" data-action="falling-down" aria-label="向下软降" ${game.status !== 'playing' ? 'disabled' : ''}>↓</button><button type="button" class="is-wide" data-action="falling-drop" ${game.status !== 'playing' ? 'disabled' : ''}>直落</button></div>
       <div class="local-puzzle-actions"><button class="btn primary" data-action="falling-toggle" ${game.status === 'over' ? 'disabled' : ''}>${game.status === 'paused' ? '继续游戏' : '暂停'}</button><button class="btn" data-action="falling-new">重新开局</button></div><p class="local-key-hint">键盘：← → 移动 · ↑ / Z 旋转 · ↓ 软降 · 空格直落 · P 暂停</p>${game.status === 'over' ? `<section class="local-puzzle-result is-over" data-falling-result role="status" aria-live="polite" tabindex="-1"><span>本轮堆叠结束</span><h2>${game.score} 分 · ${game.lines} 行</h2><p>到达等级 ${game.level}，共落下 ${game.pieces} 个方块</p><div><button class="btn primary" data-action="falling-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
     </section>
-  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本轮仍可继续' : '棋盘、得分与下一个方块序列在当前浏览器自动保存'}。页面隐藏时会自动暂停；本玩法不请求服务端结算，也不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本轮仍可继续' : '棋盘、得分与下一个方块序列在当前浏览器自动保存'}。页面隐藏时会自动暂停；本玩法不请求服务端结算，也不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function fallingBlocksCellClasses(game) {
@@ -2715,7 +2748,7 @@ function matchThreeGame() {
       <div class="match3-board" data-match3-board role="grid" aria-label="8 乘 8 三消宝石盘，方向键移动选择，回车或空格确认" aria-rowcount="8" aria-colcount="8" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Space">${cells}</div>
       <div class="local-puzzle-actions"><button class="btn" data-action="match3-shuffle" ${game.status !== 'playing' ? 'disabled' : ''}>重排宝石</button><button class="btn" data-action="match3-new">重新开局</button></div><p class="local-key-hint">键盘：方向键移动 · Enter / 空格选择 · 触屏：依次点击相邻宝石</p>${game.status !== 'playing' ? `<section class="local-puzzle-result ${game.status === 'won' ? 'is-win' : 'is-over'}" data-match3-result role="status" aria-live="polite" tabindex="-1"><span>${game.status === 'won' ? '目标达成' : '本局结束'}</span><h2>${game.score} 分</h2><p>${game.moveCount} 步 · 消除 ${game.totalCleared} 枚 · 重排 ${game.shuffleCount} 次</p><div><button class="btn primary" data-action="match3-new">再来一局</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
     </section>
-  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '盘面、分数与剩余步数在当前浏览器自动保存'}。所有盘面均保证开局无现成三连且至少存在一步有效交换；本玩法不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本局仍可继续' : '盘面、分数与剩余步数在当前浏览器自动保存'}。所有盘面均保证开局无现成三连且至少存在一步有效交换；本玩法不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function mazeGame() {
@@ -2740,7 +2773,7 @@ function mazeGame() {
       <div class="local-direction-pad maze-pad" aria-label="迷宫方向控制"><span></span><button type="button" data-action="maze-move" data-maze-direction="up" aria-label="向上移动" ${game.status === 'won' ? 'disabled' : ''}>↑</button><span></span><button type="button" data-action="maze-move" data-maze-direction="left" aria-label="向左移动" ${game.status === 'won' ? 'disabled' : ''}>←</button><button type="button" data-action="maze-move" data-maze-direction="down" aria-label="向下移动" ${game.status === 'won' ? 'disabled' : ''}>↓</button><button type="button" data-action="maze-move" data-maze-direction="right" aria-label="向右移动" ${game.status === 'won' ? 'disabled' : ''}>→</button></div>
       <div class="local-puzzle-actions"><button class="btn primary" data-action="maze-hint" ${game.status === 'won' ? 'disabled' : ''}>${game.hintVisible ? '关闭提示' : '显示提示路线'}</button><button class="btn" data-action="maze-restart">重走本图</button><button class="btn" data-action="maze-new">换一张图</button></div><p class="local-key-hint">键盘：方向键 / WASD 移动 · 每一步都会自动保存</p>${game.status === 'won' ? `<section class="local-puzzle-result is-win" data-maze-result role="status" aria-live="polite" tabindex="-1"><span>${MAZE_DIFFICULTIES[game.difficulty].label}迷宫完成</span><h2>${game.stepCount} 步抵达出口</h2><p>最短路线 ${game.bestPathLength} 步 · 路线效率 ${efficiency}%</p><div><button class="btn primary" data-action="maze-new">换一张图</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>` : ''}
     </section>
-  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本图仍可继续' : '迷宫、位置与步数在当前浏览器自动保存'}。迷宫为本地生成的连通无环地图，提示只显示当前位置到出口的路线；本玩法不会改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  </main><p class="casual-disclaimer">${casual.saveAvailable === false ? '当前浏览器无法保存，本图仍可继续' : '迷宫、位置与步数在当前浏览器自动保存'}。迷宫为本地生成的连通无环地图，提示只显示当前位置到出口的路线；本玩法不会改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function quickGameStatus(game) {
@@ -2811,7 +2844,7 @@ function quickGame() {
   const award=casual.lastAward||quickGameStars(game);const stars=`${'★'.repeat(award)}${'☆'.repeat(3-award)}`;
   const result=game.status==='playing'?'':`<section class="local-puzzle-result quick-result ${game.status==='won'?'is-win':'is-over'}" data-quick-result role="status" aria-live="polite" tabindex="-1"><span>${game.status==='won'?'挑战完成':game.status==='draw'?'本局平手':'本轮结束'}</span><div class="quick-result-stars" aria-label="本局获得 ${award} 颗星">${stars}</div><h2>${meta.name}</h2><p>${quickGameResultCopy(game)}</p><div class="quick-run-total"><b>本次街机串 ${state.quickRun.stars} ★</b><span>${state.quickRun.completed} 关 · ${state.quickRun.wins} 胜</span></div><div><button class="btn primary" data-action="quick-new">再来一局</button><button class="btn arcade-next" data-action="quick-next">换个挑战 →</button><button class="btn" data-action="casual-home">返回大厅</button></div></section>`;
   const feedback=game.lastCorrect===true?'is-correct':game.lastCorrect===false?'is-wrong':'';
-  return `<div class="shell casual-shell quick-route quick-${game.kind}">${casualHeader(meta.name,'ARCADE RUN',`本次挑战串 · ${state.quickRun.stars} ★`)}<main class="quick-game-stage"><section class="quick-game-copy"><span>即开即玩 · 过关积星</span><h1>${meta.glyph}<br><b>${meta.name.replace('KAI ','')}</b></h1><p>${GAME_CONTENT[game.kind].goal}</p><ol><li><b>玩法</b><span>${GAME_CONTENT[game.kind].loop}</span></li><li><b>结束</b><span>${GAME_CONTENT[game.kind].finish}</span></li></ol></section><section class="local-puzzle-play quick-game-play ${feedback}"><div class="quick-run-strip"><span><i>★</i> 本次街机串</span><b>${state.quickRun.stars} 星 · ${state.quickRun.completed} 关</b></div><div class="local-puzzle-metrics">${metrics}</div><div class="local-puzzle-status ${game.status==='playing'?'':'is-finished'}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status==='playing'?'进行中':'已结算'}</b></div>${quickGameBoard(game)}<div class="local-puzzle-actions"><button class="btn" data-action="quick-new">重新开始</button></div>${result}</section></main><p class="casual-disclaimer">短局在本地运行；本次街机星章仅保留到刷新页面，不改变竞技分、Token 或 KAI 卡时。</p></div>`;
+  return `<div class="shell casual-shell quick-route quick-${game.kind}">${casualHeader(meta.name,'ARCADE RUN',`本次挑战串 · ${state.quickRun.stars} ★`)}<main class="quick-game-stage"><section class="quick-game-copy"><span>即开即玩 · 过关积星</span><h1>${meta.glyph}<br><b>${meta.name.replace('KAI ','')}</b></h1><p>${GAME_CONTENT[game.kind].goal}</p><ol><li><b>玩法</b><span>${GAME_CONTENT[game.kind].loop}</span></li><li><b>结束</b><span>${GAME_CONTENT[game.kind].finish}</span></li></ol></section><section class="local-puzzle-play quick-game-play ${feedback}"><div class="quick-run-strip"><span><i>★</i> 本次街机串</span><b>${state.quickRun.stars} 星 · ${state.quickRun.completed} 关</b></div><div class="local-puzzle-metrics">${metrics}</div><div class="local-puzzle-status ${game.status==='playing'?'':'is-finished'}" role="status" aria-live="polite"><i aria-hidden="true"></i><span>${esc(status)}</span><b>${game.status==='playing'?'进行中':'已结算'}</b></div>${quickGameBoard(game)}<div class="local-puzzle-actions"><button class="btn" data-action="quick-new">重新开始</button></div>${result}</section></main><p class="casual-disclaimer">短局在本地运行；本次街机星章仅保留到刷新页面，不改变卡时豆、Token 或 KAI 卡时。</p></div>`;
 }
 
 function historyMatchWon(match) {
@@ -2885,7 +2918,7 @@ function bestWinStreak(matches) {
 
 function history() {
   if (state.historyStatus === 'loading' && !state.history) {
-    return `<div class="shell page-shell season-page">${header('default','history')}<section class="history-state-card" aria-live="polite"><i class="history-state-spinner" aria-hidden="true"></i><span>正在整理战绩</span><h1>读取最近牌局…</h1><p>竞技分与已结算记录正在从服务端同步。</p></section></div>`;
+    return `<div class="shell page-shell season-page">${header('default','history')}<section class="history-state-card" aria-live="polite"><i class="history-state-spinner" aria-hidden="true"></i><span>正在整理战绩</span><h1>读取最近牌局…</h1><p>卡时豆与已结算记录正在从服务端同步。</p></section></div>`;
   }
   if (state.historyStatus === 'error' && !state.history) {
     return `<div class="shell page-shell season-page">${header('default','history')}<section class="history-state-card is-error" role="alert"><span>暂时无法读取</span><h1>战绩没有被清空</h1><p>${esc(state.historyError || '网络连接暂时不可用，请稍后重试。')}</p><button class="btn primary" data-action="retry-history">重新读取</button></section></div>`;
@@ -2901,7 +2934,7 @@ function history() {
     const delta=Number(match.delta)||0;
     const height=Math.max(12,Math.round(Math.abs(delta)/trendScale*100));
     return `<i class="${delta>=0?'positive':'negative'}" style="--trend-height:${height}%" title="第 ${index+1} 局：${delta>=0?'+':''}${delta} 分"><span>${delta>=0?'+':''}${delta}</span></i>`;
-  }).join('') : '<p>完成首局后，这里会按时间显示最近的竞技分变化。</p>';
+  }).join('') : '<p>完成首局后，这里会按时间显示最近的卡时豆变化。</p>';
   const recentMatches=matches.length ? matches.map(match=>{
     const won=historyMatchWon(match);
     const delta=Number(match.delta)||0;
@@ -2911,15 +2944,17 @@ function history() {
   }).join('') : `<div class="empty-state"><b>还没有完成的牌局</b><p>你的段位、趋势和最近对局会在首局结算后出现在这里。</p><button class="btn primary" data-action="quick">开始第一局</button></div>`;
   const statusNotice=state.historyStatus==='error' ? `<div class="history-inline-error" role="alert"><span>显示上次成功读取的记录</span><b>${esc(state.historyError || '最新战绩同步失败')}</b><button class="btn" data-action="retry-history">重试</button></div>` : '';
   return `<div class="shell page-shell season-page">${header('default','history')}${statusNotice}
-    <section class="season-hero"><div class="season-rank"><span>我的战绩</span><h1>${tierName(profile)}</h1><p>当前账户 · 全部已保存对局</p></div><div class="score-overview"><small>竞技分</small><strong>${money(competitiveScore(profile))}</strong></div></section>
+    <section class="season-hero"><div class="season-rank"><span>我的战绩</span><h1>${tierName(profile)}</h1><p>当前账户 · 全部已保存对局</p></div><div class="score-overview"><small>卡时豆</small><strong>${money(competitiveScore(profile))}</strong></div></section>
     <section class="season-metrics" aria-label="战绩摘要"><div><strong>${totalGames}</strong><span>完成对局</span></div><div><strong>${totalGames?winRatePercent(profile):0}%</strong><span>总胜率</span></div><div><strong>${totalWins}</strong><span>累计胜局</span></div><div><strong>${currentWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局当前连胜</span></div><div><strong>${bestWinStreak(matches)}</strong><span>近 ${matches.length || 0} 局最佳连胜</span></div></section>
-    <section class="trend-strip"><div class="history-summary"><div><span>近期走势</span><h2>最近 ${trend.length} 局</h2></div><strong class="${recentDelta>=0?'positive':'negative'}">${recentDelta>=0?'+':''}${money(recentDelta)}<small> 分</small></strong></div><div class="trend-bars" aria-label="最近对局竞技分变化">${trendBars}</div></section>
+    <section class="trend-strip"><div class="history-summary"><div><span>近期走势</span><h2>最近 ${trend.length} 局</h2></div><strong class="${recentDelta>=0?'positive':'negative'}">${recentDelta>=0?'+':''}${money(recentDelta)}<small> 分</small></strong></div><div class="trend-bars" aria-label="最近对局卡时豆变化">${trendBars}</div></section>
     <section class="history-list"><div class="section-head"><div><span class="section-kicker">最近牌局</span><h2>${matches.length?'逐局记录':'等待第一场记录'}</h2></div><p>最多展示服务端返回的最近 20 局</p></div>${recentMatches}</section></div>`;
 }
 
-function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>竞技分不是支付资产</h3><p class="muted">竞技分只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、黑白棋、麻将、1048、数独、扫雷、推箱子、数字华容道、记忆翻牌、三消、下落方块、贪吃蛇、迷宫、KAI 农场、炸金花和算力转轮均为免费训练，不计竞技分。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变竞技分。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
+function rules() { return `<div class="shell page-shell">${header('default','rules')}<div class="section-head page-title"><div><span class="section-kicker">FAIR PLAY</span><h1>规则与公平</h1></div><p>免费竞技，结果透明</p></div><section class="card"><div class="rules"><div class="rule"><span>01</span><div><h3>卡时豆不是支付资产</h3><p class="muted">卡时豆只用于斗地主段位、匹配与战绩展示，不可购买、提现、转让或兑换。</p></div></div><div class="rule"><span>02</span><div><h3>45 秒思考与自动托管</h3><p class="muted">斗地主真人回合有 45 秒思考时间；智能牌友会分别思考后行动，倒计时结束由服务端托管。</p></div></div><div class="rule"><span>03</span><div><h3>系统发牌与本地棋局</h3><p class="muted">斗地主由服务端发牌；其余玩法由各自本地规则引擎生成牌面、棋局、关卡或农场，并在浏览器内判定每一步。</p></div></div><div class="rule"><span>04</span><div><h3>竞技与试玩分区</h3><p class="muted">斗地主由服务端判定并记录战绩；象棋、五子棋、黑白棋、麻将、1048、数独、扫雷、推箱子、数字华容道、记忆翻牌、三消、下落方块、贪吃蛇、迷宫、KAI 农场、炸金花和算力转轮均为免费训练，不计卡时豆。</p></div></div><div class="rule"><span>05</span><div><h3>本地金币与输赢隔离</h3><p class="muted">KAI 卡时只用于明确的 AI 与云端服务；农场金币与所有试玩奖励均不可购买、提现、转让或兑换，也不会改变卡时豆。</p></div></div></div></section>${rulesGameGuide()}</div>`; }
 
 function render() {
+  const oldWallet=app.querySelector('.bean-wallet');
+  if(oldWallet)state.beanWalletOpen=oldWallet.open||state.beanWalletOpen===true;
   app.innerHTML = state.view==='game'?game():state.view==='room'?room():state.view==='three'?threeCardGame():state.view==='mahjong'?mahjongGame():state.view==='xiangqi'?xiangqiGame():state.view==='gomoku'?gomokuGame():state.view==='reversi'?reversiGame():state.view==='1048'?merge1048Game():state.view==='sudoku6'?sudoku6Game():state.view==='minesweeper'?minesweeperGame():state.view==='sokoban'?sokobanGame():state.view==='sliding'?slidingPuzzleGame():state.view==='memory'?memoryMatchGame():state.view==='match3'?matchThreeGame():state.view==='falling'?fallingBlocksGame():state.view==='snake'?snakeGame():state.view==='maze'?mazeGame():state.view==='farm'?farmGame():state.view==='agent'?agentLab():state.view==='quick'?quickGame():state.view==='slots'?slotsGame():state.view==='history'?history():state.view==='rules'?rules():state.view==='friends'?friends():lobby();
   if(state.view==='lobby')updateWorldCarouselStatus(app.querySelector('[data-world-strip]'));
   if(state.view==='agent')drawAgentVlmFrame();
@@ -3924,8 +3959,8 @@ async function performFarmGameAgentStep({ automatic=false }={}) {
     stopFarmGameAgent('Agent 已停手 · 视觉观察与规则状态不一致，请检查后重试');
     render();return false;
   }
-  if(['succeeded','completed'].includes(session.status)){
-    farmAgent.auto=false;
+  if(['succeeded','completed'].includes(session.status))farmAgent.auto=false;
+  if(['succeeded','completed'].includes(session.status)||session.evolutionEvent?.status==='rollback'){
     state.agentLongTermMemory=session.memory.longTerm;
     state.agentMemorySaveAvailable=saveFarmAgentLongTermMemory(state.agentLongTermMemory);
   }
@@ -3988,7 +4023,7 @@ async function performAgentStep() {
   const visualObservation=shouldObserve?await runAgentVlmObservation():null;
   if(state.agentLab!==session||state.view!=='agent')return false;
   stepFarmAgent(session,{visualObservation,visualRequired:session.visualMode==='guard'});
-  if (['succeeded','completed'].includes(session.status)) {
+  if (['succeeded','completed'].includes(session.status) || session.evolutionEvent?.status==='rollback') {
     state.agentLongTermMemory = session.memory.longTerm;
     state.agentMemorySaveAvailable = saveFarmAgentLongTermMemory(state.agentLongTermMemory);
   }
@@ -4672,14 +4707,13 @@ async function startQuickGame(){
     nextGame=(await api('/v1/games/quick',{method:'POST',body:'{}'})).game;
   } catch (error) {
     if (error.code !== 'RELIEF_REQUIRED') throw error;
-    const relief=await api('/v1/relief',{method:'POST',body:'{}'});
-    state.profile=relief.profile;
-    nextGame=(await api('/v1/games/quick',{method:'POST',body:'{}'})).game;
-    toast('已领取免费竞技分补给');
+    await refreshProfile();
+    showBeanShortage();
+    return;
   }
   enterGame(nextGame,{animateDeal:nextGame.id!==activeGameId});
 }
-async function act(fn){ if(state.busy)return; state.busy=true;render();try{await fn(); state.error='';}catch(e){toast(e.message);}finally{state.busy=false;render();} }
+async function act(fn){ if(state.busy)return; state.busy=true;render();try{await fn(); state.error='';}catch(e){if(['RELIEF_REQUIRED','PLAYER_RELIEF_REQUIRED'].includes(e.code))showBeanShortage(e.message);toast(e.message);}finally{state.busy=false;render();} }
 
 function normalizeCatalogText(value) {
   return String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('zh-CN');
@@ -4906,6 +4940,8 @@ function jumpToLobbyTarget(target) {
 }
 
 app.addEventListener('click', e => {
+  const beanSummary=e.target.closest?.('.bean-wallet summary');
+  if(beanSummary){state.beanWalletOpen=!beanSummary.closest('details').open;return;}
   if(Date.now()<worldPointerSuppressClickUntil&&e.target.closest?.('[data-world-card]')){
     e.preventDefault();
     return;
@@ -4996,6 +5032,14 @@ app.addEventListener('click', e => {
   }
   if(el.dataset.bid!==undefined) act(async()=>{const current=state.game;const body={score:Number(el.dataset.bid),expectedSequence:current.sequence};const r=await api(`/v1/games/${current.id}/bid`,{method:'POST',body:JSON.stringify(body),headers:{'x-request-id':requestId()}});acceptGame(r.game,r.profile);});
   const a=el.dataset.action;
+  if(a==='claim-beans'){act(claimDailyBeans);return;}
+  if(a==='retry-beans'){act(bootstrap);return;}
+  if(a==='close-beans'){
+    state.beanWalletOpen=false;
+    const wallet=el.closest('.bean-wallet');
+    if(wallet){wallet.open=false;wallet.querySelector('summary')?.focus();}
+    return;
+  }
   if(a==='agent-auto'){
     if(agentRunFinished()){resetAgentLab();render();}
     state.agentAuto=!state.agentAuto;
@@ -5704,6 +5748,11 @@ app.addEventListener('pointerup', (event) => {
 app.addEventListener('pointercancel', (event) => { finishWorldCarouselPointer(event,{cancelled:true});heroPointer = null; merge1048Pointer = null; snakePointer = null; cancelMinesweeperLongPress(); });
 
 app.addEventListener('keydown', (event) => {
+  if(event.key==='Escape'&&app.querySelector('.bean-wallet[open]')){
+    const wallet=app.querySelector('.bean-wallet[open]');
+    state.beanWalletOpen=false;wallet.open=false;wallet.querySelector('summary')?.focus();
+    event.preventDefault();return;
+  }
   if(state.view==='quick'&&event.target?.matches?.('[data-quick-input]')&&event.key==='Enter'){
     event.preventDefault();
     performQuickGame(event.target.value);

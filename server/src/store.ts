@@ -90,6 +90,11 @@ const LEGACY_SCHEMA_VERSION = 1 as const;
 const DEFAULT_BACKUP_COUNT = 3;
 const MAX_BACKUP_COUNT = 10;
 export const MAX_ACTION_RESULT_ENTRIES = 512;
+export const WELCOME_BEANS = 30_000;
+export const DAILY_BEANS = 3_000;
+export function beanRewardDate(now = new Date()) {
+  return new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 const initialState = (): PersistedState => ({
   users: {}, sessions: {}, balances: { treasury: 0 }, games: {}, rooms: {}, reports: [],
@@ -463,8 +468,8 @@ export class JsonGameStore {
     this.post({
       key: `welcome:${id}`, referenceType: 'welcome', referenceId: id,
       entries: [
-        { accountId: 'treasury', amount: -10_000, memo: '新玩家初始竞技分' },
-        { accountId: id, amount: 10_000, memo: '新玩家初始竞技分' },
+        { accountId: 'treasury', amount: -WELCOME_BEANS, memo: '新用户 30,000 卡时豆礼包' },
+        { accountId: id, amount: WELCOME_BEANS, memo: '新用户 30,000 卡时豆礼包' },
       ],
     });
     return { user, token };
@@ -571,21 +576,27 @@ export class JsonGameStore {
     return this.state.ledgerEntries.filter((entry) => entry.accountId === accountId).slice(-limit).reverse();
   }
 
-  claimRelief(userId: string) {
+  dailyBeanReward(userId: string, now = new Date()) {
     const user = this.state.users[userId];
     if (!user) throw new Error('USER_NOT_FOUND');
-    const date = new Date().toISOString().slice(0, 10);
-    if (user.lastReliefDate === date) return false;
-    if (this.balance(userId) >= 2_000) return false;
-    const amount = 2_000 - this.balance(userId);
-    this.post({
+    const date = beanRewardDate(now);
+    const claimed = user.lastReliefDate === date || this.state.ledgerTransactions.some((entry) => entry.key === `relief:${userId}:${date}`);
+    return { amount: DAILY_BEANS, date, claimed, timeZone: 'Asia/Shanghai' };
+  }
+
+  claimRelief(userId: string, now = new Date()) {
+    const user = this.state.users[userId];
+    if (!user) throw new Error('USER_NOT_FOUND');
+    const { date, claimed } = this.dailyBeanReward(userId, now);
+    if (claimed) return false;
+    const posted = this.post({
       key: `relief:${userId}:${date}`, referenceType: 'relief', referenceId: userId,
       entries: [
-        { accountId: 'treasury', amount: -amount, memo: '每日竞技分补给' },
-        { accountId: userId, amount, memo: '每日竞技分补给' },
+        { accountId: 'treasury', amount: -DAILY_BEANS, memo: '每日上线领取 3,000 卡时豆' },
+        { accountId: userId, amount: DAILY_BEANS, memo: '每日上线领取 3,000 卡时豆' },
       ],
     });
-    user.lastReliefDate = date;
-    return true;
+    if (posted) user.lastReliefDate = date;
+    return posted;
   }
 }

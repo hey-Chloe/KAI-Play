@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>KAI PLAY · 大厅方案挑选</title>
+  <link rel="stylesheet" href="./lobby-preview.css">
+</head>
+<body>
+  <header class="studio-bar">
+    <div class="studio-title"><b>KAI PLAY</b><span>大厅方案挑选</span></div>
+    <div class="theme-options" role="group" aria-label="切换大厅方案">
+      <button data-theme="a" aria-pressed="true"><i class="swatch swatch-a"></i>A 白底珊瑚</button>
+      <button data-theme="b" aria-pressed="false"><i class="swatch swatch-b"></i>B 冷灰电蓝</button>
+      <button data-theme="c" aria-pressed="false"><i class="swatch swatch-c"></i>C 深色街机</button>
+    </div>
+    <div class="size-options" role="group" aria-label="预览宽度">
+      <button data-size="desktop" aria-pressed="true">桌面</button>
+      <button data-size="mobile" aria-pressed="false">手机 390</button>
+    </div>
+    <a class="original-link" href="/">返回原版 ↗</a>
+  </header>
+  <div class="studio-description"><p id="direction" aria-live="polite"></p><span>独立界面提案 · 余额为示例 · 不修改正式游戏或账户</span></div>
+  <main class="preview-stage">
+    <div class="preview-viewport" id="preview-viewport" data-size="desktop">
+      <div id="preview-root"></div>
+    </div>
+  </main>
+  <dialog id="game-preview-dialog" aria-labelledby="dialog-title">
+    <button class="dialog-close" aria-label="关闭玩法介绍">×</button>
+    <img id="dialog-image" alt="">
+    <span class="dialog-eyebrow">玩法预览</span><h2 id="dialog-title"></h2><p id="dialog-copy"></p>
+    <p class="dialog-note">这里用于比较界面，不会开局、扣豆或发放礼包。</p>
+    <a class="dialog-play" href="/">去现有大厅试玩 →</a>
+  </dialog>
+  <noscript>请启用 JavaScript 查看三套大厅方案。<a href="/">返回游戏大厅</a></noscript>
+  <script type="module" src="./lobby-preview.js"></script>
+</body>
+</html>

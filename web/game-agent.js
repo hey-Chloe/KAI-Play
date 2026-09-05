@@ -17,7 +17,7 @@ import {
 export const FARM_AGENT_POLICIES = Object.freeze({
   myopic: Object.freeze({ id:'myopic', label:'即时贪心基线', description:'只种周转最快的小麦，不做长期解锁规划。' }),
   hierarchical: Object.freeze({ id:'hierarchical', label:'层级规划 Agent', description:'按解锁、成长和金牌目标分阶段执行。' }),
-  skill_memory: Object.freeze({ id:'skill_memory', label:'Skill + Memory Agent', description:'记录失败并检索历史成功 Skill 宏，持续重规划。' }),
+  skill_memory: Object.freeze({ id:'skill_memory', label:'Skill + Memory Agent', description:'复用成功经验，从亏损轨迹提出 Skill 修订，验收通过后再启用。' }),
 });
 
 export const FARM_AGENT_VISUAL_MODES = Object.freeze({
@@ -121,7 +121,8 @@ function buildPlan(game, policy, longTermMemory = null) {
     goal:FARM_AGENT_GOAL,
     subgoal:currentSubgoal(game, policy),
     phases,
-    memoryHint:macro ? `检索到 ${macro.successes} 次成功轨迹，复用 ${macro.sequence.length} 步 Skill 宏作为计划先验。` : null,
+    memoryHint:[macro ? `检索到 ${macro.successes} 次成功轨迹，复用 ${macro.sequence.length} 步 Skill 宏作为计划先验。` : '',
+      policy === 'skill_memory' && longTermMemory?.evolution?.active ? `自改进 Skill v${longTermMemory.evolution.version}：播种前验证收获期限，当前状态退步时回退基线。` : ''].filter(Boolean).join(' ') || null,
   };
 }
 
@@ -236,6 +237,149 @@ function executeAction(game, action) {
   throw new Error('FARM_AGENT_ACTION_INVALID');
 }
 
+// Constrained Skill synthesis: data-only variants, never generated executable code.
+const EVOLUTION_SUITE = 'farm-deadline-v1';
+const EVOLUTION_VARIANTS = new Set(['skip_late_plant', 'replace_late_plant']);
+
+function emptyEvolution() {
+  return { suite:EVOLUTION_SUITE, version:0, active:null, blockedVariants:[], history:[] };
+}
+
+function restoreEvolution(value) {
+  if (!value || typeof value !== 'object') return emptyEvolution();
+  return {
+    suite:value.suite === EVOLUTION_SUITE ? EVOLUTION_SUITE : 'outdated',
+    version:safeCount(value.version),
+    active:EVOLUTION_VARIANTS.has(value.active) ? value.active : null,
+    blockedVariants:Array.isArray(value.blockedVariants) ? [...new Set(value.blockedVariants.filter((variant)=>EVOLUTION_VARIANTS.has(variant)))] : [],
+    history:Array.isArray(value.history) ? value.history.slice(-20).flatMap((entry) => {
+      if (!entry || !['promoted','rejected','rollback'].includes(entry.status)) return [];
+      return [{ version:safeCount(entry.version), status:entry.status,
+        variant:EVOLUTION_VARIANTS.has(entry.variant) ? entry.variant : null,
+        reason:typeof entry.reason === 'string' ? entry.reason.slice(0,240) : '',
+        evidenceCount:safeCount(entry.evidenceCount), suite:EVOLUTION_SUITE }];
+    }) : [],
+  };
+}
+
+function evolvedAction(game, base, variant) {
+  if (!EVOLUTION_VARIANTS.has(variant) || base.type !== 'plant'
+    || game.day + FARM_CROPS[base.cropId].growDays <= FARM_SEASON_DAYS) return base;
+  if (variant === 'replace_late_plant') {
+    const cropId = availableCropIds(game).reverse().find((id) =>
+      game.day + FARM_CROPS[id].growDays <= FARM_SEASON_DAYS && game.coins >= FARM_CROPS[id].seedCost);
+    if (cropId) return { ...base, cropId, evolvedSkill:variant };
+  }
+  return { type:'advance_day', skillId:'advance_when_stable', evolvedSkill:variant };
+}
+
+function skillTrial(initialGame, variant) {
+  let game = requireGame(initialGame);
+  let steps = 0;
+  let invalid = 0;
+  while (game.status !== 'finished' && steps < 96) {
+    steps += 1;
+    try { game = executeAction(game, evolvedAction(game, chooseAction(game,'skill_memory'), variant)); }
+    catch { invalid += 1; break; }
+  }
+  return { coins:game.coins, completed:game.status === 'finished', invalid, steps };
+}
+
+function delayedFarm(days) {
+  let game = newFarmGame();
+  for (let day = 0; day < days; day += 1) game = advanceFarmDay(game);
+  return game;
+}
+
+function evolutionFixtures() {
+  const readyCrop = advanceFarmDay(plantFarmCrop(newFarmGame(),0,'wheat'));
+  let crowded = newFarmGame();
+  for (let index = 0; index < 5; index += 1) crowded = plantFarmCrop(crowded,index,'wheat');
+  return [
+    { id:'canonical', game:newFarmGame() },
+    { id:'late-day2', game:delayedFarm(1) },
+    { id:'late-day7', game:delayedFarm(6) },
+    { id:'late-day8', game:delayedFarm(7) },
+    { id:'ready-crop', game:readyCrop },
+    { id:'limited-actions', game:crowded },
+  ];
+}
+
+export function evaluateFarmSkillCandidate(variant, { incumbent = null, cases = evolutionFixtures() } = {}) {
+  if (!EVOLUTION_VARIANTS.has(variant)) throw new Error('FARM_SKILL_VARIANT_INVALID');
+  if (incumbent !== null && !EVOLUTION_VARIANTS.has(incumbent)) throw new Error('FARM_SKILL_INCUMBENT_INVALID');
+  if (!Array.isArray(cases) || !cases.length || cases.length > 12) throw new Error('FARM_SKILL_CASES_INVALID');
+  const rows = cases.map(({id,game}) => ({ id, before:skillTrial(game,incumbent), after:skillTrial(game,variant) }));
+  const nonRegression = rows.every(({before,after}) => after.completed && !after.invalid && after.coins >= before.coins);
+  const gain = rows.reduce((sum,{before,after}) => sum + after.coins - before.coins,0);
+  return { suite:EVOLUTION_SUITE, accepted:nonRegression && gain > 0, gain, rows };
+}
+
+function validateRestoredEvolution(memory) {
+  const variant = memory.evolution.active;
+  const lastEvent = memory.evolution.history.at(-1);
+  const provenance = memory.evolution.version > 0 && memory.evolution.history.some((event) =>
+    event.status === 'promoted' && event.variant === variant && event.version === memory.evolution.version && event.evidenceCount > 0);
+  const report = variant && memory.evolution.suite === EVOLUTION_SUITE && provenance && lastEvent?.status !== 'rollback'
+    && !memory.evolution.blockedVariants.includes(variant) ? evaluateFarmSkillCandidate(variant) : null;
+  if (variant && !report?.accepted) {
+    memory.evolution.active = null;
+    memory.evolution.history.push({ version:memory.evolution.version, status:'rollback', variant,
+      evidenceCount:0, suite:EVOLUTION_SUITE, reason:'恢复时重新验收未通过，回退固定基线' });
+    memory.evolution.history = memory.evolution.history.slice(-20);
+  }
+  memory.evolution.suite = EVOLUTION_SUITE;
+  return { rollouts:report ? report.rows.length*2 : 0,
+    steps:report ? report.rows.reduce((sum,{before,after})=>sum+before.steps+after.steps,0) : 0 };
+}
+
+function learnFarmSkill(session) {
+  if (session.policy !== 'skill_memory') return;
+  const evolution = session.memory.longTerm.evolution;
+  const evidence = session.trajectory.filter((entry) => entry.outcome === 'success' && entry.action.type === 'plant'
+    && entry.before.day + FARM_CROPS[entry.action.cropId].growDays > FARM_SEASON_DAYS);
+  if (!evidence.length) return;
+  const candidates = [...EVOLUTION_VARIANTS].filter((variant)=>!evolution.blockedVariants.includes(variant)).map((variant) => ({ variant,
+    report:evaluateFarmSkillCandidate(variant,{incumbent:evolution.active}) }));
+  for (const {report} of candidates) {
+    session.metrics.skillTrialRollouts += report.rows.length * 2;
+    session.metrics.skillTrialSteps += report.rows.reduce((sum,{before,after})=>sum+before.steps+after.steps,0);
+  }
+  const best = candidates.filter(({report}) => report.accepted).sort((a,b)=>b.report.gain-a.report.gain)[0];
+  const variant = best?.variant ?? null;
+  if (best) { evolution.version += 1; evolution.active = variant; }
+  const event = { version:evolution.version, status:best?'promoted':'rejected', variant,
+    suite:EVOLUTION_SUITE, evidenceCount:evidence.length,
+    reason:best?`发现 ${evidence.length} 次来不及收获的播种；${best.report.rows.length} 个验收场景无退步，总收益提升 ${best.report.gain} 金币`
+      :'候选没有通过无退步且收益严格提升的门槛，保留旧 Skill' };
+  evolution.history = [...evolution.history,event].slice(-20);
+  session.evolutionEvent = event;
+  session.reflection += best ? ` 自改进 v${evolution.version} 验收通过，下一季启用收获期限约束。` : ' 候选 Skill 未通过验收，旧版本保留。';
+}
+
+function selectSessionAction(session) {
+  const base = chooseAction(session.game,session.policy);
+  const variant = session.policy === 'skill_memory' ? session.memory.longTerm.evolution.active : null;
+  const proposed = evolvedAction(session.game,base,variant);
+  if (proposed === base) return base;
+  // Counterfactuals run only on cloned rule states; never touch the live save or VLM guard.
+  const before = skillTrial(session.game,null);
+  const after = skillTrial(session.game,variant);
+  session.metrics.skillTrialRollouts += 2;
+  session.metrics.skillTrialSteps += before.steps + after.steps;
+  if (!after.completed || after.invalid || after.coins < before.coins) {
+    const evolution = session.memory.longTerm.evolution;
+    const event = { version:evolution.version, status:'rollback', variant,
+      evidenceCount:1, suite:EVOLUTION_SUITE, reason:'当前状态反事实验证退步，停用候选并回退固定基线' };
+    evolution.active = null;
+    evolution.blockedVariants = [...new Set([...evolution.blockedVariants,variant])];
+    evolution.history = [...evolution.history,event].slice(-20);
+    session.evolutionEvent = event;
+    return base;
+  }
+  return proposed;
+}
+
 function newSkillStats() {
   return Object.fromEntries(FARM_AGENT_SKILLS.map((skill) => [skill.id, { uses:0, successes:0, failures:0 }]));
 }
@@ -247,6 +391,7 @@ export function emptyFarmAgentLongTermMemory() {
     episodes:[],
     macros:[],
     skillStats:newSkillStats(),
+    evolution:emptyEvolution(),
   };
 }
 
@@ -313,6 +458,7 @@ export function restoreFarmAgentLongTermMemory(value) {
     episodes,
     macros,
     skillStats,
+    evolution:restoreEvolution(value.evolution),
   };
 }
 
@@ -370,6 +516,7 @@ export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_m
   if (!VISUAL_MODE_IDS.has(visualMode)) throw new Error('FARM_AGENT_VISUAL_MODE_INVALID');
   const restoredGame = requireGame(game);
   const restoredMemory = restoreFarmAgentLongTermMemory(longTermMemory);
+  const restoredValidation = validateRestoredEvolution(restoredMemory);
   const retrievedMacro = policy === 'skill_memory' ? bestMacroFor(restoredMemory, policy) : null;
   return {
     schemaVersion:1,
@@ -387,7 +534,8 @@ export function createFarmAgentSession({ game = newFarmGame(), policy = 'skill_m
     memory:{ episodes:[], failures:[], visualConflicts:[], skillStats:newSkillStats(), longTerm:restoredMemory },
     retrievedMacro:retrievedMacro ? clone(retrievedMacro) : null,
     macroCursor:0,
-    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0, macroMatches:0, visualObservations:0, visualMatches:0, visualMismatches:0, visualBlocks:0, visualLatencyMs:0, vlmInputTokens:0, vlmOutputTokens:0 },
+    evolutionEvent:restoredMemory.evolution.history.at(-1)?.status==='rollback' ? clone(restoredMemory.evolution.history.at(-1)) : null,
+    metrics:{ decisions:0, validActions:0, invalidActions:0, replans:0, recoveries:0, estimatedTokens:0, uniqueSkills:0, macroMatches:0, evolvedActions:0, skillTrialRollouts:restoredValidation.rollouts, skillTrialSteps:restoredValidation.steps, visualObservations:0, visualMatches:0, visualMismatches:0, visualBlocks:0, visualLatencyMs:0, vlmInputTokens:0, vlmOutputTokens:0 },
     injectFailureAtStep:Number.isInteger(injectFailureAtStep) ? injectFailureAtStep : null,
     faultInjected:false,
     pendingRecovery:false,
@@ -405,11 +553,11 @@ function rememberSkill(session, skillId, succeeded) {
 function reasoningFor(session, action) {
   const skill = FARM_AGENT_SKILLS.find((entry) => entry.id === action.skillId);
   const failureHint = session.policy === 'skill_memory' && session.memory.failures.length
-    ? `；已避开 ${session.memory.failures.length} 条失败动作记录`
+    ? `；已记录 ${session.memory.failures.length} 条失败动作反馈`
     : '';
   const macroSkill = session.retrievedMacro?.sequence?.[session.macroCursor];
   const macroHint = macroSkill && macroSkill === action.skillId ? '；当前动作与历史成功 Skill 宏匹配' : '';
-  return `${session.plan.subgoal}。调用「${skill?.label || '直接决策'}」：${actionLabel(action)}${failureHint}${macroHint}`;
+  return `${session.plan.subgoal}。调用「${skill?.label || '直接决策'}」：${actionLabel(action)}${failureHint}${macroHint}${action.evolvedSkill?'；自改进 Skill：保证能在结算前收获':''}`;
 }
 
 function finishEpisode(session) {
@@ -436,6 +584,7 @@ function finishEpisode(session) {
   };
   session.memory.episodes.push(episode);
   session.memory.longTerm = commitEpisodeToLongTermMemory(session.memory.longTerm, session, episode);
+  learnFarmSkill(session);
 }
 
 export function stepFarmAgent(session, context = {}) {
@@ -494,7 +643,7 @@ export function stepFarmAgent(session, context = {}) {
     return session;
   }
 
-  let action = chooseAction(session.game, session.policy);
+  let action = selectSessionAction(session);
   if (session.injectFailureAtStep === session.metrics.decisions && !session.faultInjected) {
     action = { type:'plant', plotIndex:99, cropId:'wheat', skillId:'plant_for_subgoal', injected:true };
     session.faultInjected = true;
@@ -519,6 +668,7 @@ export function stepFarmAgent(session, context = {}) {
 
   try {
     session.game = executeAction(session.game, action);
+    if (action.evolvedSkill) session.metrics.evolvedActions += 1;
     session.metrics.validActions += action.type === 'done' ? 0 : 1;
     rememberSkill(session, action.skillId, true);
     if (matchesRetrievedMacro) {
@@ -534,6 +684,7 @@ export function stepFarmAgent(session, context = {}) {
     } else {
       session.reflection = `执行成功：${actionLabel(action)}。下一步根据新状态重规划。`;
     }
+    if (action.evolvedSkill) session.reflection += ` 自改进 Skill v${session.memory.longTerm.evolution.version} 已修订原动作，避免无法兑现的播种。`;
   } catch (error) {
     session.metrics.invalidActions += 1;
     session.metrics.replans += 1;
@@ -580,6 +731,11 @@ export function runFarmAgentEpisode(options = {}) {
       longTermEpisodes:session.memory.longTerm.totalEpisodes,
       reusedSkillMacro:Boolean(session.retrievedMacro && session.metrics.macroMatches > 0),
       skillMacroCoverage:session.retrievedMacro?.sequence?.length ? session.metrics.macroMatches / session.retrievedMacro.sequence.length : null,
+      evolvedActions:session.metrics.evolvedActions,
+      evolutionVersion:session.memory.longTerm.evolution.version,
+      activeEvolvedSkill:session.memory.longTerm.evolution.active,
+      skillTrialRollouts:session.metrics.skillTrialRollouts,
+      skillTrialSteps:session.metrics.skillTrialSteps,
     },
   };
 }
@@ -610,4 +766,20 @@ export function evaluateFarmAgentMemoryTransfer() {
       recoveryMatchedSteps:recovery.metrics.macroMatches,
     },
   };
+}
+
+export function evaluateFarmAgentEvolution() {
+  // Discovery and final transfer starts are not members of the promotion suite.
+  const discoveryStart = delayedFarm(2);
+  const discovery = runFarmAgentEpisode({game:discoveryStart});
+  const memory = clone(discovery.memory.longTerm);
+  const replay = runFarmAgentEpisode({game:discoveryStart,longTermMemory:memory});
+  const transfer = [3,5].map((days) => {
+    const game = delayedFarm(days);
+    const before = runFarmAgentEpisode({game,policy:'hierarchical'});
+    const after = runFarmAgentEpisode({game,longTermMemory:memory});
+    return { id:`untuned-day${days+1}`, before:before.report, after:after.report };
+  });
+  return { discovery:discovery.report, replay:replay.report, evolution:memory.evolution, transfer,
+    boundary:'Constrained template synthesis and rule-model rollouts in one deterministic game; no neural training or cross-game generalization.' };
 }

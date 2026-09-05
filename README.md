@@ -87,10 +87,12 @@ npm run agent:eval
 - [产品范围](docs/PRODUCT.md)
 - [KAI Play 第一阶段产品规范](docs/KAI_PLAY_PRODUCT.md)
 - [CloudPay 计费边界](docs/CLOUDPAY_BILLING.md)
+- [卡时豆礼包、GPU 入口与上线边界](docs/BEANS.md)
 - [安全与公平](docs/SECURITY.md)
 - [单机部署与数据恢复](docs/DEPLOYMENT.md)
 - [工程质量与容量边界](docs/ENGINEERING_QUALITY.md)
 - [Game Agent P0 能力与评测边界](docs/GAME_AGENT_P0.md)
+- [Game Skill 自改进、版本验收与回退](docs/GAME_SKILL_EVOLUTION.md)
 - [VLM 研究接入、结构化视觉观察、视觉守卫与许可边界](docs/VLM_INTEGRATION.md)
 - `npm run agent:vlm-fixtures` 可重建六帧 KAI Farm 领域评测集；`npm run agent:vlm-eval` 在已连接模型时输出准确率、P50/P95 延迟和真实 Token 用量
 - [第三方素材与许可声明](THIRD_PARTY_NOTICES.md)
