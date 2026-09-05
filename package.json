@@ -15,7 +15,7 @@
     "agent:vlm-eval": "node scripts/evaluate-vlm.mjs",
     "build": "node --experimental-strip-types --check server/src/server.ts && node --check web/app.js && node --check web/casual-games.js && node --check web/catalog-carousel.js && node --check web/sudoku6.js && node --check web/xiangqi.js && node --check web/minesweeper.js && node --check web/gomoku.js && node --check web/reversi.js && node --check web/sokoban.js && node --check web/sliding-puzzle.js && node --check web/memory-match.js && node --check web/snake.js && node --check web/farm.js && node --check web/farm-mcts.js && node --check web/game-agent.js && node --check web/falling-blocks.js && node --check web/match-three.js && node --check web/maze.js && node --check web/quick-games.js && node --check web/serve.mjs && node --check scripts/evaluate-game-agent.mjs && node --check scripts/generate-vlm-eval-fixtures.mjs && node --check scripts/vlm-eval-lib.mjs && node --check scripts/evaluate-vlm.mjs && npm --prefix mobile run typecheck",
     "test": "node --experimental-strip-types --test test/*.test.ts && npm run test:vlm-service",
-    "test:vlm-service": "python3 -m unittest test/vlm_service_python_test.py",
+    "test:vlm-service": "python3 test/vlm_service_python_test.py",
     "test:coverage": "node --experimental-strip-types --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=90 --test test/*.test.ts",
     "check": "node --experimental-strip-types scripts/check.ts",
     "preflight": "node --experimental-strip-types scripts/preflight.ts",
